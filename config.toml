@@ -1,0 +1,54 @@
+baseURL = "http://devsecops.fm/"
+languageCode = "en-us"
+title = "Podcast about DevSecOps"
+theme = "zen"
+
+defaultContentLanguage = "en"
+pluralizelisttitles = false
+removePathAccents = true
+paginate = 10.0
+paginatePath = "page"
+rssLimit = 20.0
+
+[author]
+name = "DevSecOps Talks"
+url = "http://devsecops.fm/about"
+avatar = "path/to/some-image.jpg"
+
+[outputFormats]
+
+[outputFormats.SearchIndex]
+mediaType = "application/json"
+baseName = "searchindex"
+isPlainText = true
+notAlternative = true
+
+[outputs]
+home = [
+  "HTML",
+  "RSS",
+  "JSON",
+  "SearchIndex"
+]
+section = [
+  "HTML",
+  "RSS",
+  "JSON"
+]
+
+[params]
+contact = "info@example.org"
+copyright = "<!--Creative Commons License-->This site is licensed under a [Creative Commons Attribution-ShareAlike 4.0 International License](https://creativecommons.org/licenses/by-sa/4.0/).<!--/Creative Commons License-->"
+description = "DEVSECOPS TALKS - SURVIVING CLOUD NATIVE"
+dateformat = "2 January, 2006"
+favicon = "apple-touch-icon.png"
+feedlinks = true
+footer = "Powered by [Hugo](https://gohugo.io/) and the [Zen theme](https://github.com/frjo/hugo-theme-zen)."
+icon = "apple-touch-icon.png"
+image = "apple-touch-icon.png"
+imageMaxWidth = 400.0
+mobileMenu = true
+poweredby = false
+sidebar = true
+submitted = true
+realfavicongenerator = true

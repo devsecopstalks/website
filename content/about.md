@@ -1,21 +1,30 @@
 ---
 title: 'About'
+date: '01 Mar 2020'
 ---
 
-## This show is brought to you by Mattias, Julien and Andrey
+## This podcast is brought to you by Mattias, Julien and Andrey
 
-<!-- <div class="about_content">
-    <div class="section_title"><h1>Julien Bisconti</h1></div>
-    <div class="about_text">
-        <p>Independent consultant, public speaker, Google developer expert (GDE) for GCP, certified Kubernetes CKA/CKAD, university guest lecturer.</p>
-    </div>
-    <div class="social">
-        <ul class="d-flex flex-row align-items-start justify-content-start">
-            <li><a href="https://twitter.com/veggiemonk/"><i class="fa fa-twitter" aria-hidden="true"></i></a></li>
-            <li><a href="https://www.linkedin.com/in/julienbisconti/"><i class="fa fa-linkedin" aria-hidden="true"></i></a></li>
-            <li><a href="https://github.com/veggiemonk"><i class="fa fa-github" aria-hidden="true"></i></a></li>
-            <li><a href="https://average.joe.dev/"><i class="fa fa-code" aria-hidden="true"></i></a></li>
-        </ul>
-    </div>
-</div>
-<div class="about_image"><img src="images/julien.jpeg" alt=""></div> -->
+### Julien Bisconti
+
+{{< avatar "julien.webp" "Julien Bisconti" >}}
+
+> Independent consultant, public speaker, Google developer expert (GDE) for GCP, certified Kubernetes CKA/CKAD, university guest lecturer.
+
+{{< social_links twitter="julienBisconti" linkedin="julienbisconti" github="veggiemonk" web="average.joe.dev" >}}
+
+### Andrey Devyatkin
+
+{{< avatar "andrey.webp" "Andrey Devyatkin" >}}
+
+> Independent consultant, public speaker, remote work advocate, CI/CD expert, AWS architect (6x certifications), trainer (Git, Jenkins, Docker, CI/CD, Terraform, Vault), meetups organizer (Cloud Native Las Palmas de Gran Canaria, HashiCorp User Group Las Palmas de Gran Canaria).
+
+{{< social_links twitter="Andrey9kin" linkedin="andreydevyatkin" github="Andrey9kin" web="andreydevyatkin.com" >}}
+
+### Mattias Hemmingsson
+
+{{< avatar "mattias.webp" "Mattias Hemmingsson" >}}
+
+> Podcast host, former CISO at car rental company, certified pentester and cloud engineering enthusiast.
+
+{{< social_links twitter="LifeAndShell" linkedin="matte-hemmingsson" github="mattiashem" web="lifeandshell.com" >}}

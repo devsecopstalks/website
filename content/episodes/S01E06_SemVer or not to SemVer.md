@@ -19,9 +19,11 @@ At the end of the podcast, everyone gets to share their approach and recommendat
 
 ### Notes
 
-- Hugo web site generator https://gohugo.io/
-- SemVer specification https://semver.org/
-- Johan's twitter and linkedin https://twitter.com/randomsort https://www.linkedin.com/in...
-- Opinionated Git by Johan http://opinionatedgit.com/
+- [Hugo web site generator](https://gohugo.io)
+- [SemVer specification](https://semver.org)
+- Johan's contact:
+  - Twitter: [randomsort](https://twitter.com/randomsort)
+  - LinkedIn [Johan](https://www.linkedin.com/in/johanabildskov)
+- Opinionated Git by Johan [webiste](http://opinionatedgit.com)
 
 {{< youtube oyLBGkS5ICk >}}

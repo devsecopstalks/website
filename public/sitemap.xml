@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+  xmlns:xhtml="http://www.w3.org/1999/xhtml">
+  
+  <url>
+    <loc>http://devsecops.fm/episodes/</loc>
+    <lastmod>2020-04-06T00:00:00+00:00</lastmod>
+  </url>
+  
+  <url>
+    <loc>http://devsecops.fm/episodes/s01e06_semver-or-not-to-semver/</loc>
+    <lastmod>2020-04-06T00:00:00+00:00</lastmod>
+  </url>
+  
+  <url>
+    <loc>http://devsecops.fm/episodes/s01e05_what-are-we-working-on/</loc>
+    <lastmod>2020-04-06T00:00:00+00:00</lastmod>
+  </url>
+  
+  <url>
+    <loc>http://devsecops.fm/episodes/s01e04_docker-runtime-security/</loc>
+    <lastmod>2020-03-24T00:00:00+00:00</lastmod>
+  </url>
+  
+  <url>
+    <loc>http://devsecops.fm/episodes/s01e03_docker-secure-build/</loc>
+    <lastmod>2020-03-24T00:00:00+00:00</lastmod>
+  </url>
+  
+  <url>
+    <loc>http://devsecops.fm/episodes/s01e02_gitops/</loc>
+    <lastmod>2020-03-09T00:00:00+00:00</lastmod>
+  </url>
+  
+  <url>
+    <loc>http://devsecops.fm/about/</loc>
+    <lastmod>2020-03-01T00:00:00+00:00</lastmod>
+  </url>
+  
+  <url>
+    <loc>http://devsecops.fm/</loc>
+    <lastmod>2020-03-01T00:00:00+00:00</lastmod>
+  </url>
+  
+  <url>
+    <loc>http://devsecops.fm/episodes/s01e01_infrastructure-as-code/</loc>
+    <lastmod>2020-02-24T00:00:00+00:00</lastmod>
+  </url>
+  
+  <url>
+    <loc>http://devsecops.fm/categories/</loc>
+  </url>
+  
+  <url>
+    <loc>http://devsecops.fm/contact/</loc>
+  </url>
+  
+  <url>
+    <loc>http://devsecops.fm/search/</loc>
+  </url>
+  
+  <url>
+    <loc>http://devsecops.fm/tags/</loc>
+  </url>
+  
+</urlset>

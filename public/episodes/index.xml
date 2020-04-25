@@ -1,0 +1,181 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes" ?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Episodes on Podcast about DevSecOps</title>
+    <link>http://devsecops.fm/episodes/</link>
+    <description>Recent content in Episodes on Podcast about DevSecOps</description>
+    <generator>Hugo -- gohugo.io</generator>
+    <language>en-us</language>
+    <lastBuildDate>Mon, 06 Apr 2020 00:00:00 +0000</lastBuildDate>
+    <atom:link href="http://devsecops.fm/episodes/index.xml" rel="self" type="application/rss+xml" />
+    
+    <item>
+      <title>SemVer or not to SemVer</title>
+      <link>http://devsecops.fm/episodes/s01e06_semver-or-not-to-semver/</link>
+      <pubDate>Mon, 06 Apr 2020 00:00:00 +0000</pubDate>
+      <guid>http://devsecops.fm/episodes/s01e06_semver-or-not-to-semver/</guid>
+      <description>&lt;p&gt;This time &lt;a href=&#34;https://twitter.com/randomsort&#34;&gt;Johan Abildskov&lt;/a&gt;,
+a Senior Consultant with &lt;a href=&#34;https://www.praqma.com&#34;&gt;Praqma/Eficode&lt;/a&gt;, joins us to talk about SemVer (Semantic Versioning),
+and we finally get to hear what Julien has to say about it.
+We get to explore different options regarding versioning and how it helps humans communicate.
+At the end of the podcast, everyone gets to share their approach and recommendations for versioning things.&lt;/p&gt;
+&lt;!-- raw HTML omitted --&gt;
+&lt;div class=&#34;single_player_container&#34;&gt;
+  &lt;iframe
+    title=&#34;devsecops #5 - What are we working on&#34;
+    height=&#34;122&#34;
+    width=&#34;100%&#34;
+    style=&#34;border: none;&#34;
+    scrolling=&#34;no&#34;
+    data-name=&#34;pb-iframe-player&#34;
+    src=&#34;https://www.podbean.com/media/player/w35eg-d87a2b?from=yiiadmin&amp;download=1&amp;version=1&amp;skin=1&amp;btn-skin=107&amp;auto=0&amp;download=1&amp;pbad=1&#34;
+  &gt;&lt;/iframe&gt;
+&lt;/div&gt;
+
+&lt;h3 id=&#34;notes&#34;&gt;Notes&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;a href=&#34;https://gohugo.io&#34;&gt;Hugo web site generator&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;https://semver.org&#34;&gt;SemVer specification&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;Johan&amp;rsquo;s contact:
+&lt;ul&gt;
+&lt;li&gt;Twitter: &lt;a href=&#34;https://twitter.com/randomsort&#34;&gt;randomsort&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;LinkedIn &lt;a href=&#34;https://www.linkedin.com/in/johanabildskov&#34;&gt;Johan&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;Opinionated Git by Johan &lt;a href=&#34;http://opinionatedgit.com&#34;&gt;webiste&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;div style=&#34;position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden;&#34;&gt;
+  &lt;iframe src=&#34;https://www.youtube.com/embed/oyLBGkS5ICk&#34; style=&#34;position: absolute; top: 0; left: 0; width: 100%; height: 100%; border:0;&#34; allowfullscreen title=&#34;YouTube Video&#34;&gt;&lt;/iframe&gt;
+&lt;/div&gt;
+
+</description>
+    </item>
+    
+    <item>
+      <title>What are we working on</title>
+      <link>http://devsecops.fm/episodes/s01e05_what-are-we-working-on/</link>
+      <pubDate>Mon, 06 Apr 2020 00:00:00 +0000</pubDate>
+      <guid>http://devsecops.fm/episodes/s01e05_what-are-we-working-on/</guid>
+      <description>&lt;p&gt;We had a few potential topics for this episode but before getting started with them we decided to discuss what technological problems we were solving during the last two weeks.
+As it turns out there were quite a lot to discuss.
+Tune in for tips on auditing ssh session through a jump host,
+preventing downloads from AWS S3 even if you got read access,
+credentials in Git repository, why you should (or should not) use Kubernetes and more.&lt;/p&gt;
+&lt;!-- raw HTML omitted --&gt;
+&lt;div class=&#34;single_player_container&#34;&gt;
+  &lt;iframe
+    title=&#34;devsecops #5 - What are we working on&#34;
+    height=&#34;122&#34;
+    width=&#34;100%&#34;
+    style=&#34;border: none;&#34;
+    scrolling=&#34;no&#34;
+    data-name=&#34;pb-iframe-player&#34;
+    src=&#34;https://www.podbean.com/media/player/w35eg-d87a2b?from=yiiadmin&amp;download=1&amp;version=1&amp;skin=1&amp;btn-skin=107&amp;auto=0&amp;download=1&amp;pbad=1&#34;
+  &gt;&lt;/iframe&gt;
+&lt;/div&gt;
+
+</description>
+    </item>
+    
+    <item>
+      <title>Docker Runtime Security</title>
+      <link>http://devsecops.fm/episodes/s01e04_docker-runtime-security/</link>
+      <pubDate>Tue, 24 Mar 2020 00:00:00 +0000</pubDate>
+      <guid>http://devsecops.fm/episodes/s01e04_docker-runtime-security/</guid>
+      <description>&lt;p&gt;In this episode, Mattias is trying to convince Andrey and Julien that running docker containers in Kubernetes
+is more secure then virtual machines. How did it go? We agreed to disagree.&lt;/p&gt;
+&lt;!-- raw HTML omitted --&gt;
+&lt;div class=&#34;single_player_container&#34;&gt;
+  &lt;iframe
+    title=&#34;devsecops #4 - Docker Runtime Security&#34;
+    height=&#34;122&#34;
+    width=&#34;100%&#34;
+    style=&#34;border: none;&#34;
+    scrolling=&#34;no&#34;
+    data-name=&#34;pb-iframe-player&#34;
+    src=&#34;https://www.podbean.com/media/player/ycpvc-d7494b?from=yiiadmin&amp;download=1&amp;version=1&amp;skin=1&amp;btn-skin=107&amp;auto=0&amp;download=1&amp;pbad=1&#34;
+  &gt;&lt;/iframe&gt;
+&lt;/div&gt;
+
+</description>
+    </item>
+    
+    <item>
+      <title>Docker Secure Build</title>
+      <link>http://devsecops.fm/episodes/s01e03_docker-secure-build/</link>
+      <pubDate>Tue, 24 Mar 2020 00:00:00 +0000</pubDate>
+      <guid>http://devsecops.fm/episodes/s01e03_docker-secure-build/</guid>
+      <description>&lt;p&gt;Building docker images is not as straightforward as one would like sometimes.
+In this episode we talk about how you can build a more secure and lightweight container images, ready-made for production.&lt;/p&gt;
+&lt;!-- raw HTML omitted --&gt;
+&lt;div class=&#34;single_player_container&#34;&gt;
+  &lt;iframe
+    title=&#34;devsecops #3 - Docker securing builds&#34;
+    height=&#34;122&#34;
+    width=&#34;100%&#34;
+    style=&#34;border: none;&#34;
+    scrolling=&#34;no&#34;
+    data-name=&#34;pb-iframe-player&#34;
+    src=&#34;https://www.podbean.com/media/player/cffda-d6b1a4?from=yiiadmin&amp;download=1&amp;version=1&amp;skin=1&amp;btn-skin=107&amp;auto=0&amp;download=1&amp;pbad=1&#34;
+  &gt;&lt;/iframe&gt;
+&lt;/div&gt;
+
+</description>
+    </item>
+    
+    <item>
+      <title>GitOps</title>
+      <link>http://devsecops.fm/episodes/s01e02_gitops/</link>
+      <pubDate>Mon, 09 Mar 2020 00:00:00 +0000</pubDate>
+      <guid>http://devsecops.fm/episodes/s01e02_gitops/</guid>
+      <description>&lt;p&gt;What is gitops and how it use, Here we try to sort out he concept and how you can use it.&lt;/p&gt;
+&lt;!-- raw HTML omitted --&gt;
+&lt;div class=&#34;single_player_container&#34;&gt;
+  &lt;iframe
+    title=&#34;devsecops #2 - GitOps&#34;
+    height=&#34;122&#34;
+    width=&#34;100%&#34;
+    style=&#34;border: none;&#34;
+    scrolling=&#34;no&#34;
+    data-name=&#34;pb-iframe-player&#34;
+    src=&#34;https://www.podbean.com/media/player/6k6ub-d6b123?from=yiiadmin&amp;download=1&amp;version=1&amp;skin=1&amp;btn-skin=107&amp;auto=0&amp;download=1&amp;pbad=1&#34;
+  &gt;&lt;/iframe&gt;
+&lt;/div&gt;
+
+</description>
+    </item>
+    
+    <item>
+      <title>Infrastructure as code</title>
+      <link>http://devsecops.fm/episodes/s01e01_infrastructure-as-code/</link>
+      <pubDate>Mon, 24 Feb 2020 00:00:00 +0000</pubDate>
+      <guid>http://devsecops.fm/episodes/s01e01_infrastructure-as-code/</guid>
+      <description>&lt;p&gt;Whens should you start using infra structure as code and when not.
+What tool is there to help and hoe can you use them.
+Follow us in our first talk.&lt;/p&gt;
+&lt;!-- raw HTML omitted --&gt;
+&lt;div class=&#34;single_player_container&#34;&gt;
+  &lt;iframe
+    title=&#34;devsecops #1-2020 - Infra as code&#34;
+    height=&#34;122&#34;
+    width=&#34;100%&#34;
+    style=&#34;border: none;&#34;
+    scrolling=&#34;no&#34;
+    data-name=&#34;pb-iframe-player&#34;
+    src=&#34;https://www.podbean.com/media/player/d7x4q-d53cd6?from=yiiadmin&amp;download=1&amp;version=1&amp;skin=1&amp;btn-skin=107&amp;auto=0&amp;download=1&amp;pbad=1&#34;
+  &gt;&lt;/iframe&gt;
+&lt;/div&gt;
+
+&lt;h3 id=&#34;notes-from-pod&#34;&gt;notes from pod&lt;/h3&gt;
+&lt;p&gt;Andrey: &lt;a href=&#34;https://www.oreilly.com/library/view/infrastructure-as-code/9781491924334/ch01.html&#34;&gt;First chapter of infra as code&lt;/a&gt;&lt;/p&gt;
+&lt;p&gt;Julien: This went viral in the Kubernetes community: 
+&lt;div style=&#34;position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden;&#34;&gt;
+  &lt;iframe src=&#34;https://www.youtube.com/embed/9wvEwPLcLcA&#34; style=&#34;position: absolute; top: 0; left: 0; width: 100%; height: 100%; border:0;&#34; allowfullscreen title=&#34;YouTube Video&#34;&gt;&lt;/iframe&gt;
+&lt;/div&gt;
+&lt;/p&gt;
+</description>
+    </item>
+    
+  </channel>
+</rss>

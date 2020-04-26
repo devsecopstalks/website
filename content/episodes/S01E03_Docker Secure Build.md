@@ -1,6 +1,5 @@
 ---
 title: 'Docker Secure Build'
-season: 1
 episode: 3
 author: 'DevSecOps Talks'
 participants: ['Andrey', 'Mattias', 'Julien']

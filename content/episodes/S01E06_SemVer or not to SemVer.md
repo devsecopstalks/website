@@ -1,7 +1,6 @@
 ---
 title: 'SemVer or not to SemVer'
-season: 1
-episode: 5
+episode: 6
 author: 'DevSecOps Talks'
 participants: ['Andrey', 'Mattias', 'Julien', 'Johan']
 date: 06 Apr 2020

@@ -1,6 +1,5 @@
 ---
 title: 'Infrastructure as code'
-season: 1
 episode: 1
 author: 'DevSecOps Talks'
 participants: ['Andrey', 'Mattias', 'Julien']

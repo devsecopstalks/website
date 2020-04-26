@@ -1,6 +1,5 @@
 ---
 title: 'GitOps'
-season: 1
 episode: 2
 author: 'DevSecOps Talks'
 participants: ['Andrey', 'Mattias', 'Julien']

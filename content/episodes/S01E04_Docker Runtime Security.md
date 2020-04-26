@@ -1,6 +1,5 @@
 ---
 title: 'Docker Runtime Security'
-season: 1
 episode: 4
 author: 'DevSecOps Talks'
 participants: ['Andrey', 'Mattias', 'Julien']

@@ -1,6 +1,5 @@
 ---
 title: 'What are we working on'
-season: 1
 episode: 5
 author: 'DevSecOps Talks'
 participants: ['Andrey', 'Mattias', 'Julien']

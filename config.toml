@@ -10,6 +10,8 @@ paginate = 10.0
 paginatePath = "page"
 rssLimit = 20.0
 
+disqusShortname = "devsecops-1"
+
 [author]
 name = "DevSecOps Talks"
 url = "http://devsecops.fm/about"

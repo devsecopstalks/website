@@ -1,0 +1,18 @@
+{{ define "main" -}}
+<main class="main layout__main">
+    <article class="{{ with .Section }}section-{{ . | urlize }} {{ end }}single-view">
+        <header>
+            <h1 class="title {{ if $.Param "submitted" | default false }}title-submitted{{ end }}">
+                {{ .Title }} {{ if $.Param "episode" | default false }} - ep.#{{ $.Param "episode" }}{{ end }}</h1>
+            {{ if $.Param "submitted" | default false }}{{ partial "submitted.html" . }}{{ end -}}
+            {{ if .Params.tags }}{{ partial "tags.html" . }}{{ end -}}
+        </header>
+        <div class="content">
+            {{ .Content }}
+
+            {{ if ne .Lastmod .Date }}{{ partial "dates.html" . }}{{ end -}}
+        </div>
+    </article>
+    {{ if $.Param "episode" | default false }} {{ partial "disqus.html" . }}{{ end }}
+</main>
+{{ end }}

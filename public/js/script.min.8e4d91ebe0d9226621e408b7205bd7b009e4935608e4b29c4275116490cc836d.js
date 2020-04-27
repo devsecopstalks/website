@@ -1,1 +1,0 @@
-(function($){'use strict';$('html').removeClass('nojs').addClass('js');})(u);

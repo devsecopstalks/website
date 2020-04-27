@@ -23,6 +23,6 @@ At the end of the podcast, everyone gets to share their approach and recommendat
 - Johan's contact:
   - Twitter: [randomsort](https://twitter.com/randomsort)
   - LinkedIn [Johan](https://www.linkedin.com/in/johanabildskov)
-- Opinionated Git by Johan [webiste](http://opinionatedgit.com)
+- Opinionated Git by Johan [webiste](https://opinionatedgit.com)
 
 {{< youtube oyLBGkS5ICk >}}

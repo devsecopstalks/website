@@ -1,4 +1,4 @@
-baseURL = "http://devsecops.fm/"
+baseURL = "https://devsecops.fm/"
 languageCode = "en-us"
 title = "Podcast about DevSecOps"
 theme = "zen"
@@ -14,7 +14,7 @@ disqusShortname = "devsecops-1"
 
 [author]
 name = "DevSecOps Talks"
-url = "http://devsecops.fm/about"
+url = "https://devsecops.fm/about"
 avatar = "path/to/some-image.jpg"
 
 [outputFormats]

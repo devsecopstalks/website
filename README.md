@@ -1,5 +1,17 @@
 # DevSecOps Talks podcast
 
+<div align="center">
+    <br/>
+    <br/>
+    <br/>
+	<img src="static/images/logo.png" alt="DevSecOps Talks Logo">
+    <br/>
+    <br/>
+    <br/>
+    <br/>
+    <br/>
+</div>
+
 ## We talk like no one is listening except that we record it
 
 This is the show by and for DevSecOps practitioners who are trying to survive information overload, get through marketing nonsense, do right technology bets, help their organizations to deliver value and last but not the least to have some fun. Tune in for talks about technology, ways of working and news from DevSecOps.

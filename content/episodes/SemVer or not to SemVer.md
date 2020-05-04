@@ -14,7 +14,7 @@ At the end of the podcast, everyone gets to share their approach and recommendat
 
 <!-- Player -->
 
-{{< podbean w35eg-d87a2b "devsecops #5 - What are we working on" >}}
+{{< podbean 6bbm3-db5d30 "devsecops #6 - SemVer or not to SemVer" >}}
 
 ### Notes
 

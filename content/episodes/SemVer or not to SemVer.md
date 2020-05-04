@@ -3,7 +3,7 @@ title: 'SemVer or not to SemVer'
 episode: 6
 author: 'DevSecOps Talks'
 participants: ['Andrey', 'Mattias', 'Julien', 'Johan']
-date: 06 Apr 2020
+date: 20 Apr 2020
 ---
 
 This time [Johan Abildskov](https://twitter.com/randomsort),

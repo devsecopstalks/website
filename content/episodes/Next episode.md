@@ -1,6 +1,6 @@
 ---
 title: "Next Episode"
-date: 2020-05-04T20:52:10+01:00
+date: 2020-07-04T20:52:10+01:00
 lastmod: 2020-05-04T20:52:10+01:00
 episode: X
 author: 'DevSecOps Talks'

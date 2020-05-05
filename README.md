@@ -73,4 +73,4 @@ hugo new episodes/"TITLE OF SHOW.md"
 * Everyone to review description for grammar mistakes, accuracy etc. Add show notes
 * Make sure that description on Podbean matches description on the website after review and edits
 * Share podcast on Podbean
-* Hit socail media
+* Hit social media

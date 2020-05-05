@@ -53,5 +53,24 @@ open localhost:1313
 ### How to add new episode
 
 ```shell
-hugo new episodes/TITLE_OF_SHOW
+hugo new episodes/"TITLE OF SHOW.md"
 ```
+
+## Podcast release process
+
+### Preparations
+* Discuss the topic for the podcast in [Next Episode thread](https://devsecops.fm/episodes/next-episode/)
+* Prepare agenda
+* Setup Zencast/Zoom links and send them out in the intvitation to participants
+
+### Postproduction
+* Collect all mp3 files (usually done automatically via Zencastr) and store them on [Google drive](https://drive.google.com/drive/u/0/folders/1Fg3pSPTydOijaT9ojtvZu6cOf9BSopCx)
+* Process them into one, add intro and closing, align volume, cut what shouldn't be there (Mattias knows how, need to document more)
+* Upload file to Podbean (Login details are in Bitwarden)
+* Add new episode on Podbean as draft, do not publish at the moment
+* Update website - add new episode, write description, add show notes, link podcast from Podbean
+* Post a link to Slack
+* Everyone to review description for grammar mistakes, accuracy etc. Add show notes
+* Make sure that description on Podbean matches description on the website after review and edits
+* Share podcast on Podbean
+* Hit social media

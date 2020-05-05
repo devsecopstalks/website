@@ -12,6 +12,8 @@ and we finally get to hear what Julien has to say about it.
 We get to explore different options regarding versioning and how it helps humans communicate.
 At the end of the podcast, everyone gets to share their approach and recommendations for versioning things.
 
+<!--more-->
+
 <!-- Player -->
 
 {{< podbean 6bbm3-db5d30 "devsecops #6 - SemVer or not to SemVer" >}}

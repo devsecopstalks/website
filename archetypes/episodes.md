@@ -9,6 +9,8 @@ participants: ['Andrey', 'Mattias', 'Julien']
 
 INSERT TEXT HERE
 
+<!--more-->
+
 <!-- Player -->
 
 {{< podbean PODBEAN_ID "devsecops #_NUM - TITLE" >}}

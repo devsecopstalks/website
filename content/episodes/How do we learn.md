@@ -9,9 +9,13 @@ participants: ['Andrey', 'Mattias', 'Julien']
 
 In this episode, Mattias, Julien, and Andrey share tips and tricks on how to stay on top of what is going on in the industry, resources they use for continuous learning
 
+<!--more-->
+
+
 <!-- Player -->
 
 {{< podbean 3hv89-db5d56 "devsecops #7 - How do we learn" >}}
+
 
 ## Notes
 

@@ -9,13 +9,13 @@ participants: ['Andrey', 'Julien']
 
 Andrey tells us the story of how DevOps came into existence and took over the market.
 We discuss the marketing around it, its relationship with DevSecOps.
-We tried to shed a light on what is marketing stragy versus implementing DevOps in an organization.
+We tried to shed a light on what is marketing strategy versus implementing DevOps in an organization.
 We also compared DevOps to SRE (Site Reliability Engineering).
 <!--more-->
 
 <!-- Player -->
 
-{{< podbean PODBEAN_ID "devsecops #_NUM - TITLE" >}}
+{{< podbean 7i4k8-dd9d32 "devsecops #8 - DevOps What" >}}
 
 ## Notes
 

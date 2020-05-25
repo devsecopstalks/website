@@ -13,7 +13,7 @@ INSERT TEXT HERE
 
 <!-- Player -->
 
-{{< podbean PODBEAN_ID "devsecops #_NUM - TITLE" >}}
+{{< podbean PODBEAN_ID "DevSecOps Talks #_NUM - TITLE" >}}
 
 ## Notes
 

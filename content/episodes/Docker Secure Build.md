@@ -11,4 +11,4 @@ In this episode we talk about how you can build a more secure and lightweight co
 
 <!-- Player -->
 
-{{< podbean cffda-d6b1a4 "devsecops #3 - Docker securing builds" >}}
+{{< podbean cffda-d6b1a4 "DevSecOps Talks #3 - Docker securing builds" >}}

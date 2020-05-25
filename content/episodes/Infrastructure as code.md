@@ -12,7 +12,7 @@ Follow us in our first talk.
 
 <!-- Player -->
 
-{{< podbean d7x4q-d53cd6 "devsecops #1-2020 - Infra as code" >}}
+{{< podbean d7x4q-d53cd6 "DevSecOps Talks #1-2020 - Infra as code" >}}
 
 ### notes from pod
 

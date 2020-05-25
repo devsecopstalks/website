@@ -10,4 +10,4 @@ What is gitops and how it use, Here we try to sort out he concept and how you ca
 
 <!-- Player -->
 
-{{< podbean 6k6ub-d6b123 "devsecops #2 - GitOps" >}}
+{{< podbean 6k6ub-d6b123 "DevSecOps Talks #2 - GitOps" >}}

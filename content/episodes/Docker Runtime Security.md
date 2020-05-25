@@ -11,4 +11,4 @@ is more secure then virtual machines. How did it go? We agreed to disagree.
 
 <!-- Player -->
 
-{{< podbean ycpvc-d7494b "devsecops #4 - Docker Runtime Security" >}}
+{{< podbean ycpvc-d7494b "DevSecOps Talks #4 - Docker Runtime Security" >}}

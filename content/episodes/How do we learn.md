@@ -14,7 +14,7 @@ In this episode, Mattias, Julien, and Andrey share tips and tricks on how to sta
 
 <!-- Player -->
 
-{{< podbean 3hv89-db5d56 "devsecops #7 - How do we learn" >}}
+{{< podbean 3hv89-db5d56 "DevSecOps Talks #7 - How do we learn" >}}
 
 
 ## Notes

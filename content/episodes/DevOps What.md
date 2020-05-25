@@ -15,7 +15,7 @@ We also compared DevOps to SRE (Site Reliability Engineering).
 
 <!-- Player -->
 
-{{< podbean 7i4k8-dd9d32 "devsecops #8 - DevOps What" >}}
+{{< podbean 7i4k8-dd9d32 "DevSecOps Talks #8 - DevOps What" >}}
 
 ## Notes
 

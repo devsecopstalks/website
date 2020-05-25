@@ -28,3 +28,4 @@ We also compared DevOps to SRE (Site Reliability Engineering).
 - [Interview(video): Patrick Debois on the State of DevOps](https://www.infoq.com/interviews/debois-devops/)
 - [State of DevOps 2019 by DORA](https://cloud.google.com/devops/state-of-devops/)
 - [What is SRE?](https://landing.google.com/sre/)
+- [What is Enabling Team (based on Team Toplogies)](https://teamtopologies.com/key-concepts)

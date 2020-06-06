@@ -2,7 +2,7 @@
 title: "Terraform in CI"
 date: 2020-06-05T08:24:41+02:00
 lastmod: 2020-06-05T08:24:41+02:00
-episode: 1
+episode: 9
 author: 'DevSecOps Talks'
 participants: ['Andrey', 'Mattias', 'Julien']
 ---

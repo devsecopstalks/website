@@ -7,9 +7,10 @@ author: 'DevSecOps Talks'
 participants: ['Andrey', 'Mattias', 'Julien']
 ---
 
-How do you start to implement a CI pipeline when dealing with infrastructure as code ?
-What are the security concerns when the credentials to the whole kingdom are used in an automated process ?
-In this episode, we discuss the various security and feasibility aspects of using terraform in a CI pipeline.
+How do you start to implement a CI pipeline when dealing with infrastructure as code implemented via Terraform?
+What are the security concerns when the credentials to the whole kingdom are used in an automated process?
+In this episode, we discuss the various security and feasibility aspects of using Terraform in a CI pipeline.
+
 <!--more-->
 We start the episode by catching up with what we've been working on.
 Feel free to skip to 11:52 if you want to go directly to the topic.
@@ -22,4 +23,7 @@ The code for the infrastructure is treated like an application that is versioned
 
 ## Notes
 
-- [Hugo web site generator](https://gohugo.io)
+- [Atlantis - Terraform Pull Request Automation ](https://www.runatlantis.io/)
+- [HashiCorp Announces Free Tier for Terraform SaaS](https://www.hashicorp.com/resources/hashicorp-announces-terraform-saas-free-tier/)
+- [Terraform Backend Types](https://www.terraform.io/docs/backends/types/index.html)
+- [Handling Secrets in Terraform state](https://www.terraform.io/docs/extend/best-practices/sensitive-state.html)

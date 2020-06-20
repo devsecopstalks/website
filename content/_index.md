@@ -13,7 +13,9 @@ We don't intend to sell anything, now or later.
 This show is not sponsored by any technology vendor and we are trying to be as unbiased as possible.
 We talk like no one is listening! For good or bad 😉.
 
-Want to join discussion? Discuss or suggest topics for upcoming episodes, chat with podcast guests, hosts and fans at the podcast's [Gitter channel](https://gitter.im/devsecopstalks/community)
+### Want to join discussion? 
+
+Discuss or suggest topics for upcoming episodes, chat with podcast guests, hosts and fans at the podcast's [Gitter channel](https://gitter.im/devsecopstalks/community)
 
 ### What is DevSecOps
 

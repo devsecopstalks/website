@@ -28,3 +28,12 @@ date: '01 Mar 2020'
 > Podcast host, former CISO at car rental company, certified pentester and cloud engineering enthusiast.
 
 {{< social_links twitter="LifeAndShell" linkedin="matte-hemmingsson" github="mattiashem" web="lifeandshell.com" >}}
+
+### License
+
+DevSecOps Talks podcast is released under a Creative Commons Attribution Non-Commercial No-Derivatives 4.0 International license.
+
+We encourage you to distribute any episodes freely as long as you attribute them to the stated above authors and give a link to https://devsecops.fm.
+You may not distribute our podcast for monetary gain of any kind. Nor may you create derivatives of it written consent from authors stated above.
+
+For more information and the full text of the license visit the Creative Commons site: https://creativecommons.org/licenses/by-nc-nd/4.0/

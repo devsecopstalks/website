@@ -7,8 +7,8 @@ author: 'DevSecOps Talks'
 participants: ['Andrey', 'Mattias', 'Julien']
 ---
 
-This time we are discussing white paper by Summit Route - AWS Security Maturity Roadmap 2020.
-Tune in to learn more about the white paper and recomendations that we pile up on top of it.
+This time we are discussing the white paper by Summit Route - AWS Security Maturity Roadmap 2020.
+Tune in to learn more about the white paper and recommendations that we pile up on top of it.
 
 <!--more-->
 

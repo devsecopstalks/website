@@ -11,7 +11,7 @@ date: '01 Mar 2020'
 
 > Independent consultant, public speaker, Google developer expert (GDE) for GCP, certified Kubernetes CKA/CKAD, university guest lecturer.
 
-{{< social_links twitter="julienBisconti" linkedin="julienbisconti" github="veggiemonk" web="average.joe.dev" >}}
+{{< social_links twitter="julienBisconti" linkedin="julienbisconti" github="veggiemonk" web="bisconti.cloud" >}}
 
 ### Andrey Devyatkin
 

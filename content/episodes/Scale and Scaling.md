@@ -7,7 +7,7 @@ author: 'DevSecOps Talks'
 participants: ['Andrey', 'Julien']
 ---
 
-Julian and Andrey got together to define the scale and ways to automate the scaling of your infrastructure in response to changes in load patterns.
+Julien and Andrey got together to define the scale and ways to automate the scaling of your infrastructure in response to changes in load patterns.
 What are the prerequisites implementing scaling? What is cooling down, warm up, horizontal and vertical scaling, scale-up, and scale in? What are the metrics that could be useful for making scaling decisions?
 And last but not least, the very unexpected spin that Julien gives to the conversation.
 

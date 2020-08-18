@@ -1,5 +1,5 @@
 ---
-title: "Setting up HashiConf Vault"
+title: "All you need to know about setting up HashiConf Vault"
 date: 2020-08-17T10:13:03+02:00
 lastmod: 2020-08-17T10:13:03+02:00
 episode: 13
@@ -14,7 +14,7 @@ We cover a lot of ground - from basic Vault concepts to setting it up and harden
 
 <!-- Player -->
 
-{{< podbean byvek-e76ab5 "DevSecOps Talks #13 - Setting up HashiConf Vault" >}}
+{{< podbean byvek-e76ab5 "DevSecOps Talks #13 - All you need to know about setting up HashiConf Vault" >}}
 
 ## Notes
 

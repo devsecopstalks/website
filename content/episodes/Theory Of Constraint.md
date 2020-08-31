@@ -7,7 +7,8 @@ author: 'DevSecOps Talks'
 participants: ['Andrey', 'Mattias', 'Julien', 'Henrik']
 ---
 
-This time, we are joined by Henrik to his unique perspective on applying the theory of constraint to IT transformation and how it applies in the world of Cloud Native.
+This time, we are joined by Henrik Høegh who shares his unique perspective on applying the theory of constraint to IT transformation as well as how it applies in the world of Cloud Native.
+We go back to the origin of DevOps, discussing the various problems companies are facing when transforming their organizations and adopting cultural changes.
 
 <!--more-->
 

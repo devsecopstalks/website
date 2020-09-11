@@ -59,11 +59,13 @@ hugo new episodes/"TITLE OF SHOW.md"
 ## Podcast release process
 
 ### Preparations
+
 * Discuss the topic for the podcast in [Next Episode thread](https://devsecops.fm/episodes/next-episode/)
 * Prepare agenda
 * Setup Zencast/Zoom links and send them out in the intvitation to participants
 
 ### Postproduction
+
 * Collect all mp3 files (usually done automatically via Zencastr) and store them on [Google drive](https://drive.google.com/drive/u/0/folders/1Fg3pSPTydOijaT9ojtvZu6cOf9BSopCx)
 * Process them into one, add intro and closing, align volume, cut what shouldn't be there (Mattias knows how, need to document more)
 * Upload file to Podbean (Login details are in Bitwarden)

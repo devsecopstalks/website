@@ -24,4 +24,12 @@ Using multistage build, a container to build another container
 
 ## Notes
 
-- [Hugo web site generator](https://gohugo.io)
+- [Docker BuildKit](https://github.com/moby/buildkit/blob/master/frontend/dockerfile/docs/experimental.md)
+- [img](https://github.com/genuinetools/img)
+- [kaniko](https://github.com/GoogleContainerTools/kaniko)
+- [buildah](https://github.com/containers/buildah)
+- [Using Secrets in build](https://docs.docker.com/develop/develop-images/build_enhancements/#new-docker-build-secret-information)
+- [Docker Slim](https://github.com/docker-slim/docker-slim)
+- [distroless](https://github.com/GoogleContainerTools/distroless)
+- [Container registry to self-host](https://github.com/docker/distribution)
+- [Awesome Docker](https://awesome-docker.netlify.app/)

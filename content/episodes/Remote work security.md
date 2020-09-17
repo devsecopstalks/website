@@ -7,15 +7,15 @@ author: 'DevSecOps Talks'
 participants: ['Mattias', 'Julien']
 ---
 
-Let's talk about security in the era of remote work. Most of us have experience a flaky VPN connection.
-What are the alternatives ? SSH certificates ? Yubikey ?
+Let's talk about security in the era of remote work. Most of us have experienced a flaky VPN connection.
+What are the alternatives? SSH certificates? Yubikey?
 We discussed various topics around security inside a cluster and outside.
 
 <!--more-->
 
 <!-- Player -->
 
-{{< podbean PODBEAN_ID "DevSecOps Talks #_NUM - TITLE" >}}
+{{< podbean yyb4u-ebec47 "DevSecOps Talks #15 - Remote Work Security" >}}
 
 ## Notes
 

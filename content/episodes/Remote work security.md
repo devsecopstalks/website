@@ -1,7 +1,7 @@
 ---
 title: "Remote Work Security"
-date: 2020-08-12T13:18:21+02:00
-lastmod: 2020-08-12T13:18:21+02:00
+date: 2020-08-31T13:18:21+02:00
+lastmod: 2020-08-31T13:18:21+02:00
 episode: 15
 author: 'DevSecOps Talks'
 participants: ['Mattias', 'Julien']

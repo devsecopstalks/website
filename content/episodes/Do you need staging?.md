@@ -1,5 +1,5 @@
 ---
-title: "Do you need staging?"
+title: "do you need a staging environment?"
 date: 2020-09-26T12:33:07+01:00
 lastmod: 2020-09-26T12:33:07+01:00
 episode: 16

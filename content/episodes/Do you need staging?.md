@@ -1,7 +1,7 @@
 ---
-title: "do you need a staging environment?"
-date: 2020-09-26T12:33:07+01:00
-lastmod: 2020-09-26T12:33:07+01:00
+title: "Do you need a staging environment?"
+date: 2020-09-29T12:33:07+01:00
+lastmod: 2020-09-29T12:33:07+01:00
 episode: 16
 author: 'DevSecOps Talks'
 participants: ['Andrey', 'Mattias', 'Julien']

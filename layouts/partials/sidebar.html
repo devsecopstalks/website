@@ -2,6 +2,23 @@
 {{ $currentID := "" -}}
 {{ with .File }}{{ $currentID = .UniqueID }}{{ end -}}
 <aside class="sidebar layout__second-sidebar">
+  <div class="badges">
+    {{ if .Site.Params.Podcast.apple}}
+      <a href="{{.Site.Params.Podcast.apple}}">
+        <img style="margin: 0 2rem;max-width: 59%;border-radius: 10px;border: 1px solid lightgray;" src="/images/badge-applepodcast-white.png" alt="badge apple podcast">
+      </a>
+    {{ end -}}
+    {{ if .Site.Params.Podcast.spotify}}
+    <a href="{{.Site.Params.Podcast.google}}">
+      <img style="padding: 0 2rem; max-width:85%" src="/images/badge-googlepodcast.png" alt="badge apple podcast">
+    </a>
+    {{ end -}}
+    {{ if .Site.Params.Podcast.spotify}}
+    <a href="{{.Site.Params.Podcast.spotify}}">
+      <img style="padding: 0 2rem;" src="/images/badge-spotify-white.svg" alt="badge apple podcast">
+    </a>
+    {{ end -}}
+  </div>
   {{ range .Site.Sections -}}
   <section>
     <h4 class="menu"><a href="{{ .RelPermalink }}" {{ if eq $currentSection .Section }} class="active"

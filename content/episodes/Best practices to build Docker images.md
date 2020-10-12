@@ -31,5 +31,6 @@ Using multistage build, a container to build another container
 - [Using Secrets in build](https://docs.docker.com/develop/develop-images/build_enhancements/#new-docker-build-secret-information)
 - [Docker Slim](https://github.com/docker-slim/docker-slim)
 - [distroless](https://github.com/GoogleContainerTools/distroless)
+- [Docker resource comsumption](https://www.docker.com/pricing/resource-consumption-updates)
 - [Container registry to self-host](https://github.com/docker/distribution)
 - [Awesome Docker](https://awesome-docker.netlify.app/)

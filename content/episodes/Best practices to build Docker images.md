@@ -1,26 +1,35 @@
 ---
-title: "Best Practices to Build Docker Images"
+title: "Best Practices for Building Docker Images"
 date: 2020-10-12T13:18:01+02:00
-lastmod: 2020-09-11T13:18:01+02:00
+lastmod: 2020-10-12T13:18:01+02:00
 episode: 17
 author: 'DevSecOps Talks'
 participants: ['Andrey', 'Mattias', 'Julien']
 ---
 
-Focus on the building containers.
-In CI you need to maintain a separate docker engine. 
-Passing secret, inspect to see if they still show up in the layers.
-Keeping the images updated
-Scanning for vulnerabilities
-Caching - Have the build step order right
-Using multistage build, a container to build another container
+This is the first episode in the new format - 30 minutes short and crisp episodes, i.e., less water and side discussions, focusing on the topic,  duration under (well, almost under) 30 minutes. We hope you like it!
 
+The topic of this episode is building docker images - automation, security, best practices.
+
+In this episode, we discuss:
+Saving money with T3a family
+Building Docker images locally and in CI
+Setting up deamonless Docker builds for CI and k8s
+Using multistage builds to keep your images nice and clean as well as encapsulate the build environment and make it portable
+Passing secrets to Docker build and inspecting image layers for secrets (ssh-agent and many more)
+Keeping Docker images updated with dependencies and updates
+Scanning Docker images for vulnerabilities
+Docker image layers caching - doing it right
+DockerHub is to delete old images stored for free, and GitHub is ready to host them for you
+Docker image naming so you can find all you need to debug quickly
+
+In some of the information overlaps with episode #3 but greatly extends information provided before https://devsecops.fm/episodes/docker-secure-build/
 
 <!--more-->
 
 <!-- Player -->
 
-{{< podbean PODBEAN_ID "DevSecOps Talks #_NUM - TITLE" >}}
+{{< podbean w79in-ef1a02 "DevSecOps Talks #17 - Best Practices for Building Docker Images" >}}
 
 ## Notes
 

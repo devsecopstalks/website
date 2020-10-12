@@ -1,6 +1,6 @@
 ---
 title: "Best Practices to Build Docker Images"
-date: 2020-09-11T13:18:01+02:00
+date: 2020-10-12T13:18:01+02:00
 lastmod: 2020-09-11T13:18:01+02:00
 episode: 17
 author: 'DevSecOps Talks'

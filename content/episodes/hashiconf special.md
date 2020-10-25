@@ -1,5 +1,5 @@
 ---
-title: "Hashiconf Special"
+title: "HashiConf Special"
 date: 2020-10-26T13:07:45+02:00
 lastmod: 2020-10-26T13:07:45+02:00
 episode: 18

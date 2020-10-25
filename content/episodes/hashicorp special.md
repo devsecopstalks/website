@@ -25,3 +25,4 @@ So here it is - HashiConf special: all you need to know about everything that Ha
 - [Zero Trust Solution from CloudFlare](https://blog.cloudflare.com/introducing-cloudflare-one/)
 - [Introduction to HashiCorp Waypoint with Armon Dadgar](https://www.youtube.com/watch?v=JL0Qeq4A6So)
 - [Introduction to HashiCorp Boundary with Armon Dadgar](https://www.youtube.com/watch?v=tUMe7EsXYBQ)
+- [TGI Kubernetes 137: Waypoint](https://youtu.be/YkOOCyK6Yak)

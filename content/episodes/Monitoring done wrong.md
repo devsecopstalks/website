@@ -1,24 +1,22 @@
----
-title: "Monitoring Done Wrong"
-date: 2020-10-07T11:15:59Z
-episode: 19
-author: 'DevSecOps Talks'
-participants: ['Andrey', 'Mattias', 'Julien']
----
+---	 
+ title: "Monitoring Done Wrong or Dreaming For A Better Monitoring"	 
+ date: 2020-12-07T11:15:59Z	 
+ episode: 20
+ author: 'DevSecOps Talks'
+ participants: ['Andrey', 'Mattias', 'Julien']	 
+ ---	 
+  
+Andrey wants monitoring to be more magical, or does he want a wrong thing? What are the sane defaults? And why do we have to set up boilerplate monitoring again and again?
+  
+ Mattias shares what he does for monitoring security events.
+  
+ Julien explains why using logs to debug in a microservices architecture is costly and inefficient. 
+  
+ <!--more-->	 
 
+ <!-- Player -->	 
+ {{< podbean s2m56-f44df9 "DevSecOps Talks #20 - Monitoring Done Wrong or Dreaming For A Better Monitoring" >}}	 
+  
 
-Why isn't sane defaults for all applications and why is it so time consuming ? Andrey is asking.
-Mattias is telling a short history of monitoring.
-Andrey will continues with his wishlist of the monitoring dream, such as, anomalies detection.
-Julien explains why using logs to debug in a microservices architecture is costly and inefficient.
-
-
-<!--more-->
-
-<!-- Player -->
-
-{{< podbean PODBEAN_ID "DevSecOps Talks #_NUM - TITLE" >}}
-
-## Notes
-
-- [Hugo web site generator](https://gohugo.io)
+ ## Notes	 
+[Wazuh](https://wazuh.com/)

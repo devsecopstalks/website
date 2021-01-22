@@ -11,7 +11,7 @@ It's been almost a year since we started the podcast, but we never took time to 
  <!--more-->
 
  <!-- Player -->
- {{< podbean xxx "DevSecOps Talks #XX - XXXX" >}}
+ {{< podbean 8sjgr-f84b81 "DevSecOps Talks #22 - Who are Mattias, Julien and Andrey" >}}
 
 ## Notes
 

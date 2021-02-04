@@ -9,6 +9,11 @@ participants: ['Andrey', 'Mattias', 'Julien']
 
 
 
+Kops vs EKS
+CNI
+Ingress
+RBAC and IAM
+Pulumi cross language library for EKS
 <!--more-->
 
 <!-- Player -->
@@ -17,4 +22,6 @@ participants: ['Andrey', 'Mattias', 'Julien']
 
 ## Notes
 
-- [Hugo web site generator](https://gohugo.io)
+- [Parse AWS CloudTrail events and send alerts to Slack for events that match pre-configured rules](https://github.com/fivexl/terraform-aws-cloudtrail-to-slack)
+- [An easy way to always have a fresh Spot Instance price](https://github.com/fivexl/terraform-aws-ec2-spot-price)
+- [Bringing ebpf and cilium to GKE](https://cloud.google.com/blog/products/containers-kubernetes/bringing-ebpf-and-cilium-to-google-kubernetes-engine)

@@ -9,16 +9,12 @@ participants: ['Andrey', 'Mattias', 'Julien', 'Jacob', 'Paul']
 
 This time we are joined by [Paul Stack](https://twitter.com/stack72) (Pulumi developer, former Terraform developer) and podcast friend [Jacob Lärfors](https://twitter.com/jlarfors) to talk about
 
-- what is Pulumi is?
-
-- understand the difference between Pulumi vs. Terraform (and if we should compare them at all)
-
+- What is Pulumi?
+- What and who is it for?
+- The difference between Pulumi and Terraform (and if we should compare them at all)
 - What is hard about Pulumi?
-
 - What people ask the most? What are the common confusions?
-
 - Cross-language infra libraries? How is it even possible?!
-
 - Is there a possibility of a supply chain attack via Pulumi library?
 
 <!--more-->

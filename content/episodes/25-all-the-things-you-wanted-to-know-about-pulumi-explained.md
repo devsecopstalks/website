@@ -2,7 +2,7 @@
 title: "All the Things You Wanted to Know About Pulumi.Explained"
 date: 2021-03-11T22:21:20Z
 lastmod: 2021-03-11T22:21:20Z
-episode: 1
+episode: 25
 author: 'DevSecOps Talks'
 participants: ['Andrey', 'Mattias', 'Julien', 'Jacob', 'Paul']
 ---

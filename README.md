@@ -77,3 +77,7 @@ hugo new episodes/"TITLE OF SHOW.md"
 * Share podcast on Podbean
 * Visit podcast episode webpage and subscribe for Disqus updates
 * Hit social media
+
+## Planning
+
+The planning and backlog is in the kanban board: https://github.com/orgs/devsecopstalks/projects/1/views/4

@@ -17,4 +17,5 @@ INSERT TEXT HERE
 
 ## Notes
 
-- [Hugo web site generator](https://gohugo.io)
+- [aws-outages script](https://github.com/gosuri/aws-outages)
+- [log4jmemes](https://log4jmemes.com/)

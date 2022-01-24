@@ -1,10 +1,10 @@
 ---
 title: "Platform teams with Henrik"
-date: 2022-01-07T11:08:36+01:00
-lastmod: 2022-01-07T11:08:36+01:00
+date: 2022-01-24T11:08:36+01:00
+lastmod: 2022-01-24T11:08:36+01:00
 episode: 37
 author: 'DevSecOps Talks'
-participants: ['Andrey', 'Mattias', 'Julien']
+participants: ['Andrey', 'Mattias', 'Julien', 'Henrik']
 ---
 
 Henrik Hoegh is back to talk about his experiences working in the platform team at his new job, but before that, we are getting through the following topics:

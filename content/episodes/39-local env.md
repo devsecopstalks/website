@@ -13,7 +13,7 @@ Andrey feels frustrated that he has to develop a way to configure environments f
 
 <!-- Player -->
 
-{{< podbean hzuhc-1189d16-pb "DevSecOps Talks #39 - Setting up tools and environments" >}}
+{{< podbean 39sn6-1198339-pb "DevSecOps Talks #39 - Setting up tools and environments" >}}
 
 ## Notes
 

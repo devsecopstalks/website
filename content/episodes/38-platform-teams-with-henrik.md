@@ -2,7 +2,7 @@
 title: "Platform teams with Henrik"
 date: 2022-01-24T11:08:36+01:00
 lastmod: 2022-01-24T11:08:36+01:00
-episode: 37
+episode: 38
 author: 'DevSecOps Talks'
 participants: ['Andrey', 'Mattias', 'Julien', 'Henrik']
 ---

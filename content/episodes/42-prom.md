@@ -13,7 +13,7 @@ If you follow CloudNative hype wave, you might feel that Prometheus is the must-
 
 <!-- Player -->
 
-{{< podbean pb-y87mq-122d839 "DEVSECOPS Talks #42 - Prometheus - a practitioner take" >}}
+{{< podbean y87mq-122d839-pb "DEVSECOPS Talks #42 - Prometheus - a practitioner take" >}}
 
 ## Notes
 * [Semyon Novikov](https://www.linkedin.com/in/semyon-novikov/)

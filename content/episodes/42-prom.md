@@ -16,6 +16,7 @@ If you follow CloudNative hype wave, you might feel that Prometheus is the must-
 {{< podbean pb-y87mq-122d839 "DEVSECOPS Talks #42 - Prometheus - a practitioner take" >}}
 
 ## Notes
+* [Semyon Novikov](https://www.linkedin.com/in/semyon-novikov/)
 * [Prometheus: Up & Running: Infrastructure and Application Performance Monitoring by Brian Brazil](https://www.amazon.com/Prometheus-Infrastructure-Application-Performance-Monitoring/dp/1492034142)
 * [Mimir by Grafana Labs](https://grafana.com/oss/mimir/)
 * [Prometheus OOM GitHub issue](https://github.com/prometheus/prometheus/issues/3780)

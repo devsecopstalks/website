@@ -17,7 +17,11 @@ date: '01 Mar 2020'
 
 {{< avatar "andrey.webp" "Andrey Devyatkin" >}}
 
-> Independent consultant, public speaker, remote work advocate, CI/CD expert, AWS architect (6x certifications), trainer (Git, Jenkins, Docker, CI/CD, Terraform, Vault), meetups organizer (Cloud Native Las Palmas de Gran Canaria, HashiCorp User Group Las Palmas de Gran Canaria).
+> Andrey is an accomplished Principal Cloud Engineering Consultant who specializes in creating cloud-native application delivery platforms for startups. These platforms facilitate quick iteration, experimentation, and data-driven decision-making, which are essential for the fast-paced, innovative environments of startup companies.
+
+>As a co-founder of FivexL, a Cloud Engineering Specialist firm (https://fivexl.io), Andrey and his team provide expert guidance and services in cloud infrastructure, helping businesses achieve their objectives through cutting-edge technology solutions.
+
+>Beyond his professional work, Andrey is actively involved in the tech community as an organizer of meetups and a public speaker, sharing his knowledge and experience with others. He is passionate about fostering collaboration and learning among professionals in the field.
 
 {{< social_links twitter="Andrey9kin" linkedin="andreydevyatkin" github="Andrey9kin" web="andreydevyatkin.com" >}}
 

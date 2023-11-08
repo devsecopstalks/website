@@ -1,5 +1,5 @@
 ---
-title: "Unpacking System Initiative with Paul Stack"
+title: "Backstage and Internal Development Platforms (IDP)"
 date: 2023-11-08T11:08:36+01:00
 lastmod: 2023-11-08T11:08:36+01:00
 episode: 56

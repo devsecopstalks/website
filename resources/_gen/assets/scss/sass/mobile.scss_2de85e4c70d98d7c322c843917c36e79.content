@@ -91,9 +91,10 @@
     .mobile-nav__navbar a {
       display: inline-block;
       padding-block: .5rem; }
-  .mobile-nav__cover, .mobile-nav__toggle, .mobile-nav__hamburger rect, .mobile-nav__sheet {
-    transition: all 130ms ease-in; }
-    .js-nav-open .mobile-nav__cover, .js-nav-open .mobile-nav__toggle, .js-nav-open .mobile-nav__hamburger rect, .js-nav-open .mobile-nav__sheet {
-      transition: all 330ms ease-out; }
+  @media (prefers-reduced-motion: no-preference) {
+    .mobile-nav__cover, .mobile-nav__toggle, .mobile-nav__hamburger rect, .mobile-nav__sheet {
+      transition: all 130ms ease-in; }
+      .js-nav-open .mobile-nav__cover, .js-nav-open .mobile-nav__toggle, .js-nav-open .mobile-nav__hamburger rect, .js-nav-open .mobile-nav__sheet {
+        transition: all 330ms ease-out; } }
 
 /*# sourceMappingURL=mobile.css.map */

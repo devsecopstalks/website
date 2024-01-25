@@ -65,10 +65,10 @@
   --fw-normal: 400;
   --fw-light: 300;
   --fw-lighter: 200;
-  --ff-body: ui-serif, Constantia, Noto Serif, Georgia, serif;
-  --ff-headings: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, Noto Sans, Liberation Sans, Helvetica Neue, Helvetica, Arial, sans-serif, Apple Color Emoji, Segoe UI Emoji;
-  --ff-alt: system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, Noto Sans, Liberation Sans, Helvetica Neue, Helvetica, Arial, sans-serif, Apple Color Emoji, Segoe UI Emoji;
-  --ff-monospace: ui-monospace, Menlo, Cascadia Mono, Segoe UI Mono, Noto Sans Mono, Liberation Mono, Monaco, Consolas, monospace;
+  --ff-body: ui-serif, Charter, Bitstream Charter, Sitka Text, Cambria, serif;
+  --ff-headings: ui-sans-serif, system-ui, sans-serif;
+  --ff-alt: system-ui, sans-serif;
+  --ff-monospace: ui-monospace, Cascadia Code, Source Code Pro, Menlo, Consolas, DejaVu Sans Mono, monospace;
   --radius-xl: 1rem;
   --radius-l: 0.75rem;
   --radius-m: 0.5rem;
@@ -88,8 +88,8 @@ html {
   text-size-adjust: none;
   min-height: 100%;
   box-sizing: border-box;
-  scroll-behavior: smooth;
-  -webkit-font-smoothing: antialiased; }
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale; }
 
 *,
 *::before,
@@ -375,6 +375,11 @@ a:active {
 
 [aria-current] {
   text-decoration: none; }
+
+@media (prefers-reduced-motion: no-preference) {
+  :has(:target) {
+    scroll-behavior: smooth;
+    scroll-padding-block-start: var(--gutters); } }
 
 .link-nav a,
 .pagination a,

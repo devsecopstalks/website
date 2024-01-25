@@ -4,25 +4,25 @@
 <aside class="sidebar layout__second-sidebar">
   <div class="badges">
     {{ if .Site.Params.Podcast.apple}}
-    <!-- <a href="{{.Site.Params.Podcast.apple}}">
+    <a href="{{.Site.Params.Podcast.apple}}">
       <img style="margin: 0 2rem;max-width: 59%;border-radius: 10px;border: 1px solid lightgray;"
         src="/images/badge-applepodcast-white.png" alt="badge apple podcast">
-    </a> -->
-    <iframe id="embedPlayer"
+    </a>
+    <!-- <iframe id="embedPlayer"
       src="https://embed.podcasts.apple.com/se/podcast/the-devsecops-talks-podcast/id1503645730?itsct=podcast_box_player&amp;itscg=30200&amp;ls=1&amp;theme=auto"
       height="450px" frameborder="0"
       sandbox="allow-forms allow-popups allow-same-origin allow-scripts allow-top-navigation-by-user-activation"
       allow="autoplay *; encrypted-media *; clipboard-write"
-      style="width: 100%; max-width: 660px; overflow: hidden; border-radius: 10px; transform: translateZ(0px); animation: 2s 6 loading-indicator; background-color: rgb(172, 156, 156);"></iframe>
+      style="width: 100%; max-width: 660px; overflow: hidden; border-radius: 10px; transform: translateZ(0px); animation: 2s 6 loading-indicator; background-color: rgb(172, 156, 156);"></iframe> -->
     {{ end -}}
     {{ if .Site.Params.Podcast.spotify}}
-    <!-- <a href="{{.Site.Params.Podcast.spotify}}">
+    <a href="{{.Site.Params.Podcast.spotify}}">
       <img style="padding: 0 2rem;" src="/images/badge-spotify-white.svg" alt="badge apple podcast">
-    </a> -->
-    <iframe style="border-radius:12px"
+    </a>
+    <!-- <iframe style="border-radius:12px"
       src="https://open.spotify.com/embed/show/4tGYslKaJU9d8Fg3Qf9gaO?utm_source=generator" width="100%" height="152"
       frameBorder="0" allowfullscreen=""
-      allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" loading="lazy"></iframe>
+      allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" loading="lazy"></iframe> -->
     {{ end -}}
   </div>
   {{ range .Site.Sections -}}

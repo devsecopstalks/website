@@ -130,7 +130,7 @@ def main():
 
     # add standart ending to description
     description = f"{description}<p>&nbsp;</p><p>Connect with us on LinkedIn or Twitter (see info at https://devsecops.fm/about/). We are happy to answer any questions, hear suggestions for new episodes, or hear from you, our listeners.</p>"
-
+ 
     # print all received information
     print("Podcast title:", title)
     print("Podcast description:", description)

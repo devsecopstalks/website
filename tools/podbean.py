@@ -143,7 +143,11 @@ def main():
     create_episode_response = create_podbean_episode(
         auth_token, title, description, episode_number, media_key=media_key
     )
-    print(create_episode_response)
+    if args.verbose:
+        print(create_episode_response)
+
+    podbean_id = create_episode_response["episode"]["player_url"].split('=')[-1]
+    print(f"Podbean episode id: {podbean_id}")
     
     print("Done")
 

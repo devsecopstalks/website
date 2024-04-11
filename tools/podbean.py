@@ -28,10 +28,10 @@ def get_podbean_upload_link(access_token, filename, filesize, content_type="mp3"
 
 # upload file to podbean
 # curl -v -H "Content-Type: image/jpeg" -T /your/path/file.ext "PRESIGNED_URL"
-def upload_file_to_podbean(url, file):
+def upload_file_to_podbean(url, filepath):
     response = requests.put(url,
-                            headers={"Content-Type": mimetypes.guess_type(file)[0]},
-                            data=file)
+                            headers={"Content-Type": mimetypes.guess_type(filepath)[0]},
+                            data=open(filepath, 'rb'))
     return response
 
 # convert title into url safe string
@@ -143,8 +143,9 @@ def main():
     create_episode_response = create_podbean_episode(
         auth_token, title, description, episode_number, media_key=media_key
     )
-    if args.verbose:
-        print(create_episode_response)
+    print(create_episode_response)
+    
+    print("Done")
 
 if __name__ == "__main__":
     main()

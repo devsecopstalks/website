@@ -5,6 +5,9 @@ import re
 import argparse
 import requests
 import mimetypes
+import datetime
+
+from jinja2 import Environment, FileSystemLoader
 
 # Podbean API docs
 # https://developers.podbean.com/podbean-api-docs/
@@ -115,18 +118,8 @@ def main():
     # ask for episode description
     description = input("Podcast description: ")
 
-    # ask for episode notes in the loop and exit loop if control+c is pressed
-    notes = []
-    while True:
-        print("Enter notes. Press control+c to exit.")
-        try:
-            note = input("Podcast note: ")
-            notes.append(note)
-        except KeyboardInterrupt:
-            break
-
     # add prefix to the title
-    title = f"DEVSECOPS Talks #{episode_number} - {title}"
+    title = f"#{episode_number} - {title}"
 
     # add standart ending to description
     description = f"{description}<p>&nbsp;</p><p>Connect with us on LinkedIn or Twitter (see info at https://devsecops.fm/about/). We are happy to answer any questions, hear suggestions for new episodes, or hear from you, our listeners.</p>"
@@ -134,9 +127,6 @@ def main():
     # print all received information
     print("Podcast title:", title)
     print("Podcast description:", description)
-    print("Podcast notes:")
-    for note in notes:
-        print(note)
 
     # create new episode
     print("Creating new episode...")
@@ -148,6 +138,23 @@ def main():
 
     podbean_id = create_episode_response["episode"]["player_url"].split('=')[-1]
     print(f"Podbean episode id: {podbean_id}")
+
+    # Use Jinja2 to render episode.md.j2 template with all the data collected above
+    # and save it as episode.md
+    env = Environment(loader=FileSystemLoader(os.path.dirname(__file__)))
+    template = env.get_template("episode.md.j2")
+    output = template.render(
+        title=title,
+        eposide_number=episode_number,
+        date=datetime.datetime.now().astimezone().replace(microsecond=0).isoformat(),
+        podbean_id=podbean_id,
+        description=description
+    )
+    # get a path to content/episodes directory relative to the script location
+    episode_file = os.path.join(os.path.dirname(__file__), "../content/episodes", f"{episode_file_name}.md")
+    with open(episode_file, 'w') as f:
+        f.write(output)
+    
     
     print("Done")
 

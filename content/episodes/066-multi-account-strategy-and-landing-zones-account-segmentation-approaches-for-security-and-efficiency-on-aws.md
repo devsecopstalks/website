@@ -1,5 +1,5 @@
 ---
-title: "DEVSECOPS Talks #66 - Multi-Account Strategy And Landing Zones:  Account Segmentation Approaches For Security And Efficiency On AWS"
+title: "#66 - Multi-Account Strategy And Landing Zones:  Account Segmentation Approaches For Security And Efficiency On AWS"
 date: 2024-05-27T12:47:53+01:00
 lastmod: 2024-05-27T12:47:53+01:00
 episode: 66
@@ -17,4 +17,6 @@ In this episode of DevSecOps Talks, co-hosts Andrey, Julien, and Mattias are joi
 
 ## Notes
 
-* TBD
+* [Fernando on LinkedIn](https://www.linkedin.com/in/fernandogoncalves-me/)
+* [Fernando on YouTube](https://www.youtube.com/c/CloudnaPr%C3%A1tica)
+* [Multi-account strategies on AWS whitepaper](https://docs.aws.amazon.com/whitepapers/latest/organizing-your-aws-environment/organizing-your-aws-environment.html)

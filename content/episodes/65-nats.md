@@ -1,5 +1,5 @@
 ---
-title: "DEVSECOPS Talks #65 - Understanding Nats: An Explainer Of Its Features And Capabilities"
+title: "#65 - Understanding Nats: An Explainer Of Its Features And Capabilities"
 date: 2024-05-07T21:59:46+02:00
 lastmod: 2024-05-07T21:59:46+02:00
 episode: 65

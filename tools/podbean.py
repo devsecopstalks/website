@@ -8,6 +8,7 @@ import mimetypes
 import datetime
 
 from jinja2 import Environment, FileSystemLoader
+import sys
 
 # Podbean API docs
 # https://developers.podbean.com/podbean-api-docs/
@@ -65,22 +66,40 @@ def create_podbean_episode(
 
 def parse_args():
     parser = argparse.ArgumentParser(description="No more of manual episodes publishing")
-    parser.add_argument("filename", help="path to mp3 file")
-    parser.add_argument("-v", "--verbose", action="store_true", help="Print verbose output")
+    parser.add_argument("-f", "--filename", help="path to mp3 file", default=None)
+    parser.add_argument("-v", "--verbose", action="store_true", help="Print verbose output", default=False)
+    parser.add_argument("-s", "--scan", action="store_true", help="Scan current directory for mp3 file and use it for upload", default=False)
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
 
-    # check that file exists and it is mp3 file
-    if not os.path.isfile(args.filename):
-        print(f"File {args.filename} does not exist.")
-        return
-    mime_type = mimetypes.guess_type(args.filename)[0]
+    path_file = None
+    if args.filename:
+        path_file = args.filename
+        # check that file exists and it is mp3 file
+        if not os.path.isfile(args.filename):
+            print(f"File {args.filename} does not exist.")
+            sys.exit(1)
+    elif args.scan:
+        # find mp3 file in current directory
+        for file in os.listdir():
+            if file.endswith(".mp3"):
+                path_file = file
+                break
+        if not path_file:
+            print("No mp3 files found in current directory.")
+            sys.exit(1)
+    else:
+        print("Please provide path to mp3 file using --filename option or use --scan option to scan current directory for mp3 file.")
+        sys.exit(1)
+    mime_type = mimetypes.guess_type(path_file)[0]
     if mime_type != "audio/mpeg":
-        print(f"File {args.filename} is not mp3 file.")
+        print(f"File {path_file} is not mp3 file.")
         return
+
+    print(f"Going to use: {path_file}")
 
     # read podbean creds from env
     client_id = os.environ.get('PODBEAN_CLIENT_ID')
@@ -100,7 +119,7 @@ def main():
 
     # get presigned url for upload
     print("Getting presigned url for upload...")
-    file_size = os.path.getsize(args.filename)
+    file_size = os.path.getsize(path_file)
     episode_file_name = f"{episode_number:03d}-{title_to_url_safe(title)}.mp3"
     presigned_url_response = get_podbean_upload_link(auth_token, episode_file_name, file_size)
     print(presigned_url_response)
@@ -111,7 +130,7 @@ def main():
 
     # upload file to podbean
     print(f"Uploading file to podbean as {episode_file_name} ...")
-    upload_response = upload_file_to_podbean(presigned_url, args.filename)
+    upload_response = upload_file_to_podbean(presigned_url, path_file)
     if args.verbose:
         print(upload_response)
 

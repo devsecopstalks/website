@@ -40,7 +40,7 @@ def upload_file_to_podbean(url, filepath):
 
 # convert title into url safe string
 def title_to_url_safe(title):
-    return re.sub(r"^\W", "", title).replace(" ", "-").lower()
+    return re.sub(r"^\W", "", title).replace(" ", "-").replace(":", "-").lower()
 
 # get last episode number by getting all episodes till there are no more left
 # curl https://api.podbean.com/v1/episodes -G -d 'access_token=YOUR_ACCESS_TOKEN' -d 'offset=0' -d 'limit=10'
@@ -120,8 +120,9 @@ def main():
     # get presigned url for upload
     print("Getting presigned url for upload...")
     file_size = os.path.getsize(path_file)
-    episode_file_name = f"{episode_number:03d}-{title_to_url_safe(title)}.mp3"
-    presigned_url_response = get_podbean_upload_link(auth_token, episode_file_name, file_size)
+    episode_file_name_mp3 = f"{episode_number:03d}-{title_to_url_safe(title)}.mp3"
+    episode_file_name_md = f"{episode_number:03d}-{title_to_url_safe(title)}.md"
+    presigned_url_response = get_podbean_upload_link(auth_token, episode_file_name_mp3, file_size)
     print(presigned_url_response)
     presigned_url = presigned_url_response["presigned_url"]
     media_key = presigned_url_response["file_key"]
@@ -129,7 +130,7 @@ def main():
     print(f"media_key: {media_key}")
 
     # upload file to podbean
-    print(f"Uploading file to podbean as {episode_file_name} ...")
+    print(f"Uploading file to podbean as {episode_file_name_mp3} ...")
     upload_response = upload_file_to_podbean(presigned_url, path_file)
     if args.verbose:
         print(upload_response)
@@ -170,7 +171,7 @@ def main():
         description=description
     )
     # get a path to content/episodes directory relative to the script location
-    episode_file = os.path.join(os.path.dirname(__file__), "../content/episodes", f"{episode_file_name}.md")
+    episode_file = os.path.join(os.path.dirname(__file__), "../content/episodes", episode_file_name_md)
     with open(episode_file, 'w') as f:
         f.write(output)
     

@@ -1,5 +1,5 @@
 ---
-title: "#68 - Julien’S Last Episode?"
+title: "#68 - Julien’s Last Episode?"
 date: 2024-10-17T21:23:38+01:00
 lastmod: 2024-10-17T21:23:38+01:00
 episode: 68
@@ -13,6 +13,6 @@ Julien shares big news with co-hosts Mattias and Andrey. What led to his decisio
 
 <!-- Player -->
 
- {{<  podbean jntgc-170e4c2-pb "DEVSECOPS Talks #68 - Julien’S Last Episode?"  >}} 
+ {{<  podbean jntgc-170e4c2-pb "DEVSECOPS Talks #68 - Julien’s Last Episode?"  >}}
 
 ## Notes

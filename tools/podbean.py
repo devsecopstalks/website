@@ -40,7 +40,7 @@ def upload_file_to_podbean(url, filepath):
 
 # convert title into url safe string
 def title_to_url_safe(title):
-    return re.sub(r"^\W", "", title).replace(" ", "-").replace(":", "-").lower()
+    return re.sub(r"[^0-9a-zA-Z]+", "-", title).lower()
 
 # get last episode number by getting all episodes till there are no more left
 # curl https://api.podbean.com/v1/episodes -G -d 'access_token=YOUR_ACCESS_TOKEN' -d 'offset=0' -d 'limit=10'

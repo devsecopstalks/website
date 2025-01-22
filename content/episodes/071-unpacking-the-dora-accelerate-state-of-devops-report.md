@@ -17,4 +17,4 @@ In this episode, Andrey, Mattias, and Paulina break down the new DORA Accelerate
 
 ## Notes
 
-* TBD
+* [DORA report](https://cloud.google.com/devops/state-of-devops)

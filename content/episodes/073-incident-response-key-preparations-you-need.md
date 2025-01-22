@@ -17,4 +17,4 @@ Incident response can be complex, but where do you start? Andrey, Mattias, and P
 
 ## Notes
 
-* TBD
+* [This episode on YouTube](https://www.youtube.com/watch?v=vNu_zPuucGc)

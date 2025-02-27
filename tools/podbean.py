@@ -76,6 +76,48 @@ def create_podbean_episode(
         )
     return response.json()
 
+def get_podcast_title():
+    # Check for saved title in .podcast_title file
+    saved_title = None
+    if os.path.exists('.podcast_title'):
+        with open('.podcast_title', 'r') as f:
+            saved_title = f.read().strip()
+        print(f"Found saved title: {saved_title}")
+        print("Press Enter to use this title or type a new one")
+
+    # ask for episode title
+    title = input("Enter podcast title: ").strip()
+    if not title and saved_title:
+        title = saved_title
+    else:
+        # Save new title for potential re-runs
+        with open('.podcast_title', 'w') as f:
+            f.write(title)
+        title = title.title()
+    print(f"Podcast title: {title}")
+    return title
+
+def get_podcast_description():
+    """Get podcast description from input or saved file"""
+    # Check for saved description in .podcast_description file
+    saved_description = None
+    if os.path.exists('.podcast_description'):
+        with open('.podcast_description', 'r') as f:
+            saved_description = f.read().strip()
+        print(f"Found saved description: {saved_description}")
+        print("Press Enter to use this description or type a new one")
+
+    # ask for episode description
+    description = input("Enter podcast description: ").strip()
+    if not description and saved_description:
+        description = saved_description
+    else:
+        # Save new description for potential re-runs
+        with open('.podcast_description', 'w') as f:
+            f.write(description)
+    print(f"Podcast description: {description}")
+    return description
+
 def parse_args():
     parser = argparse.ArgumentParser(description="No more of manual episodes publishing")
     parser.add_argument("-f", "--filename", help="path to mp3 file", default=None)
@@ -130,40 +172,8 @@ def main():
     episode_number = int(get_last_episode_number(auth_token)) + 1
     print(f"This episode number: {episode_number}")
 
-    # Check for saved title in .podcast_title file
-    saved_title = None
-    if os.path.exists('.podcast_title'):
-        with open('.podcast_title', 'r') as f:
-            saved_title = f.read().strip()
-        print(f"Found saved title: {saved_title}")
-        print("Press Enter to use this title or type a new one")
-
-    # ask for episode title
-    title = input("Podcast title: ").strip()
-    if not title and saved_title:
-        title = saved_title
-    else:
-        # Save new title for potential re-runs
-        with open('.podcast_title', 'w') as f:
-            f.write(title)
-    title = title.title()
-
-    # Check for saved description in .podcast_description file
-    saved_description = None
-    if os.path.exists('.podcast_description'):
-        with open('.podcast_description', 'r') as f:
-            saved_description = f.read().strip()
-        print(f"Found saved description: {saved_description}")
-        print("Press Enter to use this description or type a new one")
-
-    # ask for episode description
-    description = input("Podcast description: ").strip()
-    if not description and saved_description:
-        description = saved_description
-    else:
-        # Save new description for potential re-runs
-        with open('.podcast_description', 'w') as f:
-            f.write(description)
+    title = get_podcast_title()
+    description = get_podcast_description()
 
     # get presigned url for upload
     print("Getting presigned url for upload...")
@@ -187,11 +197,11 @@ def main():
     title = f"#{episode_number} - {title}"
 
     # add standart ending to description
-    description = f"{description}<p>&nbsp;</p><p>Connect with us on LinkedIn or Twitter (see info at https://devsecops.fm/about/). We are happy to answer any questions, hear suggestions for new episodes, or hear from you, our listeners.</p>"
+    extended_description = f"{description}<p>&nbsp;</p><p>Connect with us on LinkedIn or Twitter (see info at https://devsecops.fm/about/). We are happy to answer any questions, hear suggestions for new episodes, or hear from you, our listeners.</p>"
  
     # print all received information
     print("Podcast title:", title)
-    print("Podcast description:", description)
+    print("Podcast extended description:", extended_description)
 
     # Update YouTube upload call
     youtube_id = upload_to_youtube(video_file, title, description)
@@ -200,7 +210,7 @@ def main():
     # create new episode
     print("Creating new episode...")
     create_episode_response = create_podbean_episode(
-        auth_token, title, description, episode_number, media_key=media_key
+        auth_token, title, extended_description, episode_number, media_key=media_key
     )
     if args.verbose:
         print(create_episode_response)
@@ -217,7 +227,7 @@ def main():
         episode_number=episode_number,
         date=datetime.datetime.now().astimezone().replace(microsecond=0).isoformat(),
         podbean_id=podbean_id,
-        description=description,
+        description=extended_description,
         youtube_id=youtube_id,
     )
     # get a path to content/episodes directory relative to the script location

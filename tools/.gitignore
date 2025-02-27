@@ -4,3 +4,4 @@ env
 *.json
 .podcast_title
 .podcast_description
+.youtube_credentials

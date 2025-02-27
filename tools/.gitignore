@@ -2,3 +2,5 @@ env
 *.mp3
 *.mp4*
 *.json
+.podcast_title
+.podcast_description

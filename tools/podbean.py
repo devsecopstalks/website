@@ -15,6 +15,8 @@ from pyyoutube.media import Media
 from jinja2 import Environment, FileSystemLoader
 import sys
 
+from youtube import upload_to_youtube
+
 # Podbean API docs
 # https://developers.podbean.com/podbean-api-docs/
 
@@ -74,93 +76,6 @@ def create_podbean_episode(
         )
     return response.json()
 
-def upload_to_youtube(filename, title, description, private=True):
-    """Upload video to YouTube using python-youtube library"""
-    print(f"Uploading video to YouTube: {filename}")
-    client_id = os.environ.get('YOUTUBE_CLIENT_ID')
-    client_secret = os.environ.get('YOUTUBE_CLIENT_SECRET')
-    channel_id = os.environ.get('YOUTUBE_CHANNEL_ID')
-    scope = [
-        "https://www.googleapis.com/auth/youtube",
-        "https://www.googleapis.com/auth/youtube.force-ssl",
-        "https://www.googleapis.com/auth/youtube.upload",
-    ]
-    
-    if not client_id or not client_secret:
-        raise ValueError("YOUTUBE_CLIENT_ID and YOUTUBE_CLIENT_SECRET environment variables must be set")
-    
-    ytc = YoutubeClient(client_id=client_id, client_secret=client_secret)
-
-    authorize_url, state = ytc.get_authorize_url(redirect_uri="http://localhost:8080", scope=scope)
-    webbrowser.open(authorize_url)
-
-    # Start local server to catch the OAuth redirect
-    server = http.server.HTTPServer(('localhost', 8080), http.server.BaseHTTPRequestHandler)
-    print("Waiting for OAuth redirect at http://localhost:8080...")
-    
-    # Handle one request then shutdown
-    server.last_request_path = None
-    class Handler(http.server.BaseHTTPRequestHandler):
-        def do_GET(self):
-            server.last_request_path = self.path
-            self.send_response(200)
-            self.end_headers()
-            self.wfile.write(b"You can close this window now.")
-    server.RequestHandlerClass = Handler
-    server.handle_request()
-    server.server_close()
-    
-    # Get the full redirect URL from the path
-    response_uri = f"http://localhost:8080{server.last_request_path}"
-
-    token = ytc.generate_access_token(authorization_response=response_uri, scope=scope)
-    
-    try:
-        cli = YoutubeClient(access_token=token)
-        body = mds.Video(
-            snippet=mds.VideoSnippet(
-                channelId=channel_id,
-                title=title,
-                description=description,
-                tags=[
-                    'DevSecOps',
-                    'Podcast', 
-                    'Security', 
-                    'Development',
-                    'DevOps',
-                    'Cloud',
-                    'AWS',
-                    'Docker',
-                    'CI/CD',
-                    'Continuous Integration',
-                    'Continuous Deployment',
-                    'Continuous Delivery',
-                    'DevSecOps Talks',
-                    'Infrastructure as Code',
-                    'Terraform'
-                ],
-                #privacyStatus='private' if private else 'public'
-            )
-        )
-        media = Media(filename=filename)
-
-        upload = cli.videos.insert(body=body, media=media, parts=["snippet"], notify_subscribers=True)
-
-        response = None
-        while response is None:
-            print(f"Uploading video...")
-            status, response = upload.next_chunk()
-            if status is not None:
-                print(f"Uploading video progress: {status.progress()}...")
-
-        # Use video class to representing the video resource.
-        video = mds.Video.from_dict(response)
-        print(f"Video id {video.id} was successfully uploaded.")
-        return video.id
-    except Exception as e:
-        print(f'An error occurred during upload: {str(e)}')
-        raise e
-
 def parse_args():
     parser = argparse.ArgumentParser(description="No more of manual episodes publishing")
     parser.add_argument("-f", "--filename", help="path to mp3 file", default=None)
@@ -215,11 +130,40 @@ def main():
     episode_number = int(get_last_episode_number(auth_token)) + 1
     print(f"This episode number: {episode_number}")
 
+    # Check for saved title in .podcast_title file
+    saved_title = None
+    if os.path.exists('.podcast_title'):
+        with open('.podcast_title', 'r') as f:
+            saved_title = f.read().strip()
+        print(f"Found saved title: {saved_title}")
+        print("Press Enter to use this title or type a new one")
+
     # ask for episode title
-    title = input("Podcast title: ").title()
+    title = input("Podcast title: ").strip()
+    if not title and saved_title:
+        title = saved_title
+    else:
+        # Save new title for potential re-runs
+        with open('.podcast_title', 'w') as f:
+            f.write(title)
+    title = title.title()
+
+    # Check for saved description in .podcast_description file
+    saved_description = None
+    if os.path.exists('.podcast_description'):
+        with open('.podcast_description', 'r') as f:
+            saved_description = f.read().strip()
+        print(f"Found saved description: {saved_description}")
+        print("Press Enter to use this description or type a new one")
 
     # ask for episode description
-    description = input("Podcast description: ")
+    description = input("Podcast description: ").strip()
+    if not description and saved_description:
+        description = saved_description
+    else:
+        # Save new description for potential re-runs
+        with open('.podcast_description', 'w') as f:
+            f.write(description)
 
     # get presigned url for upload
     print("Getting presigned url for upload...")

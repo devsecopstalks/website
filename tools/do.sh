@@ -6,6 +6,7 @@ source env/bin/activate
 # we proceed
 op whoami
 
-mv ~/Downloads/riverside*.mp3 .
+mv ~/Downloads/*.mp3 .
+mv ~/Downloads/*.mp4 .
 
 op run --env-file="./.env" -- python3 podbean.py --scan

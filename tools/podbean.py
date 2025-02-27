@@ -6,6 +6,11 @@ import argparse
 import requests
 import mimetypes
 import datetime
+import webbrowser
+import http.server
+import pyyoutube.models as mds
+from pyyoutube import Client as YoutubeClient
+from pyyoutube.media import Media
 
 from jinja2 import Environment, FileSystemLoader
 import sys
@@ -16,11 +21,16 @@ import sys
 # get podbean auth token
 # curl -u YOUR_CLIENT_ID:YOUR_CLIENT_SECRET https://api.podbean.com/v1/oauth/token -X POST -d 'grant_type=client_credentials'
 def get_podbean_auth_token(client_id, client_secret, url="https://api.podbean.com/v1/oauth/token"):
-    response = requests.post(
-        url,
-        data={"grant_type": "client_credentials", "expires_inoptional": 180},
-        auth=(client_id, client_secret))
-    return response.json()['access_token']
+    try:
+        response = requests.post(
+            url,
+            data={"grant_type": "client_credentials", "expires_inoptional": 180},
+            auth=(client_id, client_secret))
+        access_token = response.json()['access_token']
+        return access_token
+    except Exception as e:
+        print(f'An error occurred during getting podbean auth token: {str(e)}, response: {response.text}')
+        raise e
 
 # authorize file upload to podbean (get s3 presigned link)
 # curl https://api.podbean.com/v1/files/uploadAuthorize -G -d 'access_token=YOUR_ACCESS_TOKEN' -d 'filename=abc.mp3' -d 'filesize=1291021' -d 'content_type=audio/mpeg'
@@ -64,43 +74,134 @@ def create_podbean_episode(
         )
     return response.json()
 
+def upload_to_youtube(filename, title, description, private=True):
+    """Upload video to YouTube using python-youtube library"""
+    print(f"Uploading video to YouTube: {filename}")
+    client_id = os.environ.get('YOUTUBE_CLIENT_ID')
+    client_secret = os.environ.get('YOUTUBE_CLIENT_SECRET')
+    channel_id = os.environ.get('YOUTUBE_CHANNEL_ID')
+    scope = [
+        "https://www.googleapis.com/auth/youtube",
+        "https://www.googleapis.com/auth/youtube.force-ssl",
+        "https://www.googleapis.com/auth/youtube.upload",
+    ]
+    
+    if not client_id or not client_secret:
+        raise ValueError("YOUTUBE_CLIENT_ID and YOUTUBE_CLIENT_SECRET environment variables must be set")
+    
+    ytc = YoutubeClient(client_id=client_id, client_secret=client_secret)
+
+    authorize_url, state = ytc.get_authorize_url(redirect_uri="http://localhost:8080", scope=scope)
+    webbrowser.open(authorize_url)
+
+    # Start local server to catch the OAuth redirect
+    server = http.server.HTTPServer(('localhost', 8080), http.server.BaseHTTPRequestHandler)
+    print("Waiting for OAuth redirect at http://localhost:8080...")
+    
+    # Handle one request then shutdown
+    server.last_request_path = None
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            server.last_request_path = self.path
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"You can close this window now.")
+    server.RequestHandlerClass = Handler
+    server.handle_request()
+    server.server_close()
+    
+    # Get the full redirect URL from the path
+    response_uri = f"http://localhost:8080{server.last_request_path}"
+
+    token = ytc.generate_access_token(authorization_response=response_uri, scope=scope)
+    
+    try:
+        cli = YoutubeClient(access_token=token)
+        body = mds.Video(
+            snippet=mds.VideoSnippet(
+                channelId=channel_id,
+                title=title,
+                description=description,
+                tags=[
+                    'DevSecOps',
+                    'Podcast', 
+                    'Security', 
+                    'Development',
+                    'DevOps',
+                    'Cloud',
+                    'AWS',
+                    'Docker',
+                    'CI/CD',
+                    'Continuous Integration',
+                    'Continuous Deployment',
+                    'Continuous Delivery',
+                    'DevSecOps Talks',
+                    'Infrastructure as Code',
+                    'Terraform'
+                ],
+                #privacyStatus='private' if private else 'public'
+            )
+        )
+        media = Media(filename=filename)
+
+        upload = cli.videos.insert(body=body, media=media, parts=["snippet"], notify_subscribers=True)
+
+        response = None
+        while response is None:
+            print(f"Uploading video...")
+            status, response = upload.next_chunk()
+            if status is not None:
+                print(f"Uploading video progress: {status.progress()}...")
+
+        # Use video class to representing the video resource.
+        video = mds.Video.from_dict(response)
+        print(f"Video id {video.id} was successfully uploaded.")
+        return video.id
+    except Exception as e:
+        print(f'An error occurred during upload: {str(e)}')
+        raise e
+
 def parse_args():
     parser = argparse.ArgumentParser(description="No more of manual episodes publishing")
     parser.add_argument("-f", "--filename", help="path to mp3 file", default=None)
     parser.add_argument("-v", "--verbose", action="store_true", help="Print verbose output", default=False)
-    parser.add_argument("-s", "--scan", action="store_true", help="Scan current directory for mp3 file and use it for upload", default=False)
+    parser.add_argument("-s", "--scan", action="store_true", help="Scan current directory for mp3 and mp4 files and use them for upload", default=False)
     return parser.parse_args()
-
 
 def main():
     args = parse_args()
 
-    path_file = None
+    # Find audio and video files
+    audio_file = None
+    video_file = None
+    
     if args.filename:
-        path_file = args.filename
-        # check that file exists and it is mp3 file
-        if not os.path.isfile(args.filename):
-            print(f"File {args.filename} does not exist.")
-            sys.exit(1)
+        if args.filename.endswith('.mp3'):
+            audio_file = args.filename
+        elif args.filename.endswith('.mp4'):
+            video_file = args.filename
     elif args.scan:
-        # find mp3 file in current directory
+        # find mp3 and mp4 files in current directory
         for file in os.listdir():
             if file.endswith(".mp3"):
-                path_file = file
-                break
-        if not path_file:
-            print("No mp3 files found in current directory.")
-            sys.exit(1)
-    else:
-        print("Please provide path to mp3 file using --filename option or use --scan option to scan current directory for mp3 file.")
+                audio_file = file
+            elif file.endswith(".mp4"):
+                video_file = file
+
+    if not audio_file:
+        print("No mp3 file found for Podbean upload.")
         sys.exit(1)
-    mime_type = mimetypes.guess_type(path_file)[0]
+    mime_type = mimetypes.guess_type(audio_file)[0]
     if mime_type != "audio/mpeg":
-        print(f"File {path_file} is not mp3 file.")
+        print(f"File {audio_file} is not mp3 file.")
         return
+    if not video_file:
+        print("No mp4 file found for YouTube upload.")
+        sys.exit(1)
 
-    print(f"Going to use: {path_file}")
+    print(f"Going to use: {audio_file} and {video_file}")
 
+    # Calculate episode
     # read podbean creds from env
     client_id = os.environ.get('PODBEAN_CLIENT_ID')
     client_secret = os.environ.get('PODBEAN_CLIENT_SECRET')
@@ -117,9 +218,12 @@ def main():
     # ask for episode title
     title = input("Podcast title: ").title()
 
+    # ask for episode description
+    description = input("Podcast description: ")
+
     # get presigned url for upload
     print("Getting presigned url for upload...")
-    file_size = os.path.getsize(path_file)
+    file_size = os.path.getsize(audio_file)
     episode_file_name_mp3 = f"{episode_number:03d}-{title_to_url_safe(title)}.mp3"
     episode_file_name_md = f"{episode_number:03d}-{title_to_url_safe(title)}.md"
     presigned_url_response = get_podbean_upload_link(auth_token, episode_file_name_mp3, file_size)
@@ -131,12 +235,9 @@ def main():
 
     # upload file to podbean
     print(f"Uploading file to podbean as {episode_file_name_mp3} ...")
-    upload_response = upload_file_to_podbean(presigned_url, path_file)
+    upload_response = upload_file_to_podbean(presigned_url, audio_file)
     if args.verbose:
         print(upload_response)
-
-    # ask for episode description
-    description = input("Podcast description: ")
 
     # add prefix to the title
     title = f"#{episode_number} - {title}"
@@ -147,6 +248,10 @@ def main():
     # print all received information
     print("Podcast title:", title)
     print("Podcast description:", description)
+
+    # Update YouTube upload call
+    youtube_id = upload_to_youtube(video_file, title, description)
+    print(f"YouTube video id: {youtube_id}")
 
     # create new episode
     print("Creating new episode...")
@@ -165,10 +270,11 @@ def main():
     template = env.get_template("episode.md.j2")
     output = template.render(
         title=title,
-        eposide_number=episode_number,
+        episode_number=episode_number,
         date=datetime.datetime.now().astimezone().replace(microsecond=0).isoformat(),
         podbean_id=podbean_id,
-        description=description
+        description=description,
+        youtube_id=youtube_id,
     )
     # get a path to content/episodes directory relative to the script location
     episode_file = os.path.join(os.path.dirname(__file__), "../content/episodes", episode_file_name_md)

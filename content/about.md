@@ -3,15 +3,15 @@ title: 'About'
 date: '01 Mar 2020'
 ---
 
-## This podcast is brought to you by Mattias, Julien and Andrey
+## This podcast is brought to you by Mattias, Paulina and Andrey
 
-### Julien Bisconti
+### Paulina Dubas
 
-{{< avatar "julien.webp" "Julien Bisconti" >}}
+{{< avatar "paulina.webp" "Paulina Dubas" >}}
 
-> Independent consultant, public speaker, Google developer expert (GDE) for GCP, certified Kubernetes CKA/CKAD, university guest lecturer.
+> Independent DevOps consultant and public speaker.
 
-{{< social_links twitter="julienBisconti" linkedin="julienbisconti" github="veggiemonk" web="bisconti.cloud" >}}
+{{< social_links twitter="PaulaDubas" linkedin="paulinadubas" github="paulinadubas" web="dubascon.com" >}}
 
 ### Andrey Devyatkin
 

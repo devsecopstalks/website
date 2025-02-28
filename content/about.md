@@ -1,6 +1,6 @@
 ---
-title: 'Recording and having fun since'
-date: '01 Mar 2020'
+title: 'About'
+date: 'Recording and having fun since 01 Mar 2020'
 ---
 
 ## This podcast is brought to you by Mattias, Paulina and Andrey

@@ -9,7 +9,9 @@ date: '01 Mar 2020'
 
 {{< avatar "paulina.webp" "Paulina Dubas" >}}
 
-> Independent DevOps consultant and public speaker.
+> Independent Lead DevOps Engineer/Architect, who has been working in the engineering field for the past 10 years across multiple projects and with various technologies. 
+
+> Paulina is a co-founder of Code Club Copenhagen and The Better Software Initiative creating community and educational events for software professionals.
 
 {{< social_links twitter="PaulaDubas" linkedin="paulinadubas" github="paulinadubas" web="dubascon.com" >}}
 

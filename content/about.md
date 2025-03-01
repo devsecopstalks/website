@@ -7,7 +7,7 @@ date: '01 Mar 2020'
 
 ### Paulina Dubas
 
-{{< avatar "paulina.webp" "Paulina Dubas" >}}
+{{< avatar "paulina.jpeg" "Paulina Dubas" >}}
 
 > Independent Lead DevOps Engineer/Architect, who has been working in the engineering field for the past 10 years across multiple projects and with various technologies. 
 

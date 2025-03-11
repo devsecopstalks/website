@@ -17,4 +17,4 @@ Chaos engineering—is it really chaos, or something more structured? Andrey, Pa
 
 ## Notes
 
-* TBD youtube_id: "Not yet implemented"
+* [Video version](https://youtu.be/rcVDIV76b8k)

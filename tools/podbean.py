@@ -152,9 +152,9 @@ def main():
     if mime_type != "audio/mpeg":
         print(f"File {audio_file} is not mp3 file.")
         return
-    if not video_file:
-        print("No mp4 file found for YouTube upload.")
-        sys.exit(1)
+    #if not video_file:
+    #    print("No mp4 file found for YouTube upload.")
+    #    sys.exit(1)
 
     print(f"Going to use: {audio_file} and {video_file}")
 
@@ -204,8 +204,9 @@ def main():
     print("Podcast extended description:", extended_description)
 
     # Update YouTube upload call
-    youtube_id = upload_to_youtube(video_file, title, description)
-    print(f"YouTube video id: {youtube_id}")
+    # youtube_id = upload_to_youtube(video_file, title, description)
+    # print(f"YouTube video id: {youtube_id}")
+    youtube_id = "Not yet implemented"
 
     # create new episode
     print("Creating new episode...")

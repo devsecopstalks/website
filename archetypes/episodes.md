@@ -17,4 +17,4 @@ INSERT TEXT HERE
 
 ## Notes
 
-- [Hugo web site generator](https://gohugo.io)
+* [Video version](https://youtu.be/96_P1N1hwZQ)

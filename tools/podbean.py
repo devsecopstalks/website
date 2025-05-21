@@ -197,7 +197,10 @@ def main():
     title = f"#{episode_number} - {title}"
 
     # add standart ending to description
-    extended_description = f"{description}<p>&nbsp;</p><p>Connect with us on LinkedIn or Twitter (see info at https://devsecops.fm/about/). We are happy to answer any questions, hear suggestions for new episodes, or hear from you, our listeners.</p>"
+    extended_description = (f"{description}<p>&nbsp;</p><p>Connect with us on LinkedIn or X (see info at https://devsecops.fm/about/)."
+     + "We are happy to answer any questions, hear suggestions for new episodes, or hear from you, our listeners.</p>"
+     + "<p>Video version of this episode is available at our <a href='https://youtube.com/channel/UCRjpE9xKxZeBkRgYiLErEjw'>YouTube channel</a></p>"
+     + "<p>LinkedIn page of the DevSecOps Talks team is <a href='https://www.linkedin.com/company/101418030'>here</a></p>")
  
     # print all received information
     print("Podcast title:", title)

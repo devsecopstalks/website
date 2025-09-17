@@ -21,4 +21,5 @@ This time we’re joined by Cole Bittel, an experienced SRE, platform engineer, 
 
 ## Notes
 
-* [Video version]()
+* [Cole Bittel](https://www.linkedin.com/in/bittelc/)
+* [Video version](https://youtu.be/SGtzE3YFjqg)

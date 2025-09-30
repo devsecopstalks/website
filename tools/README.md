@@ -1,79 +1,86 @@
-## Podbean Upload
+## Automated Podcast Publishing with AI
 
+This tool streamlines the entire podcast publishing workflow:
+1. **Transcribe** audio using OpenAI Whisper API
+2. **Generate** title and description options using ChatGPT
+3. **Select** your preferred title and description (or edit them)
+4. **Upload** to Podbean and create episode markdown
+
+### Prerequisites
+
+Set required environment variables:
+```bash
+export OPENAI_API_KEY=your_openai_api_key
+export PODBEAN_CLIENT_ID=your_podbean_client_id
+export PODBEAN_CLIENT_SECRET=your_podbean_client_secret
 ```
+
+### Setup
+
+```bash
 bash setup.sh
 source env/bin/activate
-export PODBEAN_CLIENT_ID=id
-export PODBEAN_CLIENT_SECRET=secret
-python3 podbean.py ~/Downloads/podcast63-ai\ tools.mp3
 ```
 
-or
+### Basic Usage
 
+**Option 1: Specify file directly**
+```bash
+python3 podbean.py -f ~/Downloads/podcast-episode.mp3
 ```
-bash setup.sh
-source env/bin/activate
-# copy file into the directory and use 1password to fill
-# env variables and scan directory for mp3 files
+
+**Option 2: Scan current directory for mp3/mp4 files**
+```bash
+# Copy your audio file to the tools directory
+python3 podbean.py --scan
+```
+
+**Option 3: Use with 1Password for secure credentials**
+```bash
 op run --env-file="./.env" -- python3 podbean.py --scan
 ```
 
-## Transcribe Podcast Episodes
+### Workflow
 
-Transcribe podcast episodes using **local Whisper** (FREE!) and extract highlights using **GPT-5 API** (optional):
+When you run the script, it will:
 
-### Basic Usage (No API Key Needed for Transcription!)
+1. **Calculate Episode Number**
+   - Connects to Podbean to get the next episode number
 
-```bash
-bash setup.sh
-source env/bin/activate
-python3 transcribe.py ~/Downloads/podcast-episode.mp3
-```
+2. **Transcribe** the audio file using OpenAI Whisper API
+   - Saves transcript to `episode{number}.txt` (e.g., `episode084.txt`)
 
-This will:
-1. Transcribe audio locally using Whisper (completely free, no API needed)
-2. Create `podcast-episode_transcript.txt` in `~/Downloads`
-3. If `OPENAI_API_KEY` is set, also extract highlights with GPT-5
+3. **Generate Options** using ChatGPT (GPT-5)
+   - Creates 5 title options
+   - Creates 5 description options
 
-### With Highlights Extraction
+4. **Interactive Selection**
+   - Choose from 5 title options (or enter custom/edit)
+   - Press 'r' to regenerate with additional guidance (e.g., "focus more on security aspects")
+   - Choose from 5 description options (or enter custom/edit)
+   - Press 'r' to regenerate descriptions with additional guidance
 
-```bash
-export OPENAI_API_KEY=your_api_key_here
-python3 transcribe.py ~/Downloads/podcast-episode.mp3
-```
+5. **Upload & Publish**
+   - Uploads audio to Podbean
+   - Creates episode draft
+   - Generates markdown file in `content/episodes/`
 
-This will create two files in `~/Downloads`:
-- `podcast-episode_transcript.txt` - Full transcription (via local Whisper)
-- `podcast-episode_highlights.txt` - AI-extracted highlights (via GPT-5)
+### Advanced Options
 
-### Optional Flags
-
-- `-o, --output-dir` - Specify output directory (default: ~/Downloads)
-- `-v, --verbose` - Print verbose output including detected language
-- `--transcript-only` - Only generate transcript, skip highlights extraction
-- `-m, --model` - Whisper model size: `tiny`, `base`, `small`, `medium`, `large-v2`, `large-v3` (default: `base`)
-
-### Model Size Guide
-
-- **tiny** - Fastest, lowest quality (~1GB RAM)
-- **base** - Good balance, recommended for most use cases (~1GB RAM) - DEFAULT
-- **small** - Better quality (~2GB RAM)
-- **medium** - High quality (~5GB RAM)
-- **large-v2/large-v3** - Best quality (~10GB RAM)
+- `-f, --filename` - Path to audio file (mp3)
+- `-v, --verbose` - Print verbose output
+- `-s, --scan` - Scan current directory for mp3/mp4 files
+- `--skip-transcription` - Skip transcription (use existing transcript)
+- `-t, --transcript` - Path to existing transcript file
 
 ### Examples
 
-Transcribe with larger model for better quality:
+**Use existing transcript to save API costs:**
 ```bash
-python3 transcribe.py ~/Downloads/episode.mp3 -m medium -v
+python3 podbean.py -f episode.mp3 --skip-transcription -t episode_transcript.txt
 ```
 
-Transcribe only, skip highlights (no API key needed):
+**Verbose output for debugging:**
 ```bash
-python3 transcribe.py ~/Downloads/episode.mp3 --transcript-only
-```
-
-Custom output directory with verbose output:
-```bash
-python3 transcribe.py ~/Downloads/episode.mp3 -o ~/Documents/transcripts -v
+python3 podbean.py -f episode.mp3 -v
 ```

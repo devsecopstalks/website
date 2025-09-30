@@ -3,6 +3,7 @@ __pycache__
 *.mp3
 *.mp4*
 *.json
+episode*.txt
 .podcast_title
 .podcast_description
 .youtube_credentials

@@ -139,6 +139,12 @@ Transcript:
 
 """
         content = None
+        
+        if verbose:
+            print(f"Making API request to model: gpt-5")
+            print(f"Prompt length: {len(prompt)} characters")
+            print(f"System prompt length: {len(SYSTEM_PROMPT)} characters")
+        
         response = client.chat.completions.create(
             model="gpt-5",
             messages=[
@@ -146,17 +152,36 @@ Transcript:
                 {"role": "user", "content": prompt}
             ],
             response_format={"type": "json_object"},
-            max_completion_tokens=2000
+            max_completion_tokens=8000  # Increased to accommodate reasoning tokens + actual output
         )
+        
+        if verbose:
+            print(f"API response received")
+            print(f"Response object type: {type(response)}")
+            print(f"Response attributes: {dir(response)}")
+            print(f"Response dict: {response.model_dump()}")
+        
+        # Log response structure
+        print(f"Number of choices in response: {len(response.choices)}")
+        if response.choices:
+            print(f"First choice attributes: {dir(response.choices[0])}")
+            print(f"First choice message: {response.choices[0].message}")
+            print(f"First choice finish_reason: {response.choices[0].finish_reason}")
         
         content = response.choices[0].message.content
         
+        print(f"Content extracted from response: {content is not None}")
+        print(f"Content length: {len(content) if content else 0} characters")
+        
         if verbose:
-            print(f"Raw response from GPT-5:")
+            print(f"Raw response content from GPT-5:")
             print(content)
             print("-" * 80)
         
         if not content:
+            print(f"ERROR: Empty content received!")
+            print(f"Full response object: {response}")
+            print(f"Response model_dump: {response.model_dump()}")
             raise ValueError("Empty response from GPT-5")
         
         result = json.loads(content)
@@ -167,7 +192,11 @@ Transcript:
         return result
     
     except Exception as e:
-        print(f'An error occurred during content generation: {str(e)}\n{content}')
+        print(f'An error occurred during content generation: {str(e)}')
+        print(f'Content variable: {content}')
+        print(f'Response object available: {response if "response" in locals() else "No response object"}')
+        if "response" in locals():
+            print(f'Response model_dump: {response.model_dump()}')
         raise e
 
 
@@ -358,7 +387,15 @@ def main():
 
     # Step 2: Transcribe audio (or load existing transcript)
     transcript = None
-    if args.skip_transcription and args.transcript:
+    transcript_file = f"episode{episode_number:03d}.txt"
+    
+    # Check if transcript already exists
+    if os.path.exists(transcript_file) and not args.skip_transcription:
+        print(f"Found existing transcript: {transcript_file}")
+        print("Loading existing transcript (use --skip-transcription to force new transcription)...")
+        with open(transcript_file, 'r', encoding='utf-8') as f:
+            transcript = f.read()
+    elif args.skip_transcription and args.transcript:
         print(f"Loading transcript from: {args.transcript}")
         with open(args.transcript, 'r', encoding='utf-8') as f:
             transcript = f.read()
@@ -367,7 +404,6 @@ def main():
         transcript = transcribe_audio_openai(client, audio_file, verbose=args.verbose)
         
         # Save transcript with episode number
-        transcript_file = f"episode{episode_number:03d}.txt"
         with open(transcript_file, 'w', encoding='utf-8') as f:
             f.write(transcript)
         print(f"Transcript saved to: {transcript_file}")

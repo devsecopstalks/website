@@ -9,4 +9,4 @@ op whoami
 mv ~/Downloads/*.mp3 .
 mv ~/Downloads/*.mp4 .
 
-op run --env-file="./.env" -- python3 podbean.py --scan
+op run --env-file="./.env" -- python3 podbean.py -v --scan

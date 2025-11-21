@@ -17,4 +17,4 @@ fi
 
 uv sync
 
-op run --env-file="./.env" -- python3 podbean.py -v --scan
+op run --env-file="./.env" -- uv run python3 podbean.py -v --scan

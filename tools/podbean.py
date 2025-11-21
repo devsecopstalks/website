@@ -8,6 +8,9 @@ import requests
 import mimetypes
 import datetime
 import sys
+import tempfile
+import subprocess
+import shutil
 from pathlib import Path
 from openai import OpenAI
 from jinja2 import Environment, FileSystemLoader
@@ -77,9 +80,57 @@ It all starts with monitoring; knowing what is there in a cloud infrastructure i
 By making it easy to see and manage access rights, we make it easier for ourselves to keep resources secured."""
 
 
+def compress_audio_for_transcription(audio_file_path, bitrate='32k', verbose=False):
+    """
+    Compress audio file using ffmpeg to reduce file size for Whisper API.
+    
+    Args:
+        audio_file_path: Path to the audio file
+        bitrate: Target bitrate (default '32k' for 32kbps mono)
+        verbose: Whether to print verbose output
+    
+    Returns:
+        Path to compressed file
+    """
+    if not shutil.which('ffmpeg'):
+        print("Error: ffmpeg not found. Install with: brew install ffmpeg")
+        sys.exit(1)
+    
+    base_name = os.path.splitext(audio_file_path)[0]
+    compressed_file = f"{base_name}_compressed.mp3"
+    
+    original_size_mb = os.path.getsize(audio_file_path) / (1024 * 1024)
+    print(f"Compressing audio ({original_size_mb:.2f} MB) to {bitrate} mono...")
+    
+    cmd = [
+        'ffmpeg', '-i', audio_file_path,
+        '-ac', '1',  # Convert to mono
+        '-b:a', bitrate,  # Set bitrate
+        '-y',  # Overwrite output file
+        compressed_file
+    ]
+    
+    if not verbose:
+        cmd.extend(['-loglevel', 'error'])
+    
+    try:
+        subprocess.run(cmd, check=True, capture_output=not verbose)
+        
+        compressed_size_mb = os.path.getsize(compressed_file) / (1024 * 1024)
+        reduction = ((original_size_mb - compressed_size_mb) / original_size_mb) * 100
+        
+        print(f"Compressed: {original_size_mb:.2f} MB → {compressed_size_mb:.2f} MB ({reduction:.1f}% reduction)")
+        
+        return compressed_file
+    except subprocess.CalledProcessError as e:
+        print(f"Error compressing audio: {e}")
+        raise
+
+
 def transcribe_audio_openai(client, audio_file_path, verbose=False):
     """
     Transcribe an audio file using OpenAI Whisper API.
+    Automatically compresses large files if needed.
     
     Args:
         client: OpenAI client instance
@@ -91,14 +142,34 @@ def transcribe_audio_openai(client, audio_file_path, verbose=False):
     """
     try:
         print(f"Transcribing audio file: {audio_file_path}")
+        
+        # Check file size and compress if needed
+        file_size_mb = os.path.getsize(audio_file_path) / (1024 * 1024)
+        max_size_mb = 24  # Stay under 25MB limit
+        
+        file_to_transcribe = audio_file_path
+        cleanup_file = None
+        
+        if file_size_mb > max_size_mb:
+            print(f"File size ({file_size_mb:.2f} MB) exceeds {max_size_mb} MB limit")
+            file_to_transcribe = compress_audio_for_transcription(audio_file_path, verbose=verbose)
+            cleanup_file = file_to_transcribe
+        
         print("Using OpenAI Whisper API...")
         
-        with open(audio_file_path, 'rb') as audio_file:
+        with open(file_to_transcribe, 'rb') as audio_file:
             transcript = client.audio.transcriptions.create(
                 model="whisper-1",
                 file=audio_file,
-                response_format="text"
+                response_format="text",
+                language="en"  # Force English transcription
             )
+        
+        # Clean up compressed file if created
+        if cleanup_file and os.path.exists(cleanup_file):
+            os.remove(cleanup_file)
+            if verbose:
+                print(f"Removed temporary file: {cleanup_file}")
         
         if verbose:
             print(f"Transcription completed. Length: {len(transcript)} characters")

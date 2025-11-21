@@ -17,27 +17,32 @@ export PODBEAN_CLIENT_SECRET=your_podbean_client_secret
 
 ### Setup
 
+This project uses [uv](https://docs.astral.sh/uv/) for Python package management.
+
 ```bash
-bash setup.sh
-source env/bin/activate
+# Install uv if you haven't already
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Sync dependencies
+uv sync
 ```
 
 ### Basic Usage
 
 **Option 1: Specify file directly**
 ```bash
-python3 podbean.py -f ~/Downloads/podcast-episode.mp3
+uv run podbean.py -f ~/Downloads/podcast-episode.mp3
 ```
 
 **Option 2: Scan current directory for mp3/mp4 files**
 ```bash
 # Copy your audio file to the tools directory
-python3 podbean.py --scan
+uv run podbean.py --scan
 ```
 
 **Option 3: Use with 1Password for secure credentials**
 ```bash
-op run --env-file="./.env" -- python3 podbean.py --scan
+op run --env-file="./.env" -- uv run podbean.py --scan
 ```
 
 ### Workflow
@@ -77,10 +82,10 @@ When you run the script, it will:
 
 **Use existing transcript to save API costs:**
 ```bash
-python3 podbean.py -f episode.mp3 --skip-transcription -t episode_transcript.txt
+uv run podbean.py -f episode.mp3 --skip-transcription -t episode_transcript.txt
 ```
 
 **Verbose output for debugging:**
 ```bash
-python3 podbean.py -f episode.mp3 -v
+uv run podbean.py -f episode.mp3 -v
 ```

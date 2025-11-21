@@ -1,0 +1,14 @@
+[project]
+name = "podcast-tools"
+version = "0.1.0"
+description = "Automated podcast publishing tools"
+requires-python = ">=3.13"
+dependencies = [
+    "requests",
+    "jinja2",
+    "python-youtube",
+    "google-auth-oauthlib",
+    "google-auth-httplib2",
+    "google-api-python-client",
+    "openai",
+]

@@ -17,6 +17,6 @@ What can you automate with SWAMP today, from AWS to a Proxmox home lab? How do s
 
 ## Notes
 
-* [Video version]()
+* [Video version](https://youtu.be/XTM__-Ai4Zw)
 * [Swamp demo repo](https://github.com/stack72/swamp-env-example)
 # [AI Native Infrastructure Automation, how I learned to stop worrying and love Claude - Adam Jacob](https://www.youtube.com/watch?v=g1R71Wbxlkk&list=WL&index=2&t=13s)

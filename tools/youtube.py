@@ -14,6 +14,7 @@ def upload_to_youtube(video_path, title, description):
         user=user,
         platforms=["youtube"],
         privacyStatus="public",
+        selfDeclaredMadeForKids=False,
     )
     print("YouTube upload response:", response)
     return response

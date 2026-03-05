@@ -4,7 +4,7 @@ This tool streamlines the entire podcast publishing workflow:
 1. **Transcribe** audio using OpenAI Whisper API
 2. **Generate** title and description options using ChatGPT
 3. **Select** your preferred title and description (or edit them)
-4. **Upload** to Podbean and create episode markdown
+4. **Upload** to Podbean and YouTube, then create episode markdown
 
 ### Prerequisites
 
@@ -13,6 +13,8 @@ Set required environment variables:
 export OPENAI_API_KEY=your_openai_api_key
 export PODBEAN_CLIENT_ID=your_podbean_client_id
 export PODBEAN_CLIENT_SECRET=your_podbean_client_secret
+export UPLOAD_POST_API_KEY=your_upload_post_api_key
+export UPLOAD_POST_USER=your_upload_post_username
 ```
 
 ### Setup
@@ -66,15 +68,15 @@ When you run the script, it will:
    - Press 'r' to regenerate descriptions with additional guidance
 
 5. **Upload & Publish**
-   - Uploads audio to Podbean
-   - Creates episode draft
-   - Generates markdown file in `content/episodes/`
+   - Uploads audio (mp3) to Podbean and creates episode draft
+   - Uploads video (mp4) to YouTube via [upload-post.com](https://upload-post.com) — skipped if no mp4 is present
+   - Generates markdown file in `content/episodes/` with Podbean player and YouTube link
 
 ### Advanced Options
 
-- `-f, --filename` - Path to audio file (mp3)
+- `-f, --filename` - Path to audio (mp3) or video (mp4) file
 - `-v, --verbose` - Print verbose output
-- `-s, --scan` - Scan current directory for mp3/mp4 files
+- `-s, --scan` - Scan current directory for mp3 and mp4 files (mp3 → Podbean, mp4 → YouTube)
 - `--skip-transcription` - Skip transcription (use existing transcript)
 - `-t, --transcript` - Path to existing transcript file
 

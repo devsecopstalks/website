@@ -2,6 +2,7 @@
 
 import os
 import re
+import html
 import json
 import argparse
 import requests
@@ -539,8 +540,33 @@ def main():
     print("\nPodcast title:", full_title)
     print("Podcast extended description:", extended_description)
 
-    # YouTube upload (placeholder for now)
-    youtube_id = "Not yet implemented"
+    # Build YouTube description: convert HTML to plain text, add audio episode link
+    youtube_description_text = re.sub(r'<p[^>]*>', '\n', extended_description)
+    youtube_description_text = re.sub(r'</p>', '', youtube_description_text)
+    youtube_description_text = re.sub(r"<a\s+href=['\"]([^'\"]+)['\"][^>]*>([^<]+)</a>", r'\2 (\1)', youtube_description_text)
+    youtube_description_text = re.sub(r'<[^>]+>', '', youtube_description_text)
+    youtube_description_text = html.unescape(youtube_description_text).strip()
+    youtube_description_text = re.sub(r'\n{3,}', '\n\n', youtube_description_text)
+    youtube_description_text += (
+        f"\n\nAudio version and show notes: https://devsecops.fm/episodes/"
+        f"{episode_number:03d}-{title_to_url_safe(title)}/"
+        "\n\nSubscribe to the podcast for the audio version and show notes at https://devsecops.fm/"
+        "\n\nWant to talk? Reach out on LinkedIn: https://www.linkedin.com/company/devsecops-talks"
+        "\n\n#DevSecOps #InfraAsCode #CloudSecurity #DevOps #Podcast #CyberSecurity #Security #SSDLC #Devsecopstalks"
+    )
+
+    # YouTube upload
+    youtube_id = ""
+    if video_file:
+        print(f"\nUploading video to YouTube: {video_file}")
+        youtube_response = upload_to_youtube(video_file, f"DEVSECOPS Talks {full_title}", youtube_description_text)
+        try:
+            youtube_id = youtube_response["results"]["youtube"]["post_id"]
+        except (KeyError, TypeError):
+            youtube_id = str(youtube_response)
+        print(f"YouTube video id: {youtube_id}")
+    else:
+        print("No video file found, skipping YouTube upload.")
 
     # create new episode
     print("\nCreating new episode...")

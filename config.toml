@@ -26,6 +26,7 @@ baseName = "searchindex"
 isPlainText = true
 notAlternative = true
 
+
 [outputs]
 home = [
   "HTML",
@@ -37,6 +38,10 @@ section = [
   "HTML",
   "RSS",
   "JSON"
+]
+page = [
+  "HTML",
+  "Markdown"
 ]
 
 [params]

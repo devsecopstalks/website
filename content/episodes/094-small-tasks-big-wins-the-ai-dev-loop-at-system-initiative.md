@@ -17,4 +17,4 @@ We bring Paul Stack back to cover the parts we skipped last time. What changed w
 
 ## Notes
 
-* [Video version](https://www.youtube.com/watch?v=)
+* [Video version](https://youtu.be/R6DExMI8iVw)

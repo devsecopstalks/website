@@ -400,6 +400,9 @@ def parse_args():
     parser.add_argument("-t", "--transcript", help="Path to existing transcript file", default=None)
     return parser.parse_args()
 
+
+
+
 def main():
     args = parse_args()
 
@@ -408,13 +411,13 @@ def main():
     if not api_key:
         print("Error: OPENAI_API_KEY environment variable not set")
         sys.exit(1)
-    
+
     client = OpenAI(api_key=api_key)
 
     # Find audio and video files
     audio_file = None
     video_file = None
-    
+
     if args.filename:
         if args.filename.endswith('.mp3'):
             audio_file = args.filename
@@ -431,15 +434,23 @@ def main():
     if not audio_file:
         print("No mp3 file found for Podbean upload.")
         sys.exit(1)
-    
+
     mime_type = mimetypes.guess_type(audio_file)[0]
     if mime_type != "audio/mpeg":
         print(f"File {audio_file} is not mp3 file.")
         sys.exit(1)
 
+    # Calculate total steps based on whether we have a video file
+    total_steps = 10 if video_file else 9
+    step = 0
+
+    def progress(msg):
+        nonlocal step
+        step += 1
+        print(f"\n[{step}/{total_steps}] {msg}")
+
     print(f"Going to use: {audio_file} and {video_file}")
 
-    # Step 1: Get episode number first
     # Read Podbean credentials from environment
     client_id = os.environ.get('PODBEAN_CLIENT_ID')
     client_secret = os.environ.get('PODBEAN_CLIENT_SECRET')
@@ -449,98 +460,140 @@ def main():
         sys.exit(1)
 
     # get podbean auth token
-    print("\nGetting podbean auth token...")
+    progress("Authenticating with Podbean...")
     auth_token = get_podbean_auth_token(client_id, client_secret)
+    print("✓ Authenticated")
 
     # get last episode number
-    print("Calculating episode number...")
+    progress("Calculating episode number...")
     episode_number = int(get_last_episode_number(auth_token)) + 1
-    print(f"This episode number: {episode_number}")
+    print(f"✓ Episode number: {episode_number}")
 
-    # Step 2: Transcribe audio (or load existing transcript)
-    transcript = None
-    transcript_file = f"episode{episode_number:03d}.txt"
-    
-    # Check if transcript already exists
-    if os.path.exists(transcript_file) and not args.skip_transcription:
-        print(f"Found existing transcript: {transcript_file}")
-        print("Loading existing transcript (use --skip-transcription to force new transcription)...")
-        with open(transcript_file, 'r', encoding='utf-8') as f:
-            transcript = f.read()
-    elif args.skip_transcription and args.transcript:
-        print(f"Loading transcript from: {args.transcript}")
-        with open(args.transcript, 'r', encoding='utf-8') as f:
-            transcript = f.read()
-    else:
-        print("Transcribing audio file...")
-        transcript = transcribe_audio_openai(client, audio_file, verbose=args.verbose)
-        
-        # Save transcript with episode number
-        with open(transcript_file, 'w', encoding='utf-8') as f:
-            f.write(transcript)
-        print(f"Transcript saved to: {transcript_file}")
-
-    # Step 3: Generate title and description options
-    options = generate_title_and_description_options(client, transcript, verbose=args.verbose)
-    
-    # Step 4: Let user select title (with regeneration option)
+    # Check for cached title and description
+    title_file = f"episode{episode_number:03d}-title.txt"
+    description_file = f"episode{episode_number:03d}-description.txt"
     title = None
-    while title is None:
-        result = select_option(options.get('titles', []), "title", allow_regenerate=True)
-        if isinstance(result, tuple) and result[0] == 'regenerate':
-            # Regenerate with additional prompt
-            options = generate_title_and_description_options(client, transcript, additional_prompt=result[1], verbose=args.verbose)
-        else:
-            title = result
-    print(f"\nSelected title: {title}")
-    
-    # Step 5: Let user select description (with regeneration option)
     description = None
-    while description is None:
-        result = select_option(options.get('descriptions', []), "description", allow_regenerate=True)
-        if isinstance(result, tuple) and result[0] == 'regenerate':
-            # Regenerate with additional prompt
-            options = generate_title_and_description_options(client, transcript, additional_prompt=result[1], verbose=args.verbose)
-        else:
-            description = result
-    print(f"\nSelected description: {description}")
 
-    # get presigned url for upload
-    print("Getting presigned url for upload...")
+    if os.path.exists(title_file) and os.path.exists(description_file):
+        with open(title_file, 'r', encoding='utf-8') as f:
+            cached_title = f.read().strip()
+        with open(description_file, 'r', encoding='utf-8') as f:
+            cached_description = f.read().strip()
+
+        print(f"\nFound saved title: {cached_title}")
+        print(f"Found saved description: {cached_description}")
+        choice = input("\nReuse saved title and description? (y/n): ").strip().lower()
+
+        if choice == 'y':
+            title = cached_title
+            description = cached_description
+            # Skip transcription and AI steps — adjust step counter
+            step += 4  # skip steps 3-6 (transcript, AI gen, title select, description select)
+            print("✓ Reusing saved title and description")
+
+    if title is None:
+        # Transcribe audio (or load existing transcript)
+        progress("Preparing transcript...")
+        transcript = None
+        transcript_file = f"episode{episode_number:03d}.txt"
+
+        if os.path.exists(transcript_file) and not args.skip_transcription:
+            print(f"Found existing transcript: {transcript_file}")
+            with open(transcript_file, 'r', encoding='utf-8') as f:
+                transcript = f.read()
+            print("✓ Loaded existing transcript")
+        elif args.skip_transcription and args.transcript:
+            print(f"Loading transcript from: {args.transcript}")
+            with open(args.transcript, 'r', encoding='utf-8') as f:
+                transcript = f.read()
+            print("✓ Loaded transcript")
+        else:
+            print("Transcribing audio file...")
+            transcript = transcribe_audio_openai(client, audio_file, verbose=args.verbose)
+            with open(transcript_file, 'w', encoding='utf-8') as f:
+                f.write(transcript)
+            print(f"✓ Transcript saved to: {transcript_file}")
+
+        # Generate title and description options
+        progress("Generating title and description options with AI...")
+        options = generate_title_and_description_options(client, transcript, verbose=args.verbose)
+        print("✓ Options generated")
+
+        # Let user select title
+        progress("Select episode title...")
+        while title is None:
+            result = select_option(options.get('titles', []), "title", allow_regenerate=True)
+            if isinstance(result, tuple) and result[0] == 'regenerate':
+                options = generate_title_and_description_options(client, transcript, additional_prompt=result[1], verbose=args.verbose)
+            else:
+                title = result
+        print(f"✓ Title: {title}")
+
+        # Let user select description
+        progress("Select episode description...")
+        while description is None:
+            result = select_option(options.get('descriptions', []), "description", allow_regenerate=True)
+            if isinstance(result, tuple) and result[0] == 'regenerate':
+                options = generate_title_and_description_options(client, transcript, additional_prompt=result[1], verbose=args.verbose)
+            else:
+                description = result
+        print("✓ Description selected")
+
+        # Save title and description for potential reuse
+        with open(title_file, 'w', encoding='utf-8') as f:
+            f.write(title)
+        with open(description_file, 'w', encoding='utf-8') as f:
+            f.write(description)
+        print(f"✓ Saved title to {title_file} and description to {description_file}")
+
+    # Upload audio to Podbean
+    progress("Uploading audio to Podbean...")
     file_size = os.path.getsize(audio_file)
     episode_file_name_mp3 = f"{episode_number:03d}-{title_to_url_safe(title)}.mp3"
     episode_file_name_md = f"{episode_number:03d}-{title_to_url_safe(title)}.md"
     presigned_url_response = get_podbean_upload_link(auth_token, episode_file_name_mp3, file_size)
-    
+
     if args.verbose:
         print(presigned_url_response)
-    
+
     presigned_url = presigned_url_response["presigned_url"]
     media_key = presigned_url_response["file_key"]
-    print(f"presigned_url: {presigned_url}")
-    print(f"media_key: {media_key}")
 
-    # upload file to podbean
-    print(f"Uploading file to podbean as {episode_file_name_mp3}...")
+    if args.verbose:
+        print(f"presigned_url: {presigned_url}")
+        print(f"media_key: {media_key}")
+
+    print(f"Uploading {episode_file_name_mp3} ({file_size / (1024*1024):.1f} MB)...")
     upload_response = upload_file_to_podbean(presigned_url, audio_file)
     if args.verbose:
         print(upload_response)
+    print("✓ Audio uploaded to Podbean")
 
-    # add prefix to the title
+    # Build metadata
     full_title = f"#{episode_number} - {title}"
 
-    # add standard ending to description
     extended_description = (f"{description}<p>&nbsp;</p>"
      + "<p>We are always happy to answer any questions, hear suggestions for new episodes, or hear from you, our listeners.</p>"
      + "<p><a href='https://www.linkedin.com/company/101418030'>DevSecOps Talks podcast LinkedIn page</a></p>"
      + "<p><a href='https://devsecops.fm/'>DevSecOps Talks podcast website</a></p>"
      + "<p><a href='https://youtube.com/channel/UCRjpE9xKxZeBkRgYiLErEjw'>DevSecOps Talks podcast YouTube channel</a></p>")
 
-    # print all received information
     print("\nPodcast title:", full_title)
     print("Podcast extended description:", extended_description)
 
-    # Build YouTube description: convert HTML to plain text, add audio episode link
+    # Create Podbean episode (before YouTube so it's not blocked by upload failures)
+    progress("Creating Podbean episode...")
+    create_episode_response = create_podbean_episode(
+        auth_token, full_title, extended_description, episode_number, media_key=media_key
+    )
+    if args.verbose:
+        print(create_episode_response)
+
+    podbean_id = create_episode_response["episode"]["player_url"].split('=')[-1]
+    print(f"✓ Podbean episode id: {podbean_id}")
+
+    # Build YouTube description
     youtube_description_text = re.sub(r'<p[^>]*>', '\n', extended_description)
     youtube_description_text = re.sub(r'</p>', '', youtube_description_text)
     youtube_description_text = re.sub(r"<a\s+href=['\"]([^'\"]+)['\"][^>]*>([^<]+)</a>", r'\2 (\1)', youtube_description_text)
@@ -555,32 +608,35 @@ def main():
         "\n\n#DevSecOps #InfraAsCode #CloudSecurity #DevOps #Podcast #CyberSecurity #Security #SSDLC #Devsecopstalks"
     )
 
-    # YouTube upload
+    # YouTube upload (async mode with polling, non-fatal)
     youtube_id = ""
     if video_file:
-        print(f"\nUploading video to YouTube: {video_file}")
-        youtube_response = upload_to_youtube(video_file, f"DEVSECOPS Talks {full_title}", youtube_description_text)
+        progress("Uploading video to YouTube (async)...")
+        print(f"File: {video_file}")
         try:
-            youtube_id = youtube_response["results"]["youtube"]["post_id"]
-        except (KeyError, TypeError):
-            youtube_id = str(youtube_response)
-        print(f"YouTube video id: {youtube_id}")
+            youtube_response = upload_to_youtube(video_file, f"DEVSECOPS Talks {full_title}", youtube_description_text)
+            # Try to extract video ID from various response shapes
+            for path in [
+                lambda r: r["results"]["youtube"]["post_id"],
+                lambda r: r["platforms"]["youtube"]["post_id"],
+                lambda r: r["results"]["youtube"]["url"],
+            ]:
+                try:
+                    youtube_id = path(youtube_response)
+                    break
+                except (KeyError, TypeError):
+                    continue
+            if not youtube_id:
+                youtube_id = str(youtube_response)
+            print(f"✓ YouTube video id: {youtube_id}")
+        except Exception as e:
+            print(f"⚠ YouTube upload failed: {e}")
+            print("Continuing without YouTube — you can upload manually later.")
     else:
-        print("No video file found, skipping YouTube upload.")
+        print("\nNo video file found, skipping YouTube upload.")
 
-    # create new episode
-    print("\nCreating new episode...")
-    create_episode_response = create_podbean_episode(
-        auth_token, full_title, extended_description, episode_number, media_key=media_key
-    )
-    if args.verbose:
-        print(create_episode_response)
-
-    podbean_id = create_episode_response["episode"]["player_url"].split('=')[-1]
-    print(f"Podbean episode id: {podbean_id}")
-
-    # Use Jinja2 to render episode.md.j2 template with all the data collected above
-    # and save it as episode.md
+    # Generate episode markdown file
+    progress("Generating episode page...")
     env = Environment(loader=FileSystemLoader(os.path.dirname(__file__)))
     template = env.get_template("episode.md.j2")
     output = template.render(
@@ -591,13 +647,21 @@ def main():
         description=extended_description,
         youtube_id=youtube_id,
     )
-    # get a path to content/episodes directory relative to the script location
     episode_file = os.path.join(os.path.dirname(__file__), "../content/episodes", episode_file_name_md)
     with open(episode_file, 'w') as f:
         f.write(output)
-    
-    print(f"\nEpisode file created: {episode_file}")
-    print("\nDone! 🎉")
+    print(f"✓ Episode file created: {episode_file}")
+
+    print(f"\n{'='*60}")
+    if youtube_id:
+        print(f"All done! 🎉 Episode #{episode_number} published.")
+    else:
+        print(f"Episode #{episode_number} published (YouTube upload pending).")
+        print(f"Upload video manually or re-run the script to retry.")
+    print(f"{'='*60}")
+
+
+
 
 if __name__ == "__main__":
     main()

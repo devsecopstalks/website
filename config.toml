@@ -7,8 +7,9 @@ buildFuture = true
 defaultContentLanguage = "en"
 pluralizelisttitles = false
 removePathAccents = true
-paginate = 10.0
-paginatePath = "page"
+[pagination]
+pagerSize = 10
+path = "page"
 rssLimit = 20.0
 
 disqusShortname = "devsecops-1"

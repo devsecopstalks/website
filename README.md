@@ -75,7 +75,6 @@ hugo new episodes/"TITLE OF SHOW.md"
 * Everyone to review description for grammar mistakes, accuracy etc. Add show notes
 * Make sure that description on Podbean matches description on the website after review and edits plus edit the following line `Visit https://devsecops.fm to see show notes and https://gitter.im/devsecopstalks/community to join a discussion`
 * Share podcast on Podbean
-* Visit podcast episode webpage and subscribe for Disqus updates
 * Hit social media
 
 ## Planning

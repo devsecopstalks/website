@@ -13,6 +13,6 @@
             {{ if ne .Lastmod .Date }}{{ partial "dates.html" . }}{{ end -}}
         </div>
     </article>
-    {{ if $.Param "episode" | default false }} {{ partial "disqus.html" . }}{{ end }}
+    
 </main>
 {{ end }}

@@ -12,8 +12,6 @@ pagerSize = 10
 path = "page"
 rssLimit = 20.0
 
-disqusShortname = "devsecops-1"
-
 [author]
 name = "DevSecOps Talks"
 url = "https://devsecops.fm/about"

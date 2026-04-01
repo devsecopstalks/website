@@ -12,3 +12,7 @@ is more secure then virtual machines. How did it go? We agreed to disagree.
 <!-- Player -->
 
 {{< podbean ycpvc-d7494b "DevSecOps Talks #4 - Docker Runtime Security" >}}
+
+## Notes
+
+* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)

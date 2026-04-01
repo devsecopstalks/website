@@ -18,4 +18,6 @@ Tune in to learn more about the white paper and recommendations that we pile up 
 
 ## Notes
 
+* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
+
 - [AWS Security Maturity Roadmap 2020 by SummitRoute](https://summitroute.com/blog/2020/05/21/aws_security_maturity_roadmap_2020)

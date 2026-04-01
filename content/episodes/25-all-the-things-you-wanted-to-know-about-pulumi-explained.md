@@ -25,6 +25,8 @@ This time we are joined by [Paul Stack](https://twitter.com/stack72) (Pulumi dev
 
 ## Notes
 
+* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
+
 - Paul Stack [twitter](https://twitter.com/stack72), [linkedin](https://www.linkedin.com/in/stack72/)
 - Jacob Lärfors [twitter](https://twitter.com/jlarfors), [linkedin](https://www.linkedin.com/in/jlarfors/)
 - [Pulumi](https://www.pulumi.com/)

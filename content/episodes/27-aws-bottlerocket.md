@@ -19,6 +19,8 @@ Is it ready for prime time? We answer all of those questions during this episode
 
 ## Notes
 
+* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
+
 - [AWS Bottlerocket GitHub repo](https://github.com/bottlerocket-os/bottlerocket)
 - [AWS Bottlerocket security features](https://github.com/bottlerocket-os/bottlerocket/blob/develop/SECURITY_FEATURES.md)
 - [AWS Bottlerocket hardening guidelines](https://github.com/bottlerocket-os/bottlerocket/blob/develop/SECURITY_GUIDANCE.md)

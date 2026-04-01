@@ -23,6 +23,8 @@ Just a heads up, we aren't sponsored by companies we mention in this episode. We
 
 ## Notes
 
+* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
+
 - [YoPass](https://yopass.se/)
 - [SendVis](https://send.vis.ee/)
 - [SimpleLogin](https://simplelogin.io/)

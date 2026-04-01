@@ -24,6 +24,8 @@ We talked about the different layers of abstraction for infrastructure as code a
 
 ## Notes
 
+* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
+
 -   [AuditD](https://www.elastic.co/beats/auditbeat)
 -   [GraphQL-mesh](https://graphql-mesh.com/)
 -   [ArgoCD for GitOps](https://argoproj.github.io/argo-cd/)

@@ -7,7 +7,7 @@ author: "DevSecOps Talks"
 participants: ["Paulina", "Mattias", "Andrey"]
 ---
 
-What keeps an incident from spiraling out of control? How can you organize your team on the spot? We continue our series on incident response, moving from preparation to real-time actions. Mattias shares key points from his course. Listen to learn how we handle incidents step by step.<p>&nbsp;</p><p>Connect with us on LinkedIn or Twitter (see info at https://devsecops.fm/about/). We are happy to answer any questions, hear suggestions for new episodes, or hear from you, our listeners.</p>
+What keeps an incident from spiraling out of control? How can you organize your team on the spot? We continue our series on incident response, moving from preparation to real-time actions. Mattias shares key points from his course. Listen to learn how we handle incidents step by step.
 
 <!--more-->
 
@@ -16,5 +16,7 @@ What keeps an incident from spiraling out of control? How can you organize your 
  {{<  podbean nb6sr-17f18c0-pb "DEVSECOPS Talks #74 - From Preparation To Execution: Handling An Active Incident"  >}} 
 
 ## Notes
+
+* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
 
 * [Video version](https://youtu.be/IJ544d5mZt4)

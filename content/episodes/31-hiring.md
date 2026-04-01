@@ -17,3 +17,5 @@ Have you ever conducted an interview to hire an infrastructure automation person
 {{< podbean sy9pc-10c12ef-pb "DevSecOps Talks #31 - Hiring an infrastructure automation person" >}}
 
 ## Notes
+
+* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)

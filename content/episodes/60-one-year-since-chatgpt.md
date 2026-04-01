@@ -17,6 +17,8 @@ Welcome to the first DevSecOps Talks episode of the new year! It's been a whole 
 
 ## Notes
 
+* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
+
 * [ollama.ai](https://ollama.ai)
 * [perkeep.org](https://perkeep.org)
 * [Google Cloud Gemini](https://deepmind.google/technologies/gemini/#introduction)

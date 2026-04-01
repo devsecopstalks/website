@@ -21,6 +21,8 @@ and delivery. We hope you will like it!
 
 ## Notes
 
+* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
+
 - Johan Abildskov [twitter](https://twitter.com/RandomSort), [linkedin](https://www.linkedin.com/in/johanabildskov/)
 - [Johan's book - Practical Git](https://www.amazon.com/Practical-Git-Confident-Through-Practice/dp/1484262697)
 - [Git-flow](https://nvie.com/posts/a-successful-git-branching-model/)

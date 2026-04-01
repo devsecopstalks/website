@@ -17,6 +17,8 @@ Our dialogue with Paul Stack resumes on DevSecOps Talks, almost two years after 
 
 ## Notes
 
+* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
+
 - [System Initative](https://www.systeminit.com/)
 - [Paul Stack on LinkedIn](https://www.linkedin.com/in/stack72)
 - [Paul Stack on Twitter or whatever it is being called now](https://twitter.com/stack72)

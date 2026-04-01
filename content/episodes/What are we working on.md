@@ -15,3 +15,7 @@ credentials in Git repository, why you should (or should not) use Kubernetes and
 <!-- Player -->
 
 {{< podbean w35eg-d87a2b "DevSecOps Talks #5 - What are we working on" >}}
+
+## Notes
+
+* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)

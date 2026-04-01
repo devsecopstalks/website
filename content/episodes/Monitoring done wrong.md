@@ -19,4 +19,6 @@ Julien explains why using logs to debug in a microservices architecture is costl
 
 ## Notes
 
+* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
+
 [Wazuh](https://wazuh.com/)

@@ -16,3 +16,5 @@ Have you heard any recent news from Docker? We haven't. That is why we decided t
 {{< podbean m7rfe-13027d7-pb "DEVSECOPS Talks #45 - What is happening with Docker?" >}}
 
 ## Notes
+
+* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)

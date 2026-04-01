@@ -17,4 +17,6 @@ We had the opportunity to talk with Neatsun Ziv, one of the founders of Ox Secur
 
 ## Notes
 
+* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
+
 - [Open Software Supply Chain Attack Reference Framework](https://www.ox.security/open-software-supply-chain-attack-reference-framework/)

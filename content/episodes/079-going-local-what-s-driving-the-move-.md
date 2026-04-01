@@ -7,7 +7,7 @@ author: "DevSecOps Talks"
 participants: ["Paulina", "Mattias", "Andrey"]
 ---
 
-Andrey, Paulina, and Mattias kick off a miniseries on European infrastructure. We talk about infrastructure providers' options across Europe, ask what really drives the move away from hyperscalers, and wonder whether the trade-offs make sense for most teams.<p>&nbsp;</p><p>Connect with us on LinkedIn or Twitter (see info at https://devsecops.fm/about/). We are happy to answer any questions, hear suggestions for new episodes, or hear from you, our listeners.</p>
+Andrey, Paulina, and Mattias kick off a miniseries on European infrastructure. We talk about infrastructure providers' options across Europe, ask what really drives the move away from hyperscalers, and wonder whether the trade-offs make sense for most teams.
 
 <!--more-->
 
@@ -16,5 +16,7 @@ Andrey, Paulina, and Mattias kick off a miniseries on European infrastructure. W
  {{<  podbean pd32s-188c305-pb "DEVSECOPS Talks #79 - Going Local: What’S Driving The Move?"  >}} 
 
 ## Notes
+
+* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
 
 * [Video version](https://youtu.be/kjDs5ee2YO8)

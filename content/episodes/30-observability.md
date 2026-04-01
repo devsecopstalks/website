@@ -17,3 +17,5 @@ Logs, metrics, and traces are the three pillars of observability. Where should y
 {{< podbean hr7vs-1069ebe-pb "DevSecOps Talks #30 - Logs, metrics and traces" >}}
 
 ## Notes
+
+* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)

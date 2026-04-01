@@ -17,4 +17,6 @@ This time we got to talk about Lingon, an open-source project developed by Julia
 
 ## Notes
 
+* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
+
 - [Lingon Github](https://github.com/volvo-cars/lingon)

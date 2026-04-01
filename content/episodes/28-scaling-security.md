@@ -19,6 +19,8 @@ We think that it is a myth and that we can measure how many steps it takes to ad
 
 ## Notes
 
+* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
+
 - [Resource hierarchy on GCP](https://cloud.google.com/resource-manager/docs/cloud-platform-resource-hierarchy)
 - [PAPER: shifting left on security](https://cloud.google.com/files/shifting-left-on-security.pdf)
 - [Scale on GCP](https://bisconti.cloud/slides/2021-05-gcp-overview/)

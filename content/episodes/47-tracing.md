@@ -16,3 +16,5 @@ We discussed tracing before but never got around to explaining details such as f
 {{< podbean tht9r-1384174-pb "DEVSECOPS Talks #47 - Tracing explained" >}}
 
 ## Notes
+
+* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)

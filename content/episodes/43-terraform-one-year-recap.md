@@ -16,3 +16,5 @@ We are discussing what has happened in Terraform world since the 1.0 release las
 {{< podbean 88rw5-125edf2-pb "DEVSECOPS Talks #43 - Terraform 1.0 to 1.3.0. One year in review" >}}
 
 ## Notes
+
+* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)

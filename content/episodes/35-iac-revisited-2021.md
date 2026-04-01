@@ -17,4 +17,6 @@ Our first episode was about Infrastructure as code, and we feel that it is time 
 
 ## Notes
 
+* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
+
 * [Infrastructure as Code: Dynamic Systems for the Cloud Age 2nd Edition](https://www.amazon.com/Infrastructure-Code-Dynamic-Systems-Cloud/dp/1098114671)

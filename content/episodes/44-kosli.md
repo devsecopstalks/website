@@ -17,6 +17,8 @@ We are excited about the new breed of tools coming to the market. We often had t
 
 ## Notes
 
+* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
+
 - [Mike Long](https://www.linkedin.com/in/mikelongoslo/)
 - [Kosli](https://www.kosli.com/)
 - [DevOpsCtl](https://www.devopsctl.com/)

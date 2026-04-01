@@ -31,6 +31,8 @@ Connect with us on [LinkedIn, Twitter](/about/) and tell us about your questions
 
 ## Notes
 
+* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
+
 - [Mattias blog post - K8s logs to Elastic](https://lifeandshell.com/blog/k8s-logs-to-elastic-with-dynamic-ilm-from-annotations/)
 - [K8S events streamer](https://github.com/fivexl/kubernetes-events-to-slack/)
 - [Tweet about the 3 questions for privacy](https://twitter.com/eey0re/status/970144255745212416)

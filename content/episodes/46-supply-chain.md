@@ -17,5 +17,7 @@ We are happy to welcome back Jacob Lärfors, CEO and Senior Consultant from Veri
 
 ## Notes
 
+* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
+
 - [A distributed vulnerability database for Open Source](https://osv.dev/)
 - [Harbor](https://github.com/goharbor/harbor)

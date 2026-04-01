@@ -17,4 +17,6 @@ In this episode of DevSecOps Talks, Andrey and Mattias are joined by Timur Bubli
 
 ## Notes
 
+* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
+
 * [Timur Bublik LinkedIn](https://www.linkedin.com/in/timur-bublik/)

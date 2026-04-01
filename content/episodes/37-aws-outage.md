@@ -17,6 +17,8 @@ us-east-1 will never go down, and if it would, half of the internet would go dow
 
 ## Notes
 
+* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
+
 - [AWS outage postmortem](https://aws.amazon.com/message/12721/)
 - [Surviving AWS Outage, episode from 2020](https://devsecops.fm/episodes/21-surviving-aws-outage/)
 - [aws-outages script](https://github.com/gosuri/aws-outages)

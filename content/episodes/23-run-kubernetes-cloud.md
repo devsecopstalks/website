@@ -19,6 +19,8 @@ Also, in this episode - what do you always configure in the k8s cluster? CNI, In
 
 ## Notes
 
+* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
+
 - [Parse AWS CloudTrail events and send alerts to Slack for events that match pre-configured rules](https://github.com/fivexl/terraform-aws-cloudtrail-to-slack)
 - [An easy way to always have a fresh Spot Instance price](https://github.com/fivexl/terraform-aws-ec2-spot-price)
 - [Cilium](https://cilium.io)

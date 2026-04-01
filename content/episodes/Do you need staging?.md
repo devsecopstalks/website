@@ -22,4 +22,6 @@ Put it simply - stage or not to stage?
 
 ## Notes
 
+* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
+
 

@@ -17,6 +17,8 @@ In this episode, Mattias is joined by Ben Goodman, the founder of dragondrop.clo
 
 ## Notes
 
+* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
+
 * [Dragondrop Cloud](https://dragondrop.cloud/)
 * [Dragondrop Cloud GitHub](https://github.com/dragondrop-cloud/cloud-concierge)
 * [Ben on LinkedIn](https://www.linkedin.com/in/ben-g-382141212/)

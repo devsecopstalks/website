@@ -18,5 +18,7 @@ This time we are talking unikernles! [Ian Eyberg](https://www.linkedin.com/in/ia
 
 ## Notes
 
+* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
+
 - [Ops - tool for managing unikernels](https://ops.city)
 - [Running unikernels on AWS](https://nanovms.gitbook.io/ops/aws)

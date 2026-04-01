@@ -19,6 +19,8 @@ We discussed various topics around security inside a cluster and outside.
 
 ## Notes
 
+* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
+
 - [Beyond Corp paper from Google](https://cloud.google.com/beyondcorp/#researchPapers)
 - [China is now blocking all encrypted HTTPS traffic that uses TLS 1.3 and ESNI](https://www.zdnet.com/article/china-is-now-blocking-all-encrypted-https-traffic-using-tls-1-3-and-esni/)
 - [Linkerd mutual TLS](https://linkerd.io/2/features/automatic-mtls/)

@@ -16,3 +16,5 @@ In this episode of DevSecOps Talks, Andrey and Mattias discuss the latest announ
 {{< podbean 9uhgs-159ae94-pb "DEVSECOPS Talks #62 - The DevSecOps Perspective: Key Takeaways From Re:Invent 2023" >}}
 
 ## Notes
+
+* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)

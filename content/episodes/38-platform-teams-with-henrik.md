@@ -22,3 +22,5 @@ Henrik Hoegh is back to talk about his experiences working in the platform team 
 {{< podbean hzuhc-1189d16-pb "DevSecOps Talks #38 - Platform teams with Henrik" >}}
 
 ## Notes
+
+* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)

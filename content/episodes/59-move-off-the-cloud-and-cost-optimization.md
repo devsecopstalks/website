@@ -17,6 +17,8 @@ Is the grass greener outside the cloud? This episode dives into the trend of com
 
 ## Notes
 
+* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
+
 * [FivexL's AWS cost analysis tool](https://github.com/fivexl/aws-cost-and-usage-report-generator)
 * [DHH - Why we're leaving the cloud](https://world.hey.com/dhh/why-we-re-leaving-the-cloud-654b47e0)
 * [Dropbox leaving the cloud](https://www.wired.com/2016/03/epic-story-dropboxs-exodus-amazon-cloud-empire/)

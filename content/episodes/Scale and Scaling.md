@@ -19,5 +19,7 @@ And last but not least, the very unexpected spin that Julien gives to the conver
 
 ## Notes
 
+* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
+
 - [Julien's blog post about scale](https://bisconti.cloud/posts/what-scale-means/)
 - [c10k problem](https://en.wikipedia.org/wiki/C10k_problem)

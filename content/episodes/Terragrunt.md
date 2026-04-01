@@ -21,6 +21,8 @@ a wrapper around Terraform for working with multiple environment and modules.
 
 ## Notes
 
+* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
+
 - [Anton Babenko's projects and social links](https://github.com/antonbabenko/terraform-aws-devops)
 - [tfvars-annotations](https://github.com/antonbabenko/tfvars-annotations)
 - [Terragrunt Reference Architecture](https://github.com/antonbabenko/terragrunt-reference-architecture)

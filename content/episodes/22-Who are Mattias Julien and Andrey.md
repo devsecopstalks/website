@@ -15,6 +15,8 @@ It's been almost a year since we started the podcast, but we never took time to 
 
 ## Notes
 
+* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
+
 * [Preventing the Collapse of Civilization - Jonathan Blow](https://www.youtube.com/watch?v=ZSRHeXYDLko)
 * [Mattias's employer](https://www.booli.se)
 * [Mattias's website](https://lifeandshell.com)

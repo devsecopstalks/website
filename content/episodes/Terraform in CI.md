@@ -23,6 +23,8 @@ The code for the infrastructure is treated like an application that is versioned
 
 ## Notes
 
+* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
+
 - [Atlantis - Terraform Pull Request Automation ](https://www.runatlantis.io/)
 - [HashiCorp Announces Free Tier for Terraform SaaS](https://www.hashicorp.com/resources/hashicorp-announces-terraform-saas-free-tier/)
 - [Terraform Backend Types](https://www.terraform.io/docs/backends/types/index.html)

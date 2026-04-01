@@ -20,6 +20,8 @@ At the end of the podcast, everyone gets to share their approach and recommendat
 
 ### Notes
 
+* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
+
 - [Hugo web site generator](https://gohugo.io)
 - [SemVer specification](https://semver.org)
 - Johan's contact:

@@ -18,6 +18,8 @@ As a Cloud Engineering practitioner, how do you get yourself and your organizati
 
 ## Notes
 
+* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
+
 - [AWS postmortem](https://aws.amazon.com/message/11201/)
 - [Chaos Engineering as a part of AWS Well Architected Framework](https://thenewstack.io/chaos-engineering-now-part-of-aws-well-architected-framework/)
 - [Chaos Tool Kit](https://chaostoolkit.org/)

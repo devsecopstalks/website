@@ -17,6 +17,8 @@ Julien gives his impressions of Google Cloud Next 2021, and Andrey recaps HashiC
 
 ## Notes
 
+* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
+
 * [Andrey's recap of HashiConf in Russian](https://youtu.be/hDkAfjCCXRc)
 * [HashiConf 2021 Global playlist](https://www.youtube.com/watch?v=g3lR7xPI9EI&list=PL81sUbsFNc5arDZYNn3i8N_I7ZeCe02ve)
 * [Google Cloud Next Day 1 livestream](https://www.youtube.com/watch?v=zMN56phAyns)

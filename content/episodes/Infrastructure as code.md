@@ -14,7 +14,9 @@ Follow us in our first talk.
 
 {{< podbean d7x4q-d53cd6 "DevSecOps Talks #1-2020 - Infra as code" >}}
 
-### notes from pod
+## Notes
+
+* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
 
 Andrey: [First chapter of infra as code](https://www.oreilly.com/library/view/infrastructure-as-code/9781491924334/ch01.html)
 

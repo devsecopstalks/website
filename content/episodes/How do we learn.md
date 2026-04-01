@@ -19,6 +19,8 @@ In this episode, Mattias, Julien, and Andrey share tips and tricks on how to sta
 
 ## Notes
 
+* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
+
 - [A Cloud Guru](https://acloud.guru/)
 - [Linux Academy](https://linuxacademy.com/)
 - [O'Reilly Safari](https://www.oreilly.com/)

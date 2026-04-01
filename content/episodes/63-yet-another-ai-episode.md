@@ -17,6 +17,8 @@ Julien has returned with some exciting AI news. A startup has made the bold clai
 
 ## Notes
 
+* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
+
 * [Cognition emerges from stealth to launch AI software engineer 
 Devin](https://venturebeat.com/ai/cognition-emerges-from-stealth-to-launch-ai-software-engineer-devin/)
 * [appCD Launches Generative Infrastructure from Code](https://appcd.com)

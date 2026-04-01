@@ -16,3 +16,5 @@ Everyone seems to be talking about service mesh. Mattias, Julien, and Andrey are
 {{< podbean ckw39-10f1d56-pb "DevSecOps Talks #33 - Do I need a service mesh?" >}}
 
 ## Notes
+
+* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)

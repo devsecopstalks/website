@@ -18,6 +18,8 @@ We cover a lot of ground - from basic Vault concepts to setting it up and harden
 
 ## Notes
 
+* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
+
 - [Andrey's presentation at HashiConf EU Digital 2020](https://www.hashicorp.com/resources/vault-configuration-as-code-via-terraform-stories-from-the-trenches/)
 - [Introduction to HashiCorp Vault](https://www.youtube.com/watch?v=VYfl-DpZ5wM) 
 - [HashiCorp Vault hardening guide](https://learn.hashicorp.com/tutorials/vault/production-hardening)

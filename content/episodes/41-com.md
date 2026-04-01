@@ -16,3 +16,5 @@ Communication in co-located teams is quite often complicated. It is even more co
 {{< podbean xdhk2-120e124-pb "DEVSECOPS Talks #41 - Great communication FTW" >}}
 
 ## Notes
+
+* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)

@@ -17,6 +17,8 @@ In this episode, we discuss the evolution of AWS networking capabilities from EC
 
 ## Notes
 
+* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
+
 - [AWS RAM](https://aws.amazon.com/ram/)
 - [VPC Sharing - A new approach to multiple accounts and vpc management](https://aws.amazon.com/blogs/networking-and-content-delivery/vpc-sharing-a-new-approach-to-multiple-accounts-and-vpc-management/)
 - [Scaling AWS infra at Grammarly](https://www.grammarly.com/blog/engineering/scaling-aws-infrastructure/)

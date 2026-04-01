@@ -7,7 +7,7 @@ author: "DevSecOps Talks"
 participants: ["Paulina", "Mattias", "Andrey", "Paul"]
 ---
 
-What can you automate with SWAMP today, from AWS to a Proxmox home lab? How do skills, scripts, and reusable workflows plug into your stack? Could this be your agent’s missing guardrails?<p>&nbsp;</p><p>We are always happy to answer any questions, hear suggestions for new episodes, or hear from you, our listeners.</p><p><a href='https://www.linkedin.com/company/101418030'>DevSecOps Talks podcast LinkedIn page</a></p><p><a href='https://devsecops.fm/'>DevSecOps Talks podcast website</a></p><p><a href='https://youtube.com/channel/UCRjpE9xKxZeBkRgYiLErEjw'>DevSecOps Talks podcast YouTube channel</a></p>
+What can you automate with SWAMP today, from AWS to a Proxmox home lab? How do skills, scripts, and reusable workflows plug into your stack? Could this be your agent’s missing guardrails?
 
 <!--more-->
 
@@ -16,6 +16,8 @@ What can you automate with SWAMP today, from AWS to a Proxmox home lab? How do s
  {{<  podbean egzxx-1a4fe21-pb "DEVSECOPS Talks #92 - From System Initiative to SWAMP: Agent-Native Infra with Paul Stack"  >}} 
 
 ## Notes
+
+* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
 
 * [Video version](https://youtu.be/XTM__-Ai4Zw)
 * [Swamp demo repo](https://github.com/stack72/swamp-env-example)

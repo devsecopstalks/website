@@ -33,6 +33,8 @@ In some of the information overlaps with episode #3 but greatly extends informat
 
 ## Notes
 
+* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
+
 - [Docker BuildKit](https://github.com/moby/buildkit/blob/master/frontend/dockerfile/docs/experimental.md)
 - [img](https://github.com/genuinetools/img)
 - [kaniko](https://github.com/GoogleContainerTools/kaniko)

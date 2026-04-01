@@ -17,4 +17,6 @@ You know our fondness for Terraform, but we are also open to exploring other too
 
 ## Notes
 
+* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
+
 * [Igor on LinkedIn](https://www.linkedin.com/in/igor-soroka/)

@@ -18,3 +18,5 @@ While we often chat about the big cloud service providers, this time we're switc
 {{< podbean wt57f-1446a7d-pb "DEVSECOPS Talks #51 - Provisioning bare-metal servers" >}}
 
 ## Notes
+
+* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)

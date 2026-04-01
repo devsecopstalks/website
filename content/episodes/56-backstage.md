@@ -17,3 +17,5 @@ In this episode of DevSecOps Talks, join Andrey, Julien, and Mattias as they div
 
 ## Notes
 
+* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
+

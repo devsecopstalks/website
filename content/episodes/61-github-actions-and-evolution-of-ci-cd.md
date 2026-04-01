@@ -20,6 +20,8 @@ Andrey gave his tips on using Bash inside YAML and pipeline management. Mattias 
 
 ## Notes
 
+* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
+
 -   [ACT](https://github.com/nektos/act) to run github actions locally
 -   [Codeberg](https://codeberg.org/)
 -   [gitea](https://github.com/go-gitea/gitea)

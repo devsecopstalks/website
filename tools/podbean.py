@@ -644,7 +644,7 @@ def main():
         episode_number=episode_number,
         date=datetime.datetime.now().astimezone().replace(microsecond=0).isoformat(),
         podbean_id=podbean_id,
-        description=extended_description,
+        description=description,
         youtube_id=youtube_id,
     )
     episode_file = os.path.join(os.path.dirname(__file__), "../content/episodes", episode_file_name_md)

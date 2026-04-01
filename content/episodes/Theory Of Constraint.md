@@ -18,6 +18,8 @@ We go back to the origin of DevOps, discussing the various problems companies ar
 
 ## Notes
 
+* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
+
 - [Henrik Høegh](https://www.linkedin.com/in/henrikrenehoegh/)
 - [The Goal by Eliyahu Goldratt](https://en.wikipedia.org/wiki/The_Goal_(novel))
 - [Manifesto for Agile Software Development](https://agilemanifesto.org/)

@@ -17,5 +17,7 @@ We have had Git around for more than 15 years, and during that time, it has beco
 
 ## Notes
 
+* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
+
 * [Sturdy](https://getsturdy.com/)
 * Kiril's [LinkedIn](https://www.linkedin.com/in/kirilv/) and [Twitter](https://twitter.com/krlvi)

@@ -16,3 +16,5 @@ As a follow-up to the [last episode about hiring an infrastructure automation pe
 {{< podbean b4hw5-10db269-pb "DevSecOps Talks #32 - Getting hired as an infrastructure automation person" >}}
 
 ## Notes
+
+* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)

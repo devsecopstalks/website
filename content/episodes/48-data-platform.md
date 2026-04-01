@@ -16,3 +16,5 @@ Julien has extensive experience building data platforms for data engineering, so
 {{< podbean 989d8-13af684-pb "DEVSECOPS Talks #48 - Building Data Platforms" >}}
 
 ## Notes
+
+* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)

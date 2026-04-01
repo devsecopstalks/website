@@ -17,6 +17,8 @@ Andrey feels frustrated that he has to develop a way to configure environments f
 
 ## Notes
 
+* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
+
 - [CUE language](https://cuelang.org/)
 - [Bazel](https://bazel.build/)
 - [Gradle](https://gradle.org/)

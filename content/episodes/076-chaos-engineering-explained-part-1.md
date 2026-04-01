@@ -7,7 +7,7 @@ author: "DevSecOps Talks"
 participants: ["Paulina", "Mattias", "Andrey"]
 ---
 
-Chaos engineering—is it really chaos, or something more structured? Andrey, Paulina, and Mattias talk about what chaos engineering means, how it started, and why you might already be using it unintentionally.<p>&nbsp;</p><p>Connect with us on LinkedIn or Twitter (see info at https://devsecops.fm/about/). We are happy to answer any questions, hear suggestions for new episodes, or hear from you, our listeners.</p>
+Chaos engineering—is it really chaos, or something more structured? Andrey, Paulina, and Mattias talk about what chaos engineering means, how it started, and why you might already be using it unintentionally.
 
 <!--more-->
 
@@ -16,5 +16,7 @@ Chaos engineering—is it really chaos, or something more structured? Andrey, Pa
  {{<  podbean 6xzd4-183a017-pb "DEVSECOPS Talks #76 - Chaos Engineering Explained: Part 1"  >}} 
 
 ## Notes
+
+* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
 
 * [Video version](https://youtu.be/rcVDIV76b8k)

@@ -19,6 +19,8 @@ So here it is - HashiConf special: all you need to know about everything that Ha
 
 ## Notes
 
+* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
+
 - [Jacob's LinkedIn](https://www.linkedin.com/in/jlarfors/)
 - [Jacob's article about Nomad](https://verifa.io/insights/nomad-the-workload-orchestrator-you-may-have-missed/)
 - [HashiConf recap slides](https://docs.google.com/presentation/d/1_v-Tq2Cz2Yj6n7yaKMr0MSfXTAv5u76ERzFVurK8mNE/edit#slide=id.ga3fa500c4c_0_0)

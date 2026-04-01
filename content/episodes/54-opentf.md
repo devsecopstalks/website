@@ -17,6 +17,8 @@ In this episode of DevSecOps Talks, we dive deep into HashiCorp's recent shift t
 
 ## Notes
 
+* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
+
 - [HashiCorp BSL announcement](https://www.hashicorp.com/blog/hashicorp-adopts-business-source-license)
 - [HashiCorp update of Registery TOC](https://www.reddit.com/r/Terraform/comments/166am6t/hashicorp_updates_terraform_registry_tos_for/)
 - [OpenTF](https://opentf.org/)

@@ -7,7 +7,7 @@ author: "DevSecOps Talks"
 participants: ["Paulina", "Mattias", "Andrey"]
 ---
 
-Part two of our chaos engineering series is here! Join Andrey, Mattias, and Paulina as they talk through practical strategies for chaos engineering. Who should do it? How can you start? And what are the essential prerequisites?<p>&nbsp;</p><p>Connect with us on LinkedIn or Twitter (see info at https://devsecops.fm/about/). We are happy to answer any questions, hear suggestions for new episodes, or hear from you, our listeners.</p>
+Part two of our chaos engineering series is here! Join Andrey, Mattias, and Paulina as they talk through practical strategies for chaos engineering. Who should do it? How can you start? And what are the essential prerequisites?
 
 <!--more-->
 
@@ -16,6 +16,8 @@ Part two of our chaos engineering series is here! Join Andrey, Mattias, and Paul
  {{<  podbean fwejy-1861ed4-pb "DEVSECOPS Talks #77 - Chaos Engineering Explained: Part 2"  >}} 
 
 ## Notes
+
+* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
 
 * [Youtube version](https://youtu.be/NQeXLz3ogfs)
 * [Pumba Docker Container](https://github.com/alexei-led/pumba)

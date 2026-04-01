@@ -11,7 +11,7 @@ It’s been a while since OpenTofu was released to the public, so we wanted to c
 
 This time we’re joined by Cole Bittel, an experienced SRE, platform engineer, and contributor to OpenTofu. He shares his hands-on experience migrating to OpenTofu, and we look into the problems teams face with infrastructure as code and how both Terraform and OpenTofu approach solving them.
 
-<p>&nbsp;</p><p>We are always happy to answer any questions, hear suggestions for new episodes, or hear from you, our listeners.</p><p><a href='https://www.linkedin.com/company/101418030'>DevSecOps Talks podcast LinkedIn page</a></p><p><a href='https://devsecops.fm/'>DevSecOps Talks podcast website</a></p><p><a href='https://youtube.com/channel/UCRjpE9xKxZeBkRgYiLErEjw'>DevSecOps Talks podcast YouTube channel</a></p>
+
 
 <!--more-->
 
@@ -20,6 +20,8 @@ This time we’re joined by Cole Bittel, an experienced SRE, platform engineer, 
  {{<  podbean 6bymu-1969d33-pb "DEVSECOPS Talks #83 - Opentofu Vs Terraform: Where We Are Now With Cole Bittel"  >}} 
 
 ## Notes
+
+* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
 
 * [Cole Bittel](https://www.linkedin.com/in/bittelc/)
 * [Video version](https://youtu.be/SGtzE3YFjqg)

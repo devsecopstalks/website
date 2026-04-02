@@ -1,9 +1,12 @@
 import os
 import time
+from pathlib import Path
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 from upload_post import UploadPostClient
 
 
-def upload_to_youtube(video_path, title, description, poll_interval=15, poll_timeout=600):
+def upload_to_youtube(video_path, title, description, poll_interval=15, poll_timeout=600, max_retries=2):
     """
     Upload video to YouTube using async mode to avoid gateway timeouts.
 
@@ -13,6 +16,7 @@ def upload_to_youtube(video_path, title, description, poll_interval=15, poll_tim
         description: Video description
         poll_interval: Seconds between status checks (default 15)
         poll_timeout: Max seconds to wait for completion (default 600 = 10 min)
+        max_retries: Number of upload retries on failure (default 2)
 
     Returns:
         Final status response dict
@@ -22,22 +26,46 @@ def upload_to_youtube(video_path, title, description, poll_interval=15, poll_tim
 
     client = UploadPostClient(api_key=api_key)
 
-    print("Submitting async upload...")
-    response = client.upload_video(
-        video_path=video_path,
-        title=title,
-        description=description,
-        user=user,
-        platforms=["youtube"],
-        privacyStatus="public",
-        selfDeclaredMadeForKids=False,
-        async_upload=True,
+    # Configure retries and generous timeout for large file uploads
+    retry_strategy = Retry(
+        total=3,
+        backoff_factor=2,
+        status_forcelist=[502, 503, 504],
     )
-    print("Upload submitted:", response)
+    adapter = HTTPAdapter(max_retries=retry_strategy)
+    client.session.mount("https://", adapter)
+
+    file_size_mb = Path(video_path).stat().st_size / (1024 * 1024)
+    # Scale timeout: 10 min base + 1 min per 100MB
+    upload_timeout = 600 + int(file_size_mb / 100) * 60
+    print(f"File size: {file_size_mb:.0f} MB, upload timeout: {upload_timeout}s")
+
+    response = None
+    for attempt in range(1, max_retries + 1):
+        try:
+            print(f"Submitting async upload (attempt {attempt}/{max_retries})...")
+            response = client.upload_video(
+                video_path=video_path,
+                title=title,
+                description=description,
+                user=user,
+                platforms=["youtube"],
+                privacyStatus="public",
+                selfDeclaredMadeForKids=False,
+                async_upload=True,
+            )
+            print("Upload submitted:", response)
+            break
+        except Exception as e:
+            print(f"Upload attempt {attempt} failed: {e}")
+            if attempt == max_retries:
+                raise
+            wait = 2 ** attempt * 5
+            print(f"Retrying in {wait}s...")
+            time.sleep(wait)
 
     request_id = response.get("request_id")
     if not request_id:
-        # Sync response came back immediately (small file or already done)
         return response
 
     print(f"Polling for completion (request_id: {request_id})...")

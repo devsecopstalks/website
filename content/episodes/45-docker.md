@@ -9,6 +9,8 @@ participants: ['Andrey', 'Mattias', 'Julien']
 
 Have you heard any recent news from Docker? We haven't. That is why we decided to check up on Docker to see how it is doing and go through the tool's history and adoption. Clueless about the difference between Docker, Containerd, CRI-O? We got you covered. Also, we will highlight a couple of new handy capabilities added recently.
 
+[Discuss the episode or ask us anything on LinkedIn](https://www.linkedin.com/company/devsecops-talks/)
+
 <!--more-->
 
 <!-- Player -->
@@ -17,4 +19,3 @@ Have you heard any recent news from Docker? We haven't. That is why we decided t
 
 ## Notes
 
-* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)

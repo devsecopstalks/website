@@ -12,6 +12,8 @@ We explored a bit history of CI/CD, we started with Jenkins and its DSL in Groov
 We compared that to the current DSL in YAML (GitHub Actions, Google Cloud Build, Azure DevOps, AWS CloudBuild).
 Andrey gave his tips on using Bash inside YAML and pipeline management. Mattias shared his experience on building pipeline.
 
+[Discuss the episode or ask us anything on LinkedIn](https://www.linkedin.com/company/devsecops-talks/)
+
 <!--more-->
 
 <!-- Player -->
@@ -19,8 +21,6 @@ Andrey gave his tips on using Bash inside YAML and pipeline management. Mattias 
 {{< podbean fa3p9-15758c0-pb "DEVSECOPS Talks #61 - GitHub Actions And Evolution Of CI/CD Tools" >}}
 
 ## Notes
-
-* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
 
 -   [ACT](https://github.com/nektos/act) to run github actions locally
 -   [Codeberg](https://codeberg.org/)

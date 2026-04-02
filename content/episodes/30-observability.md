@@ -9,6 +9,7 @@ participants: ['Andrey', 'Mattias', 'Julien']
 
 Logs, metrics, and traces are the three pillars of observability. Where should you start? What are the common mistakes to avoid? And if you are to pick one - which one should you do?
 
+[Discuss the episode or ask us anything on LinkedIn](https://www.linkedin.com/company/devsecops-talks/)
 
 <!--more-->
 
@@ -18,4 +19,3 @@ Logs, metrics, and traces are the three pillars of observability. Where should y
 
 ## Notes
 
-* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)

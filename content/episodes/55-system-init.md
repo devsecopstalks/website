@@ -9,6 +9,8 @@ participants: ['Mattias', 'Julien', 'Andrey', 'Paul']
 
 Our dialogue with Paul Stack resumes on DevSecOps Talks, almost two years after our initial podcast about his work on Pulumi (episode 25). As a warm-up, we talk about what prompted his move from Pulumi and his take on Open Terraform drama. The main topic of the episode is Paul's current focus, System Initiative; we probe into its purpose, the progress so far, and the promise it holds for redefining how we think of doing Infrastructure as Code and DevSecOps workflows in general.
 
+[Discuss the episode or ask us anything on LinkedIn](https://www.linkedin.com/company/devsecops-talks/)
+
 <!--more-->
 
 <!-- Player -->
@@ -16,8 +18,6 @@ Our dialogue with Paul Stack resumes on DevSecOps Talks, almost two years after 
 {{< podbean cuq32-14d2ea0-pb "DEVSECOPS Talks #55 - Unpacking System Initiative with Paul Stack" >}}
 
 ## Notes
-
-* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
 
 - [System Initative](https://www.systeminit.com/)
 - [Paul Stack on LinkedIn](https://www.linkedin.com/in/stack72)

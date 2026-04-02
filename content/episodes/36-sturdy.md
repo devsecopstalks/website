@@ -9,6 +9,8 @@ participants: ['Andrey', 'Mattias', 'Julien']
 
 We have had Git around for more than 15 years, and during that time, it has become a standard de-facto to share code and track code changes. While Git is a superior version control system to most of what we have seen before, it has been 15 years since the first release. Should we be looking for new ways to approach version control systems? Is the time right for the next generation of tools in this area?
 
+[Discuss the episode or ask us anything on LinkedIn](https://www.linkedin.com/company/devsecops-talks/)
+
 <!--more-->
 
 <!-- Player -->
@@ -16,8 +18,6 @@ We have had Git around for more than 15 years, and during that time, it has beco
 {{< podbean h8fzc-114cc81-pb "DevSecOps Talks #36 - Sturdy. Is it time for a new version control tool?" >}}
 
 ## Notes
-
-* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
 
 * [Sturdy](https://getsturdy.com/)
 * Kiril's [LinkedIn](https://www.linkedin.com/in/kirilv/) and [Twitter](https://twitter.com/krlvi)

@@ -9,14 +9,19 @@ participants: ["Paulina", "Mattias", "Andrey"]
 
 We bring Paul Stack back to cover the parts we skipped last time. What changed when the models got better and we moved from one-shot Gen AI to agentic, human-in-the-loop work? How do plan mode and tight prompts stop AI from going rogue? Want to hear how six branches, git worktrees, and a TypeScript CLI came together?
 
+[Discuss the episode or ask us anything on LinkedIn](https://www.linkedin.com/company/devsecops-talks/)
+
 <!--more-->
 
 <!-- Player -->
 
  {{<  podbean xnuqq-1a6b211-pb "DEVSECOPS Talks #94 - Small Tasks, Big Wins: The AI Dev Loop at System Initiative"  >}} 
 
+---
+
+<!-- Video -->
+
+{{< youtube R6DExMI8iVw >}}
+
 ## Notes
 
-* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
-
-* [Video version](https://youtu.be/R6DExMI8iVw)

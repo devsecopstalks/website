@@ -9,6 +9,8 @@ participants: ['Andrey', 'Mattias', 'Julien']
 
 We are discussing what has happened in Terraform world since the 1.0 release last year and if there are new features worth mentioning, trends in Terraform development, etc. As well as doing a recap of the road to 1.0 and how long it took us to get there.
 
+[Discuss the episode or ask us anything on LinkedIn](https://www.linkedin.com/company/devsecops-talks/)
+
 <!--more-->
 
 <!-- Player -->
@@ -17,4 +19,3 @@ We are discussing what has happened in Terraform world since the 1.0 release las
 
 ## Notes
 
-* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)

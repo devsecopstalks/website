@@ -9,14 +9,19 @@ participants: ["Paulina", "Mattias", "Andrey"]
 
 Can AI really help us build more secure software? What’s working in practice right now, and where do the tools still fall short? Mattias and Paulina share their views.
 
+[Discuss the episode or ask us anything on LinkedIn](https://www.linkedin.com/company/devsecops-talks/)
+
 <!--more-->
 
 <!-- Player -->
 
  {{<  podbean 3dpp6-197cc5a-pb "DEVSECOPS Talks #84 - AI for DevSecOps: Current Wins and Ongoing Gaps"  >}} 
 
+---
+
+<!-- Video -->
+
+{{< youtube QhHKA5t03zI >}}
+
 ## Notes
 
-* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
-
-* [Video version](https://youtu.be/QhHKA5t03zI)

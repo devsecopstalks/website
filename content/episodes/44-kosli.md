@@ -9,6 +9,8 @@ participants: ['Andrey', 'Mattias', 'Julien']
 
 We are excited about the new breed of tools coming to the market. We often had to put together tools to find out what was in production and what broke it. Your monitoring tools go as far as only telling you that something isn't working as expected but not why it is so, and then you have to scramble to figure out what versions of services are in production, were there any recent deploys, etc. So you can understand what has changed to narrow down possible causes. Our good friend Mike and his team are building the tool to answer exactly such questions, so we thought you might be interested in hearing him out.
 
+[Discuss the episode or ask us anything on LinkedIn](https://www.linkedin.com/company/devsecops-talks/)
+
 <!--more-->
 
 <!-- Player -->
@@ -16,8 +18,6 @@ We are excited about the new breed of tools coming to the market. We often had t
 {{< podbean cyduk-12b21fa-pb "DEVSECOPS Talks #44 - Kosli with Mike Long. From compliance to answering questions about the production environment" >}}
 
 ## Notes
-
-* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
 
 - [Mike Long](https://www.linkedin.com/in/mikelongoslo/)
 - [Kosli](https://www.kosli.com/)

@@ -9,6 +9,8 @@ participants: ["Paulina", "Mattias", "Andrey"]
 
 Still pasting tokens into Slack? What types of secrets are at risk, and which tools fit which consumer—humans, CI/CD, or workloads? Where do most teams stumble, and how do you fix it fast? Hear our no-nonsense checklist.
 
+[Discuss the episode or ask us anything on LinkedIn](https://www.linkedin.com/company/devsecops-talks/)
+
 <!--more-->
 
 <!-- Player -->
@@ -16,7 +18,5 @@ Still pasting tokens into Slack? What types of secrets are at risk, and which to
  {{<  podbean 5426h-18f0719-pb "DEVSECOPS Talks #81 - Keeping Secrets Safe"  >}} 
 
 ## Notes
-
-* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
 
 * [Video version]()

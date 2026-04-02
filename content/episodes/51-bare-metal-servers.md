@@ -11,6 +11,8 @@ Diving into the world of bare-metal servers, Mattias takes the helm solo for thi
 
 While we often chat about the big cloud service providers, this time we're switching gears. If you've been curious about how real-world, physical servers are set up and managed, this episode is just for you. Join Mattias, Michael, and Ian as they dive into the nuts and bolts of setting up servers - a topic that Mattias is super passionate about.
 
+[Discuss the episode or ask us anything on LinkedIn](https://www.linkedin.com/company/devsecops-talks/)
+
 <!--more-->
 
 <!-- Player -->
@@ -19,4 +21,3 @@ While we often chat about the big cloud service providers, this time we're switc
 
 ## Notes
 
-* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)

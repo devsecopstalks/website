@@ -10,6 +10,8 @@ participants: ['Andrey', 'Mattias', 'Julien']
 AWS had a severe incident at the end of November. Kinesis in us-east-1 went dark for quite some time, and a ripple effect caused degradation of other services like CloudWatch, ECS, and others.
 As a Cloud Engineering practitioner, how do you get yourself and your organization ready for a such turn of events?
 
+[Discuss the episode or ask us anything on LinkedIn](https://www.linkedin.com/company/devsecops-talks/)
+
 <!--more-->
 
 <!-- Player -->
@@ -17,8 +19,6 @@ As a Cloud Engineering practitioner, how do you get yourself and your organizati
 {{< podbean mpett-f6bc38 "DevSecOps Talks #21 - Surviving AWS Outage" >}}
 
 ## Notes
-
-* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
 
 - [AWS postmortem](https://aws.amazon.com/message/11201/)
 - [Chaos Engineering as a part of AWS Well Architected Framework](https://thenewstack.io/chaos-engineering-now-part-of-aws-well-architected-framework/)

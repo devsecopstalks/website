@@ -11,6 +11,8 @@ The real cloud lock-in is security! Every service/cloud provider has its own lev
 
 We think that it is a myth and that we can measure how many steps it takes to add, modify or remove access rights. It all starts with monitoring, knowing what is there in a cloud infrastructure is a very good first step. By making it easy to see and manage access rights, we make it easier for ourselves to keep resources secured.
 
+[Discuss the episode or ask us anything on LinkedIn](https://www.linkedin.com/company/devsecops-talks/)
+
 <!--more-->
 
 <!-- Player -->
@@ -18,8 +20,6 @@ We think that it is a myth and that we can measure how many steps it takes to ad
 {{< podbean bcps9-102839d-pb "DevSecOps Talks #28 - Scaling Security" >}}
 
 ## Notes
-
-* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
 
 - [Resource hierarchy on GCP](https://cloud.google.com/resource-manager/docs/cloud-platform-resource-hierarchy)
 - [PAPER: shifting left on security](https://cloud.google.com/files/shifting-left-on-security.pdf)

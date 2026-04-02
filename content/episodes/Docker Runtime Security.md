@@ -9,10 +9,11 @@ date: 24 Mar 2020
 In this episode, Mattias is trying to convince Andrey and Julien that running docker containers in Kubernetes
 is more secure then virtual machines. How did it go? We agreed to disagree.
 
+[Discuss the episode or ask us anything on LinkedIn](https://www.linkedin.com/company/devsecops-talks/)
+
 <!-- Player -->
 
 {{< podbean ycpvc-d7494b "DevSecOps Talks #4 - Docker Runtime Security" >}}
 
 ## Notes
 
-* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)

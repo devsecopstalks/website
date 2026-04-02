@@ -14,6 +14,8 @@ Maybe do you need less? Why not deploy directly to production using some fancy t
 
 Put it simply - stage or not to stage?
 
+[Discuss the episode or ask us anything on LinkedIn](https://www.linkedin.com/company/devsecops-talks/)
+
 <!--more-->
 
 <!-- Player -->
@@ -21,7 +23,4 @@ Put it simply - stage or not to stage?
 {{< podbean 3amzg-ed3906 "DevSecOps Talks #16 - Do you need stage?" >}}
 
 ## Notes
-
-* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
-
 

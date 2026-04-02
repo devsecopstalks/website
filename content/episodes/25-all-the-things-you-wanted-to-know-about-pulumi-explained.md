@@ -17,6 +17,8 @@ This time we are joined by [Paul Stack](https://twitter.com/stack72) (Pulumi dev
 - Cross-language infra libraries? How is it even possible?!
 - Is there a possibility of a supply chain attack via Pulumi library?
 
+[Discuss the episode or ask us anything on LinkedIn](https://www.linkedin.com/company/devsecops-talks/)
+
 <!--more-->
 
 <!-- Player -->
@@ -24,8 +26,6 @@ This time we are joined by [Paul Stack](https://twitter.com/stack72) (Pulumi dev
 {{< podbean mtz9e-fd5eaa "DevSecOps Talks #25 - All the Things You Wanted to Know About Pulumi.Explained" >}}
 
 ## Notes
-
-* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
 
 - Paul Stack [twitter](https://twitter.com/stack72), [linkedin](https://www.linkedin.com/in/stack72/)
 - Jacob Lärfors [twitter](https://twitter.com/jlarfors), [linkedin](https://www.linkedin.com/in/jlarfors/)

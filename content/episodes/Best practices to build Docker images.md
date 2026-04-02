@@ -25,6 +25,8 @@ Docker image naming so you can find all you need to debug quickly
 
 In some of the information overlaps with episode #3 but greatly extends information provided before https://devsecops.fm/episodes/docker-secure-build/
 
+[Discuss the episode or ask us anything on LinkedIn](https://www.linkedin.com/company/devsecops-talks/)
+
 <!--more-->
 
 <!-- Player -->
@@ -32,8 +34,6 @@ In some of the information overlaps with episode #3 but greatly extends informat
 {{< podbean w79in-ef1a02 "DevSecOps Talks #17 - Best Practices for Building Docker Images" >}}
 
 ## Notes
-
-* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
 
 - [Docker BuildKit](https://github.com/moby/buildkit/blob/master/frontend/dockerfile/docs/experimental.md)
 - [img](https://github.com/genuinetools/img)

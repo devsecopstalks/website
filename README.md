@@ -71,9 +71,8 @@ hugo new episodes/"TITLE OF SHOW.md"
 * Upload file to Podbean (Login details are in Bitwarden)
 * Add new episode on Podbean as draft, do not publish at the moment
 * Update website - add new episode, write description, add show notes, link podcast from Podbean
-* Post a link to Gitter
 * Everyone to review description for grammar mistakes, accuracy etc. Add show notes
-* Make sure that description on Podbean matches description on the website after review and edits plus edit the following line `Visit https://devsecops.fm to see show notes and https://gitter.im/devsecopstalks/community to join a discussion`
+* Make sure that description on Podbean matches description on the website after review and edits
 * Share podcast on Podbean
 * Hit social media
 

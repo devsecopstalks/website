@@ -11,6 +11,8 @@ AWS released AWS Bottlerocket OS in March of 2020, and version 1.0.0 got release
 What is it? Should you be using it? What are the benefits?
 Is it ready for prime time? We answer all of those questions during this episode of DevSecOps Talks. Tune in!
 
+[Discuss the episode or ask us anything on LinkedIn](https://www.linkedin.com/company/devsecops-talks/)
+
 <!--more-->
 
 <!-- Player -->
@@ -18,8 +20,6 @@ Is it ready for prime time? We answer all of those questions during this episode
 {{< podbean 2wvqe-1005fe6-pb "DevSecOps Talks #27 - AWS Bottlerocket - Open Source Contrainer OS from AWS. Explained" >}}
 
 ## Notes
-
-* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
 
 - [AWS Bottlerocket GitHub repo](https://github.com/bottlerocket-os/bottlerocket)
 - [AWS Bottlerocket security features](https://github.com/bottlerocket-os/bottlerocket/blob/develop/SECURITY_FEATURES.md)

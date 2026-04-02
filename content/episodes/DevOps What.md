@@ -11,6 +11,8 @@ Andrey tells us the story of how DevOps came into existence and took over the ma
 We discuss the marketing around it, its relationship with DevSecOps.
 We tried to shed a light on what is marketing strategy versus implementing DevOps in an organization.
 We also compared DevOps to SRE (Site Reliability Engineering).
+[Discuss the episode or ask us anything on LinkedIn](https://www.linkedin.com/company/devsecops-talks/)
+
 <!--more-->
 
 <!-- Player -->
@@ -18,8 +20,6 @@ We also compared DevOps to SRE (Site Reliability Engineering).
 {{< podbean 7i4k8-dd9d32 "DevSecOps Talks #8 - DevOps What" >}}
 
 ## Notes
-
-* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
 
 - ["10+ Deploys Per Day: Dev and Ops Cooperation at Flickr"](https://www.youtube.com/watch?v=LdOe18KhtT4): Velocity Conference 2009 - talk by John Allspaw and Paul Hammond
 - [Don't Call Yourself A Programmer, And Other Career Advice](https://www.kalzumeus.com/2011/10/28/dont-call-yourself-a-programmer/)

@@ -10,6 +10,8 @@ participants: ['Andrey', 'Mattias', 'Julien']
 This time we are discussing the white paper by Summit Route - AWS Security Maturity Roadmap 2020.
 Tune in to learn more about the white paper and recommendations that we pile up on top of it.
 
+[Discuss the episode or ask us anything on LinkedIn](https://www.linkedin.com/company/devsecops-talks/)
+
 <!--more-->
 
 <!-- Player -->
@@ -17,7 +19,5 @@ Tune in to learn more about the white paper and recommendations that we pile up 
 {{< podbean 89fur-e2a0ad "DevSecOps Talks #11 - AWS Security Maturity Roadmap 2020" >}}
 
 ## Notes
-
-* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
 
 - [AWS Security Maturity Roadmap 2020 by SummitRoute](https://summitroute.com/blog/2020/05/21/aws_security_maturity_roadmap_2020)

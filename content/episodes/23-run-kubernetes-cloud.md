@@ -11,6 +11,8 @@ How do you run Kubernetes in the cloud? Still using Kops? Or is it time to jump 
 We go through the list of things you might be missing out on if not yet using a managed solution.
 Also, in this episode - what do you always configure in the k8s cluster? CNI, Ingress, IAM, and even more!
 
+[Discuss the episode or ask us anything on LinkedIn](https://www.linkedin.com/company/devsecops-talks/)
+
 <!--more-->
 
 <!-- Player -->
@@ -18,8 +20,6 @@ Also, in this episode - what do you always configure in the k8s cluster? CNI, In
 {{< podbean jaq7t-f9c73e "DevSecOps Talks #23 - How Do We Run Kubernetes In The Cloud?" >}}
 
 ## Notes
-
-* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
 
 - [Parse AWS CloudTrail events and send alerts to Slack for events that match pre-configured rules](https://github.com/fivexl/terraform-aws-cloudtrail-to-slack)
 - [An easy way to always have a fresh Spot Instance price](https://github.com/fivexl/terraform-aws-ec2-spot-price)

@@ -17,14 +17,13 @@ ArgoCD is a project that does GitOps and automatically delete resources in Kuber
 
 We talked about the different layers of abstraction for infrastructure as code and where it makes sense to have a terraform controller in a Kubernetes cluster to manage the application dependencies.
 
+[Discuss the episode or ask us anything on LinkedIn](https://www.linkedin.com/company/devsecops-talks/)
 
 <!-- Player -->
 
 {{< podbean 3i6g8-f31893 "DEVSECOPS Talks #19-2020 - Deleting Resources In The Cloud" >}}
 
 ## Notes
-
-* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
 
 -   [AuditD](https://www.elastic.co/beats/auditbeat)
 -   [GraphQL-mesh](https://graphql-mesh.com/)

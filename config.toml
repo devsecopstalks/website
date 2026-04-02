@@ -12,7 +12,7 @@ pagerSize = 10
 path = "page"
 rssLimit = 20.0
 
-[author]
+[params.author]
 name = "DevSecOps Talks"
 url = "https://devsecops.fm/about"
 avatar = "path/to/some-image.jpg"

@@ -15,6 +15,8 @@ We also spoke about ChatGPT, an AI language model from OpenAI - will it replace 
 
 Just a heads up, we aren't sponsored by companies we mention in this episode. We're just sharing our personal experiences and the stuff we like to use.
 
+[Discuss the episode or ask us anything on LinkedIn](https://www.linkedin.com/company/devsecops-talks/)
+
 <!--more-->
 
 <!-- Player -->
@@ -22,8 +24,6 @@ Just a heads up, we aren't sponsored by companies we mention in this episode. We
 {{< podbean 26mf2-13df1d8-pb "DEVSECOPS Talks #49 - Password managers, ways to share sensitive info, email aliases, ChatGPT and much more" >}}
 
 ## Notes
-
-* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
 
 - [YoPass](https://yopass.se/)
 - [SendVis](https://send.vis.ee/)

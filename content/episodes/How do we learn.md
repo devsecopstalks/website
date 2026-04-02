@@ -9,17 +9,15 @@ participants: ['Andrey', 'Mattias', 'Julien']
 
 In this episode, Mattias, Julien, and Andrey share tips and tricks on how to stay on top of what is going on in the industry, resources they use for continuous learning
 
-<!--more-->
+[Discuss the episode or ask us anything on LinkedIn](https://www.linkedin.com/company/devsecops-talks/)
 
+<!--more-->
 
 <!-- Player -->
 
 {{< podbean 3hv89-db5d56 "DevSecOps Talks #7 - How do we learn" >}}
 
-
 ## Notes
-
-* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
 
 - [A Cloud Guru](https://acloud.guru/)
 - [Linux Academy](https://linuxacademy.com/)

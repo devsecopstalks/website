@@ -11,6 +11,8 @@ Initially, we planned this episode as a discussion about HashiCorp Nomad and inv
 However, because of a few postponements, and with HashiConf that happened just a week ago, we decided to extend the podcast's scope to go over all of the announcements that they did during the conference.
 So here it is - HashiConf special: all you need to know about everything that HashiCorp announced during the conference plus a discussion about Nomad!
 
+[Discuss the episode or ask us anything on LinkedIn](https://www.linkedin.com/company/devsecops-talks/)
+
 <!--more-->
 
 <!-- Player -->
@@ -18,8 +20,6 @@ So here it is - HashiConf special: all you need to know about everything that Ha
 {{< podbean rgphy-f050e0 "DevSecOps Talks #18 - HashiConf Special" >}}
 
 ## Notes
-
-* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
 
 - [Jacob's LinkedIn](https://www.linkedin.com/in/jlarfors/)
 - [Jacob's article about Nomad](https://verifa.io/insights/nomad-the-workload-orchestrator-you-may-have-missed/)

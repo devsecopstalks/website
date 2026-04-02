@@ -9,6 +9,8 @@ participants: ["Julien", "Mattias", "Andrey", "Fernando"]
 
 In this episode of DevSecOps Talks, co-hosts Andrey, Julien, and Mattias are joined by AWS Consultant Fernando Gonçalves to explore the complexities of AWS organization and account segmentation. Get insights into the debate over development, stage, and production accounts versus micro-segmentation. Don’t miss Julien's take on why he believes staging is a waste of time and money, as well as Fernando’s explanation of what the AWS Landing Zone is. Learn about the tools provided by AWS for multi-account management and the pros and cons of various account segmentation approaches.
 
+[Discuss the episode or ask us anything on LinkedIn](https://www.linkedin.com/company/devsecops-talks/)
+
 <!--more-->
 
 <!-- Player -->
@@ -16,8 +18,6 @@ In this episode of DevSecOps Talks, co-hosts Andrey, Julien, and Mattias are joi
  {{<  podbean 6qeyc-16229bb-pb "DEVSECOPS Talks #66 - Multi-Account Strategy And Landing Zones:  Account Segmentation Approaches For Security And Efficiency On Aws"  >}} 
 
 ## Notes
-
-* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
 
 * [Fernando on LinkedIn](https://www.linkedin.com/in/fernandogoncalves-me/)
 * [Fernando on YouTube](https://www.youtube.com/c/CloudnaPr%C3%A1tica)

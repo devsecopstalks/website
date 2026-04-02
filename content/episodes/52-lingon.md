@@ -9,6 +9,8 @@ participants: ['Mattias', 'Michael', 'Ian']
 
 This time we got to talk about Lingon, an open-source project developed by Julian and Jacob who is a frequent podcast guest. Discover the motivations behind Lingon's creation and how it bridges the gap between Terraform and Kubernetes. Learn how Lingon simplifies infrastructure management, tackles frustrations with YAML and HCL, and offers greater control and automation.
 
+[Discuss the episode or ask us anything on LinkedIn](https://www.linkedin.com/company/devsecops-talks/)
+
 <!--more-->
 
 <!-- Player -->
@@ -16,7 +18,5 @@ This time we got to talk about Lingon, an open-source project developed by Julia
 {{< podbean v6k6j-14562ed-pb "DEVSECOPS Talks #52 - Lingon a.k.a Juliens and Jacobs open source project" >}}
 
 ## Notes
-
-* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
 
 - [Lingon Github](https://github.com/volvo-cars/lingon)

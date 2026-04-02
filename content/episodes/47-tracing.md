@@ -9,6 +9,8 @@ participants: ['Andrey', 'Mattias', 'Julien']
 
 We discussed tracing before but never got around to explaining details such as fundamentals, terminology, etc. This time Julien goes into detail about what tracing is, what the benefits are, the basic terms you need to understand, and where to start. Great episode for those who are considering adding tracing capabilities to their systems.
 
+[Discuss the episode or ask us anything on LinkedIn](https://www.linkedin.com/company/devsecops-talks/)
+
 <!--more-->
 
 <!-- Player -->
@@ -17,4 +19,3 @@ We discussed tracing before but never got around to explaining details such as f
 
 ## Notes
 
-* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)

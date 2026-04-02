@@ -11,6 +11,8 @@ Julien and Andrey got together to define the scale and ways to automate the scal
 What are the prerequisites implementing scaling? What is cooling down, warm up, horizontal and vertical scaling, scale-up, and scale in? What are the metrics that could be useful for making scaling decisions?
 And last but not least, the very unexpected spin that Julien gives to the conversation.
 
+[Discuss the episode or ask us anything on LinkedIn](https://www.linkedin.com/company/devsecops-talks/)
+
 <!--more-->
 
 <!-- Player -->
@@ -18,8 +20,6 @@ And last but not least, the very unexpected spin that Julien gives to the conver
 {{< podbean 4agzz-e53fad "DevSecOps Talks #12 - Scale vs Scaling" >}}
 
 ## Notes
-
-* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
 
 - [Julien's blog post about scale](https://bisconti.cloud/posts/what-scale-means/)
 - [c10k problem](https://en.wikipedia.org/wiki/C10k_problem)

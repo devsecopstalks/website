@@ -10,6 +10,8 @@ participants: ['Andrey', 'Mattias', 'Julien', 'Henrik']
 This time, we are joined by Henrik Høegh who shares his unique perspective on applying the theory of constraint to IT transformation as well as how it applies in the world of Cloud Native.
 We go back to the origin of DevOps, discussing the various problems companies are facing when transforming their organizations and adopting cultural changes.
 
+[Discuss the episode or ask us anything on LinkedIn](https://www.linkedin.com/company/devsecops-talks/)
+
 <!--more-->
 
 <!-- Player -->
@@ -17,8 +19,6 @@ We go back to the origin of DevOps, discussing the various problems companies ar
 {{< podbean sd8ex-e96dd2 "DevSecOps Talks #14 - Theory of Constraint" >}}
 
 ## Notes
-
-* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
 
 - [Henrik Høegh](https://www.linkedin.com/in/henrikrenehoegh/)
 - [The Goal by Eliyahu Goldratt](https://en.wikipedia.org/wiki/The_Goal_(novel))

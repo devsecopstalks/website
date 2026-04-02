@@ -9,6 +9,8 @@ participants: ['Andrey', 'Mattias', 'Julien']
 
 Last week (week 6, 2021), seven data breaches were announced. In this episode, we discuss the possible scenarios for preventing attackers from getting a hold of your data, whether private or company data. And tips on how to mitigate the consequences of data leaks in cases when you have no control over data management (think of breach of 3rd party service).
 
+[Discuss the episode or ask us anything on LinkedIn](https://www.linkedin.com/company/devsecops-talks/)
+
 <!--more-->
 We discuss
 - tips and services to mask your email and fight spam with random emails via catch-all feature
@@ -21,17 +23,11 @@ We outline workflows on using password managers, activate 2FA, YubiKeys, and enc
 
 We also tell stories from the trenches about data breaches.	 
   
-Connect with us on [LinkedIn, Twitter](/about/) and tell us about your questions, and we will answer them in the show.
-  
- Join the [Gitter channel](https://gitter.im/devsecopstalks/community).
- 
 <!-- Player -->
 
 {{< podbean 6dpdb-fb863f "DevSecOps Talks #24 - Ways To Protect Yourself From Data Breaches And Mitigate Consequences" >}}
 
 ## Notes
-
-* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
 
 - [Mattias blog post - K8s logs to Elastic](https://lifeandshell.com/blog/k8s-logs-to-elastic-with-dynamic-ilm-from-annotations/)
 - [K8S events streamer](https://github.com/fivexl/kubernetes-events-to-slack/)

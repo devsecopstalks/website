@@ -9,6 +9,8 @@ participants: ['Andrey', 'Mattias', 'Julien']
 
 Everyone seems to be talking about service mesh. Mattias, Julien, and Andrey are trying to separate hype and real value. Most importantly, they dig into when is the good time for the organization is to embrace service mesh and what are the prerequisites.
 
+[Discuss the episode or ask us anything on LinkedIn](https://www.linkedin.com/company/devsecops-talks/)
+
 <!--more-->
 
 <!-- Player -->
@@ -17,4 +19,3 @@ Everyone seems to be talking about service mesh. Mattias, Julien, and Andrey are
 
 ## Notes
 
-* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)

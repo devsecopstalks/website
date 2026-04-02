@@ -9,6 +9,8 @@ participants: ['Andrey', 'Mattias', 'Julien']
 
 As a follow-up to the [last episode about hiring an infrastructure automation person](https://devsecops.fm/episodes/31-hiring/) we decided to reverse the view and talk about how do you get hired as an infrastructure automation person. This episode is full of career advice for people who are just only from university as well as people who already have experience in the industry.
 
+[Discuss the episode or ask us anything on LinkedIn](https://www.linkedin.com/company/devsecops-talks/)
+
 <!--more-->
 
 <!-- Player -->
@@ -17,4 +19,3 @@ As a follow-up to the [last episode about hiring an infrastructure automation pe
 
 ## Notes
 
-* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)

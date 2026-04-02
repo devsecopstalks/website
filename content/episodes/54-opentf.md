@@ -9,6 +9,8 @@ participants: ['Mattias', 'Julien', 'Andrey']
 
 In this episode of DevSecOps Talks, we dive deep into HashiCorp's recent shift to the Business Source License and its implications. Join Andrey, Julien, and Mattias as they unpack what this means for practitioners and explore the timeline of OpenTF initiative. Stay informed about what comes ahead with our latest discussion. Tune in!
 
+[Discuss the episode or ask us anything on LinkedIn](https://www.linkedin.com/company/devsecops-talks/)
+
 <!--more-->
 
 <!-- Player -->
@@ -16,8 +18,6 @@ In this episode of DevSecOps Talks, we dive deep into HashiCorp's recent shift t
 {{< podbean 8s2f2-14a681d-pb "DEVSECOPS Talks #54 - HashiCorp’s BSL Move and OpenTF: What DevSecOps Practitioners Need to Know" >}}
 
 ## Notes
-
-* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
 
 - [HashiCorp BSL announcement](https://www.hashicorp.com/blog/hashicorp-adopts-business-source-license)
 - [HashiCorp update of Registery TOC](https://www.reddit.com/r/Terraform/comments/166am6t/hashicorp_updates_terraform_registry_tos_for/)

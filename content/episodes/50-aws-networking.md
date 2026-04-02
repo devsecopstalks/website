@@ -9,6 +9,8 @@ participants: ['Andrey', 'Mattias', 'Julien']
 
 In this episode, we discuss the evolution of AWS networking capabilities from EC2-classic to VPC and advanced networking features. Andrey highlights that while many companies only use VPC and VPC peerings, there are lesser-known features that can significantly change how we approach networking setups on AWS.
 
+[Discuss the episode or ask us anything on LinkedIn](https://www.linkedin.com/company/devsecops-talks/)
+
 <!--more-->
 
 <!-- Player -->
@@ -16,8 +18,6 @@ In this episode, we discuss the evolution of AWS networking capabilities from EC
 {{< podbean dd4t7-1410ec8-pb "DEVSECOPS Talks #50 - History of AWS networking and new ways to design your VPC setup" >}}
 
 ## Notes
-
-* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
 
 - [AWS RAM](https://aws.amazon.com/ram/)
 - [VPC Sharing - A new approach to multiple accounts and vpc management](https://aws.amazon.com/blogs/networking-and-content-delivery/vpc-sharing-a-new-approach-to-multiple-accounts-and-vpc-management/)

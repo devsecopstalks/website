@@ -12,6 +12,8 @@ and we finally get to hear what Julien has to say about it.
 We get to explore different options regarding versioning and how it helps humans communicate.
 At the end of the podcast, everyone gets to share their approach and recommendations for versioning things.
 
+[Discuss the episode or ask us anything on LinkedIn](https://www.linkedin.com/company/devsecops-talks/)
+
 <!--more-->
 
 <!-- Player -->
@@ -19,8 +21,6 @@ At the end of the podcast, everyone gets to share their approach and recommendat
 {{< podbean 6bbm3-db5d30 "DevSecOps Talks #6 - SemVer or not to SemVer" >}}
 
 ### Notes
-
-* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
 
 - [Hugo web site generator](https://gohugo.io)
 - [SemVer specification](https://semver.org)

@@ -9,6 +9,8 @@ participants: ['Andrey', 'Mattias', 'Julien']
 
 Julien has extensive experience building data platforms for data engineering, so we got him talking and sharing. If infra for data engineering is your cup of tea, then this episode is for you.
 
+[Discuss the episode or ask us anything on LinkedIn](https://www.linkedin.com/company/devsecops-talks/)
+
 <!--more-->
 
 <!-- Player -->
@@ -17,4 +19,3 @@ Julien has extensive experience building data platforms for data engineering, so
 
 ## Notes
 
-* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)

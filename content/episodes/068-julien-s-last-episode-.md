@@ -9,6 +9,8 @@ participants: ["Julien", "Mattias", "Andrey"]
 
 Julien shares big news with co-hosts Mattias and Andrey. What led to his decision to step down? And what does the future hold for him? Tune in for the off-boarding interview as we look back at the past four years and 60+ episodes we did together!
 
+[Discuss the episode or ask us anything on LinkedIn](https://www.linkedin.com/company/devsecops-talks/)
+
 <!--more-->
 
 <!-- Player -->
@@ -17,4 +19,3 @@ Julien shares big news with co-hosts Mattias and Andrey. What led to his decisio
 
 ## Notes
 
-* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)

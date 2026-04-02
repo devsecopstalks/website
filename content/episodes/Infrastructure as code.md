@@ -10,13 +10,13 @@ Whens should you start using infra structure as code and when not.
 What tool is there to help and hoe can you use them.
 Follow us in our first talk.
 
+[Discuss the episode or ask us anything on LinkedIn](https://www.linkedin.com/company/devsecops-talks/)
+
 <!-- Player -->
 
 {{< podbean d7x4q-d53cd6 "DevSecOps Talks #1-2020 - Infra as code" >}}
 
 ## Notes
-
-* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
 
 Andrey: [First chapter of infra as code](https://www.oreilly.com/library/view/infrastructure-as-code/9781491924334/ch01.html)
 

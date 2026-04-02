@@ -9,14 +9,19 @@ participants: ["Paulina", "Mattias", "Andrey"]
 
 We break down 10 years of HashiConf and this year's Terraform-heavy news. What do Terraform Actions with Ansible, Stacks GA, and HCP-only features mean for day two work? Is open source getting left behind, and is OpenTofu worth a look?
 
+[Discuss the episode or ask us anything on LinkedIn](https://www.linkedin.com/company/devsecops-talks/)
+
 <!--more-->
 
 <!-- Player -->
 
  {{<  podbean qan6d-19a0636-pb "DEVSECOPS Talks #85 - Is It Time for OpenTofu? Our HashiConf Takeaways"  >}} 
 
+---
+
+<!-- Video -->
+
+{{< youtube UmETTDsiZ5c >}}
+
 ## Notes
 
-* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
-
-* [Video version](https://youtu.be/UmETTDsiZ5c)

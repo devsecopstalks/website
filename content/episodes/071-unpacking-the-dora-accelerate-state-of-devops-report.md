@@ -9,6 +9,8 @@ participants: ["Paulina", "Mattias", "Andrey"]
 
 In this episode, Andrey, Mattias, and Paulina break down the new DORA Accelerate State of DevOps report. What’s changed since the last report? What do these insights mean for your team? Tune in for our insightful conversation!
 
+[Discuss the episode or ask us anything on LinkedIn](https://www.linkedin.com/company/devsecops-talks/)
+
 <!--more-->
 
 <!-- Player -->
@@ -16,7 +18,5 @@ In this episode, Andrey, Mattias, and Paulina break down the new DORA Accelerate
  {{<  podbean tumhu-177c46f-pb "DEVSECOPS Talks #71 - Unpacking The Dora Accelerate State Of Devops Report"  >}} 
 
 ## Notes
-
-* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
 
 * [DORA report](https://cloud.google.com/devops/state-of-devops)

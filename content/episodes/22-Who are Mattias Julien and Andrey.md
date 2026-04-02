@@ -8,14 +8,14 @@
 
 It's been almost a year since we started the podcast, but we never took time to explain who we are and what problems we solve for our customers/employers. So in this episode, you will find more details about us and, as usual, references to useful tools, talks, and techniques.
 
- <!--more-->
+ [Discuss the episode or ask us anything on LinkedIn](https://www.linkedin.com/company/devsecops-talks/)
+
+<!--more-->
 
  <!-- Player -->
  {{< podbean 8sjgr-f84b81 "DevSecOps Talks #22 - Who are Mattias, Julien and Andrey" >}}
 
 ## Notes
-
-* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
 
 * [Preventing the Collapse of Civilization - Jonathan Blow](https://www.youtube.com/watch?v=ZSRHeXYDLko)
 * [Mattias's employer](https://www.booli.se)

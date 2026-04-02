@@ -12,13 +12,13 @@ Mattias shares what he does for monitoring security events.
 
 Julien explains why using logs to debug in a microservices architecture is costly and inefficient.
 
- <!--more-->
+ [Discuss the episode or ask us anything on LinkedIn](https://www.linkedin.com/company/devsecops-talks/)
+
+<!--more-->
 
  <!-- Player -->
  {{< podbean s2m56-f44df9 "DevSecOps Talks #20 - Monitoring Done Wrong or Dreaming For A Better Monitoring" >}}
 
 ## Notes
-
-* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
 
 [Wazuh](https://wazuh.com/)

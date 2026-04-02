@@ -15,6 +15,8 @@ Henrik Hoegh is back to talk about his experiences working in the platform team 
 - platform team as an enabler or evil gatekeeper
 - team topology
 
+[Discuss the episode or ask us anything on LinkedIn](https://www.linkedin.com/company/devsecops-talks/)
+
 <!--more-->
 
 <!-- Player -->
@@ -23,4 +25,3 @@ Henrik Hoegh is back to talk about his experiences working in the platform team 
 
 ## Notes
 
-* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)

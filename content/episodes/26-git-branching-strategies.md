@@ -13,6 +13,8 @@ and what are other options out there. This conversation takes us down memory lan
 broad discussion about version control systems, mono-repositories, continuous integration,
 and delivery. We hope you will like it!
 
+[Discuss the episode or ask us anything on LinkedIn](https://www.linkedin.com/company/devsecops-talks/)
+
 <!--more-->
 
 <!-- Player -->
@@ -20,8 +22,6 @@ and delivery. We hope you will like it!
 {{< podbean g723p-ff114e-pb "DevSecOps Talks #26 - Git Branching Strategies. Do's and Don'ts" >}}
 
 ## Notes
-
-* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
 
 - Johan Abildskov [twitter](https://twitter.com/RandomSort), [linkedin](https://www.linkedin.com/in/johanabildskov/)
 - [Johan's book - Practical Git](https://www.amazon.com/Practical-Git-Confident-Through-Practice/dp/1484262697)

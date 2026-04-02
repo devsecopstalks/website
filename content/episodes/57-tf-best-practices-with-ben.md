@@ -9,6 +9,8 @@ participants: ['Mattias', 'Ben']
 
 In this episode, Mattias is joined by Ben Goodman, the founder of dragondrop.cloud, a platform that offers Terraform Best Practices as a Pull Request. They discuss the best workflows for Terraform, open-source tools that can be used in conjunction with Terraform, the most effective best practices, and common pitfalls to avoid when implementing infrastructure as code using Terraform.
 
+[Discuss the episode or ask us anything on LinkedIn](https://www.linkedin.com/company/devsecops-talks/)
+
 <!--more-->
 
 <!-- Player -->
@@ -16,8 +18,6 @@ In this episode, Mattias is joined by Ben Goodman, the founder of dragondrop.clo
 {{< podbean 5azq5-1507fe8-pb "DEVSECOPS Talks #57 - Terraform Best Practices with Ben Goodman" >}}
 
 ## Notes
-
-* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
 
 * [Dragondrop Cloud](https://dragondrop.cloud/)
 * [Dragondrop Cloud GitHub](https://github.com/dragondrop-cloud/cloud-concierge)

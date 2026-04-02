@@ -9,6 +9,8 @@ participants: ['Andrey', 'Mattias', 'Julien']
 
 Andrey feels frustrated that he has to develop a way to configure environments for every customer. Think for yourself - you arrive at a new project or company. It is day one, and you need to get the right tools as well as the correct environment configuration. During this episode, we are trying to figure out how companies solve it. And is there a standard solution? What are the options?
 
+[Discuss the episode or ask us anything on LinkedIn](https://www.linkedin.com/company/devsecops-talks/)
+
 <!--more-->
 
 <!-- Player -->
@@ -16,8 +18,6 @@ Andrey feels frustrated that he has to develop a way to configure environments f
 {{< podbean 39sn6-1198339-pb "DevSecOps Talks #39 - Setting up tools and environments" >}}
 
 ## Notes
-
-* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
 
 - [CUE language](https://cuelang.org/)
 - [Bazel](https://bazel.build/)

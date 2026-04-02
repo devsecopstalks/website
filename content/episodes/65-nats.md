@@ -9,6 +9,8 @@ participants: ["Julien", "Mattias", "Andrey"]
 
 Join Andrey, Julien, and Mattias in this episode of DevSecOps Talks as they discuss Nats.io, a messaging system popular among people building on top of Kubernetes. Julien explains how Nats is different from Kafka and shares his personal experience with the product. The hosts discuss the various use cases of Nats and explore its features and capabilities. Tune in to find out if Nats is the right messaging system for you!
 
+[Discuss the episode or ask us anything on LinkedIn](https://www.linkedin.com/company/devsecops-talks/)
+
 <!--more-->
 
 <!-- Player -->
@@ -16,7 +18,5 @@ Join Andrey, Julien, and Mattias in this episode of DevSecOps Talks as they disc
  {{<  podbean 62vvg-160779d-pb "DEVSECOPS Talks #65 - Understanding Nats: An Explainer Of Its Features And Capabilities"  >}} 
 
 ## Notes
-
-* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
 
 * TBD

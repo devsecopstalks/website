@@ -1,8 +1,8 @@
 ---
-title: 'We talk like no one is listening except that we record it'
+title: 'Straight-up tech talk by practitioners, for practitioners'
 ---
 
-## We talk like no one is listening except that we record it
+## Straight-up tech talk by practitioners, for practitioners
 
 This is the show by and for DevSecOps practitioners who are trying to survive information overload, get through marketing nonsense, do right technology bets, help their organizations to deliver value and last but not the least to have some fun. Tune in for talks about technology, ways of working and news from DevSecOps.
 
@@ -11,11 +11,7 @@ It is also difficult to find information without marketing content or a product 
 We don't intend to sell anything, now or later.
 
 This show is not sponsored by any technology vendor and we are trying to be as unbiased as possible.
-We talk like no one is listening! For good or bad 😉.
-
-### Want to join discussion?
-
-Discuss or suggest topics for upcoming episodes, chat with podcast guests, hosts and fans at the podcast's [Gitter channel](https://gitter.im/devsecopstalks/community)
+We talk like no one is listening. For good or bad 😉.
 
 ### What is DevSecOps
 

@@ -9,6 +9,8 @@ participants: ['Andrey', 'Mattias', 'Julien']
 
 Communication in co-located teams is quite often complicated. It is even more complex and, at the same time, important in distributed teams. Have you ever got an issue report that says this thing is failing? No logs, no explanation of context, no nothing. Pretty sure we've all been in such situations. How do you step up your communication game? This episode of DevSecOps Talks is about great communication tips for DevSecOps practitioners in distributed (and not only) teams.
 
+[Discuss the episode or ask us anything on LinkedIn](https://www.linkedin.com/company/devsecops-talks/)
+
 <!--more-->
 
 <!-- Player -->
@@ -17,4 +19,3 @@ Communication in co-located teams is quite often complicated. It is even more co
 
 ## Notes
 
-* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)

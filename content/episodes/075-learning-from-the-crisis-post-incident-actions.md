@@ -9,6 +9,8 @@ participants: ["Paulina", "Mattias", "Andrey"]
 
 This is the final episode of our three-part series on incident response. We focus on what happens after the dust settles. How do you learn from what went wrong and avoid repeating it? Tune in to hear our top recommendations.
 
+[Discuss the episode or ask us anything on LinkedIn](https://www.linkedin.com/company/devsecops-talks/)
+
 <!--more-->
 
 <!-- Player -->
@@ -16,7 +18,5 @@ This is the final episode of our three-part series on incident response. We focu
  {{<  podbean gapwx-181f3aa-pb "DEVSECOPS Talks #75 - Learning from the Crisis: Post-Incident Actions"  >}} 
 
 ## Notes
-
-* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
 
 * TBD youtube_id: "9T7rWtNiR54"

@@ -9,6 +9,8 @@ participants: ['Mattias', 'Andrey', 'Julien']
 
 Is the grass greener outside the cloud? This episode dives into the trend of companies (notably Hey and Dropbox) migrating away from cloud services. Why are they leaving, and who would benefit from such a move? We also scrutinize the common belief that public clouds are overly expensive. Join us as we dissect various cloud cost optimization tools and techniques.
 
+[Discuss the episode or ask us anything on LinkedIn](https://www.linkedin.com/company/devsecops-talks/)
+
 <!--more-->
 
 <!-- Player -->
@@ -16,8 +18,6 @@ Is the grass greener outside the cloud? This episode dives into the trend of com
 {{< podbean gx4sd-154fb30-pb "DEVSECOPS Talks #59 - Migration Off The Cloud: To Leave or Not to Leave?" >}}
 
 ## Notes
-
-* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
 
 * [FivexL's AWS cost analysis tool](https://github.com/fivexl/aws-cost-and-usage-report-generator)
 * [DHH - Why we're leaving the cloud](https://world.hey.com/dhh/why-we-re-leaving-the-cloud-654b47e0)

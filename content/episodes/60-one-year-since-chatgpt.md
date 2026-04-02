@@ -9,6 +9,8 @@ participants: ['Mattias', 'Andrey', 'Julien']
 
 Welcome to the first DevSecOps Talks episode of the new year! It's been a whole year since ChatGPT hit the scene – but how has AI adoption shaped our world since then? Join Julien, Mattias, and Andrey as they dive into the impact of AI on their workflows. How have their daily tech tools and practices evolved with AI integration? Plus, Julien gives us an insider's look at running models locally. Are these AI tools enhancing our efficiency? Tune in to find out how these advancements are reshaping the landscape of DevSecOps.
 
+[Discuss the episode or ask us anything on LinkedIn](https://www.linkedin.com/company/devsecops-talks/)
+
 <!--more-->
 
 <!-- Player -->
@@ -16,8 +18,6 @@ Welcome to the first DevSecOps Talks episode of the new year! It's been a whole 
 {{< podbean ungec-1560268-pb "DEVSECOPS Talks #60 - ChatGPT Anniversary: Where Are We With AI In Our Everyday Work" >}}
 
 ## Notes
-
-* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
 
 * [ollama.ai](https://ollama.ai)
 * [perkeep.org](https://perkeep.org)

@@ -9,6 +9,8 @@ participants: ["Mattias", "Andrey"]
 
 In this episode of DevSecOps Talks, Andrey and Mattias discuss the latest announcements from re:Invent 2023 that are most relevant to DevSecOps practitioners. Which announcements are worth paying attention to? What are the implications for the DevSecOps community? Join us as we dive into the latest developments from AWS.
 
+[Discuss the episode or ask us anything on LinkedIn](https://www.linkedin.com/company/devsecops-talks/)
+
 <!--more-->
 
 <!-- Player -->
@@ -17,4 +19,3 @@ In this episode of DevSecOps Talks, Andrey and Mattias discuss the latest announ
 
 ## Notes
 
-* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)

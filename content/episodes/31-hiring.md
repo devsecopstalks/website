@@ -9,6 +9,7 @@ participants: ['Andrey', 'Mattias', 'Julien']
 
 Have you ever conducted an interview to hire an infrastructure automation person? What would you ask? How do you check their skills? And what skills are essential? Tune in for our tips on hiring and finding the right person for your team!
 
+[Discuss the episode or ask us anything on LinkedIn](https://www.linkedin.com/company/devsecops-talks/)
 
 <!--more-->
 
@@ -18,4 +19,3 @@ Have you ever conducted an interview to hire an infrastructure automation person
 
 ## Notes
 
-* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)

@@ -9,6 +9,8 @@ participants: ['Mattias', 'Andrey', 'Igor']
 
 You know our fondness for Terraform, but we are also open to exploring other tools. This episode is no different. We are joined by Igor Soroka, an expert in AWS serverless technology whose tool of choice is AWS CDK, but at the same time, he is no stranger to Terraform. We ask him practical questions about the tool and get answers based on his experience applying it to real-life projects. If you have been curious about CDK, how it functions, and if it's appropriate for you, then tune in to learn more.
 
+[Discuss the episode or ask us anything on LinkedIn](https://www.linkedin.com/company/devsecops-talks/)
+
 <!--more-->
 
 <!-- Player -->
@@ -16,7 +18,5 @@ You know our fondness for Terraform, but we are also open to exploring other too
 {{< podbean 5vpk2-153715a-pb "DEVSECOPS Talks #58 - AWS CDK with Igor Soroka" >}}
 
 ## Notes
-
-* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
 
 * [Igor on LinkedIn](https://www.linkedin.com/in/igor-soroka/)

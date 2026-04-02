@@ -13,6 +13,8 @@ After listening to episode [#9 Terraform in CI](https://devsecops.fm/episodes/te
 Anton decided that enough is enough and volunteered to give his point of view on Terragrunt since he though that we are missing a few important points.
 In this episode, we are discussing the use cases of [Terragrunt](https://terragrunt.gruntwork.io/),
 a wrapper around Terraform for working with multiple environment and modules.
+[Discuss the episode or ask us anything on LinkedIn](https://www.linkedin.com/company/devsecops-talks/)
+
 <!--more-->
 
 <!-- Player -->
@@ -20,8 +22,6 @@ a wrapper around Terraform for working with multiple environment and modules.
 {{< podbean xxhih-e13125 "DevSecOps Talks #10 - Are we wrong about Terragrunt?" >}}
 
 ## Notes
-
-* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
 
 - [Anton Babenko's projects and social links](https://github.com/antonbabenko/terraform-aws-devops)
 - [tfvars-annotations](https://github.com/antonbabenko/tfvars-annotations)

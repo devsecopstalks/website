@@ -12,10 +12,11 @@ Tune in for tips on auditing ssh session through a jump host,
 preventing downloads from AWS S3 even if you got read access,
 credentials in Git repository, why you should (or should not) use Kubernetes and more.
 
+[Discuss the episode or ask us anything on LinkedIn](https://www.linkedin.com/company/devsecops-talks/)
+
 <!-- Player -->
 
 {{< podbean w35eg-d87a2b "DevSecOps Talks #5 - What are we working on" >}}
 
 ## Notes
 
-* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)

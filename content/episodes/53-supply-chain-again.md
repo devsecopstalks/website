@@ -9,6 +9,8 @@ participants: ['Mattias', 'Julien', 'Andrey', 'Neatsun']
 
 We had the opportunity to talk with Neatsun Ziv, one of the founders of Ox Security, about the Open Source Software Supply Chain Attack Reference Framework (https://pbom.dev). We delved deeper into possible attack vectors and explored ways to mitigate some of them. During our discussions, we also had a couple of unusual takes on supply chain security. If you are looking to understand the Open Source Software Supply Chain, then this episode is perfect for you.
 
+[Discuss the episode or ask us anything on LinkedIn](https://www.linkedin.com/company/devsecops-talks/)
+
 <!--more-->
 
 <!-- Player -->
@@ -16,7 +18,5 @@ We had the opportunity to talk with Neatsun Ziv, one of the founders of Ox Secur
 {{< podbean d3qwg-146d5f9-pb "DEVSECOPS Talks #53 - Open Software Supply Chain Attack Reference Framework with Neatsun" >}}
 
 ## Notes
-
-* [DevSecOps Talks on LinkedIn](https://www.linkedin.com/company/101418030)
 
 - [Open Software Supply Chain Attack Reference Framework](https://www.ox.security/open-software-supply-chain-attack-reference-framework/)

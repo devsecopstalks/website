@@ -1,5 +1,5 @@
 ---
-title: "Getting hired as an infrastructure automation person"
+title: "#32 - Getting hired as an infrastructure automation person"
 date: 2021-09-13T18:23:24+02:00
 lastmod: 2021-09-13T18:48:24+02:00
 episode: 32

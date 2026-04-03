@@ -1,5 +1,5 @@
 ---
-title: "Unpacking System Initiative with Paul Stack"
+title: "#55 - Unpacking System Initiative with Paul Stack"
 date: 2023-10-17T11:08:36+01:00
 lastmod: 2023-10-17T11:08:36+01:00
 episode: 55

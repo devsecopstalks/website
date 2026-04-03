@@ -1,5 +1,5 @@
 ---
-title: "The DevSecOps Perspective: Key Takeaways From Re:Invent 2023"
+title: "#62 - The DevSecOps Perspective: Key Takeaways From Re:Invent 2023"
 date: 2024-03-02T11:08:36+01:00
 lastmod: 2024-03-02T11:08:36+01:00
 episode: 62

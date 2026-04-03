@@ -1,5 +1,5 @@
 ---
-title: "Setting up tools and environments"
+title: "#39 - Setting up tools and environments"
 date: 2022-02-07T11:08:36+01:00
 lastmod: 2022-02-07T11:08:36+01:00
 episode: 39

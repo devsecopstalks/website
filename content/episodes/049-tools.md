@@ -1,5 +1,5 @@
 ---
-title: "Password managers, ways to share sensitive info, email aliases, ChatGPT and much more"
+title: "#49 - Password managers, ways to share sensitive info, email aliases, ChatGPT and much more"
 date: 2023-04-12T11:08:36+01:00
 lastmod: 2023-04-12T11:08:36+01:00
 episode: 49

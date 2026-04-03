@@ -1,5 +1,5 @@
 ---
-title: "HashiCorp’s BSL Move and OpenTF: What DevSecOps Practitioners Need to Know"
+title: "#54 - HashiCorp’s BSL Move and OpenTF: What DevSecOps Practitioners Need to Know"
 date: 2023-09-13T11:08:36+01:00
 lastmod: 2023-09-13T11:08:36+01:00
 episode: 54

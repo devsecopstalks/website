@@ -1,5 +1,5 @@
 ---
-title: "All the Things You Wanted to Know About Pulumi.Explained"
+title: "#25 - All the Things You Wanted to Know About Pulumi.Explained"
 date: 2021-03-11T22:21:20Z
 lastmod: 2021-03-11T22:21:20Z
 episode: 25

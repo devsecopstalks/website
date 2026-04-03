@@ -1,5 +1,5 @@
 ---
-title: "three pillars of observability"
+title: "#30 - three pillars of observability"
 date: 2021-06-23T18:48:24+02:00
 lastmod: 2021-06-12T18:48:24+02:00
 episode: 30

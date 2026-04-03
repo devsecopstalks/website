@@ -1,5 +1,5 @@
 ---
-title: "AWS Bottlerocket - Open Source Contrainer OS from AWS. Explained"
+title: "#27 - AWS Bottlerocket - Open Source Contrainer OS from AWS. Explained"
 date: 2021-04-11T22:21:20Z
 lastmod: 2021-04-11T22:21:20Z
 episode: 27

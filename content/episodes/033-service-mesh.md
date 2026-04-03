@@ -1,5 +1,5 @@
 ---
-title: "Do I need a service mesh?"
+title: "#33 - Do I need a service mesh?"
 date: 2021-09-30T18:23:24+02:00
 lastmod: 2021-09-30T18:48:24+02:00
 episode: 33

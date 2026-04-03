@@ -1,5 +1,5 @@
 ---
-title: "ChatGPT Anniversary: Where Are We With AI In Our Everyday Work"
+title: "#60 - ChatGPT Anniversary: Where Are We With AI In Our Everyday Work"
 date: 2024-01-25T11:08:36+01:00
 lastmod: 2024-01-25T11:08:36+01:00
 episode: 60

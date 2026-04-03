@@ -1,5 +1,5 @@
 ---
-title: "Git Branching Strategies. Do's and Don'ts"
+title: "#26 - Git Branching Strategies. Do's and Don'ts"
 date: 2021-03-29T22:21:20Z
 lastmod: 2021-03-29T22:21:20Z
 episode: 26

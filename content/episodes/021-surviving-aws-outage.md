@@ -1,5 +1,5 @@
 ---
-title: "Surviving AWS Outage"
+title: "#21 - Surviving AWS Outage"
 date: 2021-01-04T14:20:37+01:00
 lastmod: 2021-01-04T14:20:37+01:00
 episode: 21

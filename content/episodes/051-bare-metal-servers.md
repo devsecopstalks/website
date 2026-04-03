@@ -1,5 +1,5 @@
 ---
-title: "Provisioning bare-metal servers"
+title: "#51 - Provisioning bare-metal servers"
 date: 2023-06-30T11:08:36+01:00
 lastmod: 2023-06-30T11:08:36+01:00
 episode: 51

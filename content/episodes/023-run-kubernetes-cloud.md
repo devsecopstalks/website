@@ -1,5 +1,5 @@
 ---
-title: "How Do We Run Kubernetes In The Cloud?"
+title: "#23 - How Do We Run Kubernetes In The Cloud?"
 date: 2021-02-04T13:16:17+01:00
 lastmod: 2021-02-04T13:16:17+01:00
 episode: 23

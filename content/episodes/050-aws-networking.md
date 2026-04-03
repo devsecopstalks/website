@@ -1,5 +1,5 @@
 ---
-title: "History of AWS networking and new ways to design your VPC setup"
+title: "#50 - History of AWS networking and new ways to design your VPC setup"
 date: 2023-05-18T11:08:36+01:00
 lastmod: 2023-05-18T11:08:36+01:00
 episode: 50

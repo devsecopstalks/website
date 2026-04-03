@@ -1,5 +1,5 @@
 ---
-title: "AWS CDK with Igor Soroka"
+title: "#58 - AWS CDK with Igor Soroka"
 date: 2023-12-28T11:08:36+01:00
 lastmod: 2023-12-28T11:08:36+01:00
 episode: 58

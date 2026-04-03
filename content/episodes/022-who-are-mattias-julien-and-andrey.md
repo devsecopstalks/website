@@ -1,11 +1,11 @@
 ---
- title: "Who are Mattias, Julien and Andrey?"
+ title: "#22 - Who are Mattias, Julien and Andrey?"
  date: 2021-01-22T09:15:59Z
  episode: 22
  author: 'DevSecOps Talks'
  participants: ['Andrey', 'Mattias', 'Julien']
-aliases:
-  - "/episodes/22-who-are-mattias-julien-and-andrey/"
+ aliases:
+   - "/episodes/22-who-are-mattias-julien-and-andrey/"
 ---
 
 It's been almost a year since we started the podcast, but we never took time to explain who we are and what problems we solve for our customers/employers. So in this episode, you will find more details about us and, as usual, references to useful tools, talks, and techniques.

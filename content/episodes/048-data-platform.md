@@ -1,5 +1,5 @@
 ---
-title: "Building Data Platforms"
+title: "#48 - Building Data Platforms"
 date: 2023-03-08T11:08:36+01:00
 lastmod: 2023-03-08T11:08:36+01:00
 episode: 48

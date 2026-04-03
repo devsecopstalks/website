@@ -1,5 +1,5 @@
 ---
-title: "Tracing explained"
+title: "#47 - Tracing explained"
 date: 2023-01-07T11:08:36+01:00
 lastmod: 2023-01-07T11:08:36+01:00
 episode: 47

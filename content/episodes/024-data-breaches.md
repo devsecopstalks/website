@@ -1,5 +1,5 @@
 ---
-title: "Ways To Protect Yourself From Data Breaches And Mitigate Consequences"
+title: "#24 - Ways To Protect Yourself From Data Breaches And Mitigate Consequences"
 date: 2021-02-19T13:16:17+01:00
 lastmod: 2021-02-19T13:16:17+01:00
 episode: 24

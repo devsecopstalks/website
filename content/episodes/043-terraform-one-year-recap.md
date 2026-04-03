@@ -1,5 +1,5 @@
 ---
-title: "Terraform 1.0 to 1.3.0. One year in review"
+title: "#43 - Terraform 1.0 to 1.3.0. One year in review"
 date: 2022-06-28T11:08:36+01:00
 lastmod: 2022-06-28T11:08:36+01:00
 episode: 43

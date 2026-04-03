@@ -1,5 +1,5 @@
 ---
-title: "Google Next and HashiConf recap"
+title: "#34 - Google Next and HashiConf recap"
 date: 2021-10-21T18:23:24+02:00
 lastmod: 2021-10-21T18:48:24+02:00
 episode: 34

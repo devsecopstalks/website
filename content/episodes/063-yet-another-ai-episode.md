@@ -1,5 +1,5 @@
 ---
-title: "Yet Another AI Episode"
+title: "#63 - Yet Another AI Episode"
 date: 2024-03-14T11:08:36+01:00
 lastmod: 2024-03-14T11:08:36+01:00
 episode: 63

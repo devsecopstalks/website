@@ -1,5 +1,5 @@
 ---
-title: "Kosli with Mike Long. From compliance to answering questions about the production environment"
+title: "#44 - Kosli with Mike Long. From compliance to answering questions about the production environment"
 date: 2022-09-01T11:08:36+01:00
 lastmod: 2022-09-01T11:08:36+01:00
 episode: 44

@@ -1,5 +1,5 @@
 ---
-title: "Hiring an infrastructure automation person"
+title: "#31 - Hiring an infrastructure automation person"
 date: 2021-08-24T18:48:24+02:00
 lastmod: 2021-08-24T18:48:24+02:00
 episode: 31

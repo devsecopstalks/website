@@ -1,5 +1,5 @@
 ---
-title: "Surviving AWS outage (revised for 2021)"
+title: "#37 - Surviving AWS outage (revised for 2021)"
 date: 2022-01-07T11:08:36+01:00
 lastmod: 2022-01-07T11:08:36+01:00
 episode: 37

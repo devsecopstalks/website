@@ -1,5 +1,5 @@
 ---
-title: "Sturdy. Is it time for a new version control tool?"
+title: "#36 - Sturdy. Is it time for a new version control tool?"
 date: 2021-12-07T18:23:24+02:00
 lastmod: 2021-12-07T18:48:24+02:00
 episode: 36

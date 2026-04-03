@@ -1,5 +1,5 @@
 ---
-title: "Open Software Supply Chain Attack Reference Framework with Neatsun"
+title: "#53 - Open Software Supply Chain Attack Reference Framework with Neatsun"
 date: 2023-08-01T11:08:36+01:00
 lastmod: 2023-08-01T11:08:36+01:00
 episode: 53

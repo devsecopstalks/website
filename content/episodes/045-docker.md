@@ -1,5 +1,5 @@
 ---
-title: "What is happening with Docker?"
+title: "#45 - What is happening with Docker?"
 date: 2022-11-01T11:08:36+01:00
 lastmod: 2022-11-01T11:08:36+01:00
 episode: 45

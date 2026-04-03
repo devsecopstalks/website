@@ -1,7 +1,7 @@
 ---
 title: "#4 - Docker Runtime Security"
-date: 2020-03-24T00:00:00+00:00
-lastmod: 2020-03-24T00:00:00+00:00
+date: 2020-03-24T12:00:00+00:00
+lastmod: 2020-03-24T12:00:00+00:00
 episode: 4
 author: "DevSecOps Talks"
 participants: ["Andrey", "Mattias", "Julien"]

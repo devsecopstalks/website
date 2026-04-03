@@ -1,0 +1,39 @@
+---
+title: "#17 - Best Practices for Building Docker Images"
+date: 2020-10-12T13:18:01+02:00
+lastmod: 2020-10-12T13:18:01+02:00
+episode: 17
+author: "DevSecOps Talks"
+participants: ["Andrey", "Mattias", "Julien"]
+aliases:
+  - /episodes/best-practices-to-build-docker-images/
+---
+
+This is the first episode in the new format — 30 minutes short and crisp episodes, i.e., less water and side discussions, focusing on the topic, duration under (well, almost under) 30 minutes. We hope you like it!
+
+The topic of this episode is building Docker images — automation, security, best practices.
+
+In this episode, we discuss: saving money with T3a family, building Docker images locally and in CI, setting up daemonless Docker builds for CI and k8s, using multistage builds to keep your images nice and clean as well as encapsulate the build environment and make it portable, passing secrets to Docker build and inspecting image layers for secrets (ssh-agent and many more), keeping Docker images updated with dependencies and updates, scanning Docker images for vulnerabilities, Docker image layers caching — doing it right, DockerHub is to delete old images stored for free and GitHub is ready to host them for you, Docker image naming so you can find all you need to debug quickly.
+
+Some of the information overlaps with [episode #3](https://devsecops.fm/episodes/003-docker-secure-build/) but greatly extends the information provided before.
+
+[Discuss the episode or ask us anything on LinkedIn](https://www.linkedin.com/company/devsecops-talks/)
+
+<!--more-->
+
+<!-- Player -->
+
+{{< podbean w79in-ef1a02 "DEVSECOPS Talks #17 - Best Practices for Building Docker Images" >}}
+
+## Notes
+
+- [Docker BuildKit](https://github.com/moby/buildkit/blob/master/frontend/dockerfile/docs/experimental.md)
+- [img](https://github.com/genuinetools/img)
+- [kaniko](https://github.com/GoogleContainerTools/kaniko)
+- [buildah](https://github.com/containers/buildah)
+- [Using Secrets in build](https://docs.docker.com/develop/develop-images/build_enhancements/#new-docker-build-secret-information)
+- [Docker Slim](https://github.com/docker-slim/docker-slim)
+- [distroless](https://github.com/GoogleContainerTools/distroless)
+- [Docker resource consumption](https://www.docker.com/pricing/resource-consumption-updates)
+- [Container registry to self-host](https://github.com/docker/distribution)
+- [Awesome Docker](https://awesome-docker.netlify.app/)

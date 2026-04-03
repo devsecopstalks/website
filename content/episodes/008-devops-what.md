@@ -1,23 +1,23 @@
 ---
-title: "DevOps What"
+title: "#8 - DevOps What"
 date: 2020-05-23T11:32:29+02:00
 lastmod: 2020-05-23T11:32:29+02:00
 episode: 8
-author: 'DevSecOps Talks'
-participants: ['Andrey', 'Julien']
+author: "DevSecOps Talks"
+participants: ["Andrey", "Julien"]
+aliases:
+  - /episodes/devops-what/
 ---
 
-Andrey tells us the story of how DevOps came into existence and took over the market.
-We discuss the marketing around it, its relationship with DevSecOps.
-We tried to shed a light on what is marketing strategy versus implementing DevOps in an organization.
-We also compared DevOps to SRE (Site Reliability Engineering).
+Andrey tells us the story of how DevOps came into existence and took over the market. We discuss the marketing around it, its relationship with DevSecOps. We tried to shed a light on what is marketing strategy versus implementing DevOps in an organization. We also compared DevOps to SRE (Site Reliability Engineering).
+
 [Discuss the episode or ask us anything on LinkedIn](https://www.linkedin.com/company/devsecops-talks/)
 
 <!--more-->
 
 <!-- Player -->
 
-{{< podbean 7i4k8-dd9d32 "DevSecOps Talks #8 - DevOps What" >}}
+{{< podbean 7i4k8-dd9d32 "DEVSECOPS Talks #8 - DevOps What" >}}
 
 ## Notes
 
@@ -30,4 +30,4 @@ We also compared DevOps to SRE (Site Reliability Engineering).
 - [Interview(video): Patrick Debois on the State of DevOps](https://www.infoq.com/interviews/debois-devops/)
 - [State of DevOps 2019 by DORA](https://cloud.google.com/devops/state-of-devops/)
 - [What is SRE?](https://landing.google.com/sre/)
-- [What is Enabling Team (based on Team Toplogies)](https://teamtopologies.com/key-concepts)
+- [What is Enabling Team (based on Team Topologies)](https://teamtopologies.com/key-concepts)

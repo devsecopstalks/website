@@ -6,7 +6,7 @@ episode: 16
 author: "DevSecOps Talks"
 participants: ["Andrey", "Mattias", "Julien"]
 aliases:
-  - "/episodes/do-you-need-staging?/"
+  - "/episodes/do-you-need-staging/"
 ---
 
 In this episode, we discuss options for splitting your deployment stages. We hear people coming up with all possible types of environments — dev, test/QA, integration, stage, prod, etc. How many do you actually need? What is the reason for having all those stages? Maybe you need less? Why not deploy directly to production using some fancy technique? Put it simply — stage or not to stage?

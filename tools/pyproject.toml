@@ -8,4 +8,6 @@ dependencies = [
     "jinja2",
     "upload-post",
     "openai",
+    "httpx",
+    "markdown",
 ]

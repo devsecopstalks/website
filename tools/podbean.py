@@ -160,10 +160,11 @@ def transcribe_audio_openai(client, audio_file_path, verbose=False):
         
         with open(file_to_transcribe, 'rb') as audio_file:
             transcript = client.audio.transcriptions.create(
-                model="whisper-1",
+                model="gpt-4o-transcribe",
                 file=audio_file,
                 response_format="text",
-                language="en"  # Force English transcription
+                language="en",
+                prompt="DevSecOps Talks podcast. Hosts: Andrey Devyatkin, Mattias Hemmingsson, Paulina Dubas. Former host: Julien Bisconti. Companies: FivexL, Dubas Consulting, Sirob Technologies, Boris, Hacking Robots and Beer. Topics: AWS, Kubernetes, Terraform, HashiCorp Vault, CI/CD, Jenkins, GitOps, Argo CD, CloudFormation, IAM, SSO Elevator, Control Tower, GuardDuty, CloudTrail, ECS, EKS, SOC2, HIPAA, PCI DSS.",
             )
         
         # Clean up compressed file if created
@@ -213,12 +214,12 @@ Transcript:
         content = None
         
         if verbose:
-            print(f"Making API request to model: gpt-5")
+            print(f"Making API request to model: gpt-5.4-pro")
             print(f"Prompt length: {len(prompt)} characters")
             print(f"System prompt length: {len(SYSTEM_PROMPT)} characters")
         
         response = client.chat.completions.create(
-            model="gpt-5",
+            model="gpt-5.4-pro",
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": prompt}
@@ -246,7 +247,7 @@ Transcript:
         print(f"Content length: {len(content) if content else 0} characters")
         
         if verbose:
-            print(f"Raw response content from GPT-5:")
+            print(f"Raw response content from GPT-5.4-pro:")
             print(content)
             print("-" * 80)
         
@@ -254,7 +255,7 @@ Transcript:
             print(f"ERROR: Empty content received!")
             print(f"Full response object: {response}")
             print(f"Response model_dump: {response.model_dump()}")
-            raise ValueError("Empty response from GPT-5")
+            raise ValueError("Empty response from GPT-5.4-pro")
         
         result = json.loads(content)
         
@@ -389,6 +390,19 @@ def create_podbean_episode(
               "content": content, "status": status, "type": type,
               "media_key": media_key, "episode_number": episode_number}
         )
+    return response.json()
+
+
+def update_podbean_episode(access_token, episode_id, content, title, status="publish", type="public"):
+    """Update an existing Podbean episode's content/description."""
+    url = f"https://api.podbean.com/v1/episodes/{episode_id}"
+    response = requests.post(url, data={
+        "access_token": access_token,
+        "content": content,
+        "title": title,
+        "status": status,
+        "type": type,
+    })
     return response.json()
 
 def parse_args():

@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-Generate SEO-friendly articles from podcast episodes.
+Generate SEO-friendly articles from podcast episodes (legacy tool).
 
-Pipeline:
-1. Fetch episode audio from Podbean API (or use local file)
-2. Transcribe with OpenAI gpt-4o-transcribe
-3. Generate article draft with GPT-5.4
-4. Review & enrich with Claude (via claude CLI) using web search
-5. Append article to episode markdown file
+Prefer the main pipeline in podbean.py with tools/raw/ and tools/out/, Claude+Codex
+review loop, and Codex title/description picks.
+
+This script still: fetches audio from Podbean (or local), transcribes, GPT draft,
+single Claude review, checkpoints as episode{NNN}-* in the current working directory,
+and can append to content/episodes/.
 """
 
 import os
@@ -22,7 +22,6 @@ import subprocess
 # Force unbuffered output so progress shows in real time
 sys.stdout.reconfigure(line_buffering=True)
 import requests
-from pathlib import Path
 from openai import OpenAI
 
 from podbean import (

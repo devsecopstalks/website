@@ -1,20 +1,17 @@
-#!/usr/bin/env python3
+#!/usr/bin/env bash
+set -euo pipefail
 
-source env/bin/activate
-
-# this is to warm up 1password and make sure that the auth is there before
-# we proceed
+# Warm up 1Password auth (optional; comment out if not using op)
 op whoami
 
-mv ~/Downloads/*.mp3 .
-mv ~/Downloads/*.mp4 .
-
-# Install uv if not already installed
-if ! command -v uv &> /dev/null; then
-    echo "uv not found. Installing uv..."
-    curl -LsSf https://astral.sh/uv/install.sh | sh
+if ! command -v uv &>/dev/null; then
+  echo "uv not found. Installing uv..."
+  curl -LsSf https://astral.sh/uv/install.sh | sh
 fi
 
 uv sync
 
-op run --env-file="./.env" -- uv run python3 podbean.py -v --scan
+cp ~/Downloads/*.mp3 raw/
+cp ~/Downloads/*.mp4 raw/
+
+op run --env-file="./.env" -- uv run python3 -u podbean.py "$@"

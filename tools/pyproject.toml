@@ -5,9 +5,9 @@ description = "Automated podcast publishing tools"
 requires-python = ">=3.13"
 dependencies = [
     "requests",
-    "jinja2",
     "upload-post",
     "openai",
     "httpx",
     "markdown",
+    "boto3",
 ]

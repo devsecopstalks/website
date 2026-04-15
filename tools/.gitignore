@@ -1,10 +1,22 @@
 env
 .venv
 __pycache__
-*.mp3
-*.mp4*
+# Secrets
+.env
+
+# Raw media drops
+raw/*.mp3
+raw/*.mp4
+raw/*.mov
+raw/*.mkv
+raw/*.m4a
+
+# Pipeline output (keep out/README.md)
+out/*
+!out/README.md
+
+# Legacy / local scratch
 *.json
-episode*
 .podcast_title
 .podcast_description
 .youtube_credentials

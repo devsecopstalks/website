@@ -3,7 +3,6 @@
 import os
 import re
 import html
-import json
 import argparse
 import requests
 import mimetypes
@@ -12,73 +11,140 @@ import sys
 import tempfile
 import subprocess
 import shutil
+import math
 from pathlib import Path
 from openai import OpenAI
-from jinja2 import Environment, FileSystemLoader
 
-from youtube import upload_to_youtube
+from episode_pipeline import (
+    generate_article,
+    load_raw_companion_markdown,
+    pick_description,
+    pick_title,
+)
+from r2_staging import (
+    delete_r2_object,
+    upload_staging_video_to_r2,
+    use_r2_staging_for_local_video,
+)
+from youtube import (
+    status_to_youtube_embed_url,
+    upload_to_youtube,
+    youtube_embed_url_to_video_id,
+)
 
 # Podbean API docs
 # https://developers.podbean.com/podbean-api-docs/
 
-# System prompt for ChatGPT
-SYSTEM_PROMPT = """
-The goal of this project is to generate podcast description and titles.
-The podcast's name is DevSecOps Talks;
-hosts are Andrey, Paulina, and Mattias.
-The podcast is for DevSecOps practitioners from DevSecOps practitioners.
-Below are examples of previous podcast descriptions for the style reference
+TOOLS_DIR = os.path.dirname(os.path.abspath(__file__))
+RAW_DIR = os.path.join(TOOLS_DIR, "raw")
+OUT_DIR = os.path.join(TOOLS_DIR, "out")
+EPISODES_DIR = os.path.join(TOOLS_DIR, "..", "content", "episodes")
 
-General style guidelines:
-- Use simple wording for podcast descriptions.
-- Please do not use words like enlightening, warmly welcome, etc; keep it simple.
-- Do not use the following words - delve, engaging.
+# Default Hugo front matter when --participants is omitted (current hosts).
+DEFAULT_PARTICIPANTS = ["Paulina", "Mattias", "Andrey"]
 
-Titles should be:
-- Concise and catchy (max 80 characters)
-- Capture the main topic or theme
-- Be attention-grabbing
 
-Descriptions should be:
-- Informative and engaging (2-4 sentences)
-- Summarize key points discussed
-- Entice listeners to tune in
-- Use more questions than statements
+def checkpoint_prefix(episode_number: int) -> str:
+    """Basename for tools/out/ files, e.g. episode097 (matches Podbean episode index)."""
+    return f"episode{episode_number:03d}"
 
-Output requirements:
-- Output must be in JSON format with this exact structure:
-{{
-  "titles": ["title1", "title2", "title3", "title4", "title5"],
-  "descriptions": ["desc1", "desc2", "desc3", "desc4", "desc5"]
-}}
-- You must output only JSON, no other text or comments.
 
-Description example 1:
-This time we got to talk about Lingon, an open-source project developed by Julian and Jacob who is a frequent podcast guest.
-Discover the motivations behind Lingon's creation and how it bridges the gap between Terraform and Kubernetes.
-Learn how Lingon simplifies infrastructure management, tackles frustrations with YAML and HCL, and offers greater control and automation.
+def find_companion_video(audio_path: str) -> str | None:
+    """Return path to a video next to the audio with the same filename prefix (stem)."""
+    p = Path(audio_path).resolve()
+    stem, parent = p.stem, p.parent
+    for ext in (".mp4", ".mov", ".mkv"):
+        matches = sorted(parent.glob(f"{stem}*{ext}"))
+        if matches:
+            return str(matches[0])
+    return None
 
-Description example 2:
-This is a mixed bag of an episode, we chat about all sorts of digital tools and security practices that we use in our day-to-day lives.
-We start by talking about password managers, and why Julien still using LastPass after the recent LastPass data breach.
-Julien gives us the lowdown on his personal approach to handling passwords and two-factor authentication (2FA) tokens,
-showing us why strong security measures matter.
 
-Description example 3:
-Julien also shares his favorite email alias service and we discuss services for sharing sensitive information to keep mail inboxes cleaner and more private.
-We also spoke about ChatGPT, an AI language model from OpenAI - will it replace jobs? should we be using it? And how?
-Just a heads up, we aren't sponsored by companies we mention in this episode. We're just sharing our personal experiences and the stuff we like to use.
+def find_mp3_files_in_raw() -> list[str]:
+    """Find mp3 files in tools/raw/."""
+    if not os.path.isdir(RAW_DIR):
+        return []
+    return sorted(str(f) for f in Path(RAW_DIR).glob("*.mp3"))
 
-Description example 4:
-AWS released AWS Bottlerocket OS in March of 2020, and version 1.0.0 got released in August 2020. What is it? Should you be using it? What are the benefits? Is it ready for prime time? We answer all of those questions during this episode of DevSecOps Talks. Tune in!
 
-Description example 5:
-The real cloud lock-in is security! Every service/cloud provider has its own levels of granularity regarding resources.
-Cloud engineering is mainly about compute, storage, and networking and how to make them scale.
-Scaling security is often left out as it is hard to measure on so many levels.
-We think that it is a myth and that we can measure how many steps it takes to add, modify or remove access rights.
-It all starts with monitoring; knowing what is there in a cloud infrastructure is a very good first step.
-By making it easy to see and manage access rights, we make it easier for ourselves to keep resources secured."""
+def yaml_escape_double_quoted(s: str) -> str:
+    return s.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def resolve_youtube_video_id(value: str) -> str:
+    """Hugo shortcode wants an 11-char id."""
+    s = (value or "").strip()
+    if not s:
+        return ""
+    if s.startswith("http"):
+        return youtube_embed_url_to_video_id(s)
+    if re.fullmatch(r"[a-zA-Z0-9_-]{11}", s):
+        return s
+    return youtube_embed_url_to_video_id(s)
+
+
+def _participants_yaml_line(participants: list[str]) -> str:
+    """Single YAML line: participants: ["A", "B"] with minimal escaping."""
+    esc = [p.replace("\\", "\\\\").replace('"', '\\"') for p in participants]
+    inner = ", ".join(f'"{x}"' for x in esc)
+    return f"participants: [{inner}]"
+
+
+def write_episode_markdown(
+    episode_number: int,
+    title_short: str,
+    description: str,
+    article_md: str,
+    podbean_id: str,
+    youtube_video_id: str,
+    participants: list[str] | None = None,
+) -> str:
+    """Write Hugo episode page; mirrors published episode layout."""
+    participants = participants if participants is not None else list(DEFAULT_PARTICIPANTS)
+    full_title = f"#{episode_number} - {title_short}"
+    slug = title_to_url_safe(title_short)
+    filename = f"{episode_number:03d}-{slug}.md"
+    path = os.path.join(EPISODES_DIR, filename)
+    date_iso = datetime.datetime.now().astimezone().replace(microsecond=0).isoformat()
+    title_yaml = yaml_escape_double_quoted(full_title)
+    podbean_title = f"DEVSECOPS Talks {full_title}"
+    podbean_line = f' {{<  podbean {podbean_id} "{podbean_title}"  >}} '
+
+    parts = [
+        "---",
+        f'title: "{title_yaml}"',
+        f"date: {date_iso}",
+        f"lastmod: {date_iso}",
+        f"episode: {episode_number}",
+        'author: "DevSecOps Talks"',
+        _participants_yaml_line(participants),
+        "---",
+        "",
+        description,
+        "",
+        "[Discuss the episode or ask us anything on LinkedIn](https://www.linkedin.com/company/devsecops-talks/)",
+        "",
+        "<!--more-->",
+        "",
+        "<!-- Player -->",
+        "",
+        podbean_line.rstrip(),
+        "",
+        "---",
+        "",
+        "<!-- Video -->",
+        "",
+    ]
+    if youtube_video_id:
+        parts.append(f"{{< youtube {youtube_video_id} >}}")
+        parts.append("")
+    parts.append(article_md.rstrip())
+    parts.append("")
+
+    os.makedirs(EPISODES_DIR, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("\n".join(parts))
+    return path
 
 
 def compress_audio_for_transcription(audio_file_path, bitrate='32k', verbose=False):
@@ -128,10 +194,70 @@ def compress_audio_for_transcription(audio_file_path, bitrate='32k', verbose=Fal
         raise
 
 
+# gpt-4o-transcribe accepts at most 1400s per request; stay below with chunk size.
+_MAX_TRANSCRIPTION_SECONDS = 1400
+_CHUNK_SECONDS = 1200
+
+_TRANSCRIPTION_PROMPT = (
+    "DevSecOps Talks podcast. Hosts: Andrey Devyatkin, Mattias Hemmingsson, Paulina Dubas. "
+    "Former host: Julien Bisconti. Companies: FivexL, Dubas Consulting, Sirob Technologies, "
+    "Boris, Hacking Robots and Beer. Topics: AWS, Kubernetes, Terraform, HashiCorp Vault, "
+    "CI/CD, Jenkins, GitOps, Argo CD, CloudFormation, IAM, SSO Elevator, Control Tower, "
+    "GuardDuty, CloudTrail, ECS, EKS, SOC2, HIPAA, PCI DSS."
+)
+
+
+def get_audio_duration_seconds(audio_file_path):
+    """Return duration in seconds using ffprobe."""
+    if not shutil.which("ffprobe"):
+        print("Error: ffprobe not found. Install with: brew install ffmpeg")
+        sys.exit(1)
+    cmd = [
+        "ffprobe",
+        "-v",
+        "error",
+        "-show_entries",
+        "format=duration",
+        "-of",
+        "default=noprint_wrappers=1:nokey=1",
+        audio_file_path,
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+    return float(result.stdout.strip())
+
+
+def extract_audio_segment(
+    input_path, start_sec, duration_sec, output_path, verbose=False
+):
+    """Write [start_sec, start_sec + duration_sec) to output_path (mono 32k mp3)."""
+    if not shutil.which("ffmpeg"):
+        print("Error: ffmpeg not found. Install with: brew install ffmpeg")
+        sys.exit(1)
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-ss",
+        str(start_sec),
+        "-i",
+        input_path,
+        "-t",
+        str(duration_sec),
+        "-ac",
+        "1",
+        "-b:a",
+        "32k",
+        output_path,
+    ]
+    if not verbose:
+        cmd.extend(["-loglevel", "error"])
+    subprocess.run(cmd, check=True, capture_output=not verbose)
+
+
 def transcribe_audio_openai(client, audio_file_path, verbose=False):
     """
     Transcribe an audio file using OpenAI Whisper API.
     Automatically compresses large files if needed.
+    Long audio is split into segments under the API duration limit, then merged.
     
     Args:
         client: OpenAI client instance
@@ -156,17 +282,51 @@ def transcribe_audio_openai(client, audio_file_path, verbose=False):
             file_to_transcribe = compress_audio_for_transcription(audio_file_path, verbose=verbose)
             cleanup_file = file_to_transcribe
         
+        duration_sec = get_audio_duration_seconds(file_to_transcribe)
+        if verbose:
+            print(f"Audio duration: {duration_sec:.1f}s ({duration_sec / 60:.1f} min)")
+
+        def transcribe_one(path):
+            with open(path, "rb") as audio_file:
+                return client.audio.transcriptions.create(
+                    model="gpt-4o-transcribe",
+                    file=audio_file,
+                    response_format="text",
+                    language="en",
+                    prompt=_TRANSCRIPTION_PROMPT,
+                )
+
         print("Using OpenAI Whisper API...")
-        
-        with open(file_to_transcribe, 'rb') as audio_file:
-            transcript = client.audio.transcriptions.create(
-                model="gpt-4o-transcribe",
-                file=audio_file,
-                response_format="text",
-                language="en",
-                prompt="DevSecOps Talks podcast. Hosts: Andrey Devyatkin, Mattias Hemmingsson, Paulina Dubas. Former host: Julien Bisconti. Companies: FivexL, Dubas Consulting, Sirob Technologies, Boris, Hacking Robots and Beer. Topics: AWS, Kubernetes, Terraform, HashiCorp Vault, CI/CD, Jenkins, GitOps, Argo CD, CloudFormation, IAM, SSO Elevator, Control Tower, GuardDuty, CloudTrail, ECS, EKS, SOC2, HIPAA, PCI DSS.",
+
+        if duration_sec <= _MAX_TRANSCRIPTION_SECONDS:
+            transcript = transcribe_one(file_to_transcribe)
+        else:
+            n_chunks = math.ceil(duration_sec / _CHUNK_SECONDS)
+            print(
+                f"Audio exceeds {_MAX_TRANSCRIPTION_SECONDS}s model limit; "
+                f"transcribing in {n_chunks} segment(s) (≤{_CHUNK_SECONDS}s each)..."
             )
-        
+            parts = []
+            tmpdir = tempfile.mkdtemp(prefix="podbean_transcribe_")
+            try:
+                for i in range(n_chunks):
+                    start = i * _CHUNK_SECONDS
+                    seg_len = min(_CHUNK_SECONDS, duration_sec - start)
+                    chunk_path = os.path.join(tmpdir, f"chunk_{i:04d}.mp3")
+                    extract_audio_segment(
+                        file_to_transcribe,
+                        start,
+                        seg_len,
+                        chunk_path,
+                        verbose=verbose,
+                    )
+                    if verbose:
+                        print(f"Transcribing segment {i + 1}/{n_chunks} ({seg_len:.0f}s)...")
+                    parts.append(transcribe_one(chunk_path))
+                transcript = "\n\n".join(parts)
+            finally:
+                shutil.rmtree(tmpdir, ignore_errors=True)
+
         # Clean up compressed file if created
         if cleanup_file and os.path.exists(cleanup_file):
             os.remove(cleanup_file)
@@ -180,165 +340,13 @@ def transcribe_audio_openai(client, audio_file_path, verbose=False):
     
     except Exception as e:
         print(f'An error occurred during transcription: {str(e)}')
-        raise e
-
-
-def generate_title_and_description_options(client, transcript, additional_prompt=None, verbose=False):
-    """
-    Generate title and description options from transcript using ChatGPT with structured output.
-    
-    Args:
-        client: OpenAI client instance
-        transcript: Full transcription text
-        additional_prompt: Optional additional guidance for regeneration
-        verbose: Whether to print verbose output
-    
-    Returns:
-        Dictionary with 'titles' and 'descriptions' lists
-    """
-    try:
-        if additional_prompt:
-            print(f"Regenerating with additional guidance: {additional_prompt}")
-        else:
-            print("Generating title and description options...")
-        
-        prompt = f"""Based on the following podcast transcript, generate 5 different title options 
-and 5 different description options for this podcast episode.
-
-{f"Additional guidance: {additional_prompt}" if additional_prompt else ""}
-
-Transcript:
-{transcript}
-
-"""
-        content = None
-        
-        if verbose:
-            print(f"Making API request to model: gpt-5.4-pro")
-            print(f"Prompt length: {len(prompt)} characters")
-            print(f"System prompt length: {len(SYSTEM_PROMPT)} characters")
-        
-        response = client.chat.completions.create(
-            model="gpt-5.4-pro",
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": prompt}
-            ],
-            response_format={"type": "json_object"},
-            max_completion_tokens=8000  # Increased to accommodate reasoning tokens + actual output
-        )
-        
-        if verbose:
-            print(f"API response received")
-            print(f"Response object type: {type(response)}")
-            print(f"Response attributes: {dir(response)}")
-            print(f"Response dict: {response.model_dump()}")
-        
-        # Log response structure
-        print(f"Number of choices in response: {len(response.choices)}")
-        if response.choices:
-            print(f"First choice attributes: {dir(response.choices[0])}")
-            print(f"First choice message: {response.choices[0].message}")
-            print(f"First choice finish_reason: {response.choices[0].finish_reason}")
-        
-        content = response.choices[0].message.content
-        
-        print(f"Content extracted from response: {content is not None}")
-        print(f"Content length: {len(content) if content else 0} characters")
-        
-        if verbose:
-            print(f"Raw response content from GPT-5.4-pro:")
-            print(content)
-            print("-" * 80)
-        
-        if not content:
-            print(f"ERROR: Empty content received!")
-            print(f"Full response object: {response}")
-            print(f"Response model_dump: {response.model_dump()}")
-            raise ValueError("Empty response from GPT-5.4-pro")
-        
-        result = json.loads(content)
-        
-        if verbose:
-            print(f"Generated {len(result.get('titles', []))} titles and {len(result.get('descriptions', []))} descriptions")
-        
-        return result
-    
-    except Exception as e:
-        print(f'An error occurred during content generation: {str(e)}')
-        print(f'Content variable: {content}')
-        print(f'Response object available: {response if "response" in locals() else "No response object"}')
-        if "response" in locals():
-            print(f'Response model_dump: {response.model_dump()}')
-        raise e
-
-
-def select_option(options, option_type="option", allow_regenerate=False):
-    """
-    Present options to user and let them choose or edit.
-    
-    Args:
-        options: List of options to choose from
-        option_type: Type of option (for display purposes)
-        allow_regenerate: If True, allow 'r' command to request regeneration
-    
-    Returns:
-        Selected/edited option or tuple ('regenerate', additional_prompt) for regeneration
-    """
-    print(f"\n{option_type.capitalize()} Options:")
-    print("-" * 80)
-    
-    for i, option in enumerate(options, 1):
-        print(f"{i}. {option}")
-    
-    print(f"{len(options) + 1}. Enter custom {option_type}")
-    print("-" * 80)
-    
-    help_text = f"\nSelect {option_type} (1-{len(options) + 1}), 'e' to edit"
-    if allow_regenerate:
-        help_text += ", or 'r' to regenerate with additional guidance"
-    help_text += ": "
-    
-    while True:
-        try:
-            choice = input(help_text).strip()
-            
-            if choice.lower() == 'e':
-                num = input(f"Enter number to edit (1-{len(options)}): ").strip()
-                idx = int(num) - 1
-                if 0 <= idx < len(options):
-                    print(f"\nCurrent: {options[idx]}")
-                    edited = input(f"Enter edited {option_type}: ").strip()
-                    if edited:
-                        return edited
-                    return options[idx]
-            elif choice.lower() == 'r' and allow_regenerate:
-                additional = input(f"\nEnter additional guidance for regeneration (e.g., 'focus more on security aspects'): ").strip()
-                if additional:
-                    return ('regenerate', additional)
-                else:
-                    print("No guidance provided, staying with current options")
-                    continue
-            else:
-                idx = int(choice) - 1
-                if idx == len(options):
-                    custom = input(f"Enter custom {option_type}: ").strip()
-                    if custom:
-                        return custom
-                elif 0 <= idx < len(options):
-                    return options[idx]
-                
-            print(f"Invalid selection. Please enter 1-{len(options) + 1}")
-        except ValueError:
-            print(f"Invalid input. Please enter a number 1-{len(options) + 1}")
-        except KeyboardInterrupt:
-            print("\nOperation cancelled by user")
-            sys.exit(1)
+        raise
 
 
 # get podbean auth token
 # curl -u YOUR_CLIENT_ID:YOUR_CLIENT_SECRET https://api.podbean.com/v1/oauth/token -X POST -d 'grant_type=client_credentials'
 def get_podbean_auth_token(client_id, client_secret, url="https://api.podbean.com/v1/oauth/token"):
+    response = None
     try:
         response = requests.post(
             url,
@@ -347,8 +355,9 @@ def get_podbean_auth_token(client_id, client_secret, url="https://api.podbean.co
         access_token = response.json()['access_token']
         return access_token
     except Exception as e:
-        print(f'An error occurred during getting podbean auth token: {str(e)}, response: {response.text}')
-        raise e
+        extra = response.text if response is not None else ""
+        print(f'An error occurred during getting podbean auth token: {str(e)}, response: {extra}')
+        raise
 
 # authorize file upload to podbean (get s3 presigned link)
 # curl https://api.podbean.com/v1/files/uploadAuthorize -G -d 'access_token=YOUR_ACCESS_TOKEN' -d 'filename=abc.mp3' -d 'filesize=1291021' -d 'content_type=audio/mpeg'
@@ -361,10 +370,12 @@ def get_podbean_upload_link(access_token, filename, filesize, content_type="mp3"
 # upload file to podbean
 # curl -v -H "Content-Type: image/jpeg" -T /your/path/file.ext "PRESIGNED_URL"
 def upload_file_to_podbean(url, filepath):
-    response = requests.put(url,
-                            headers={"Content-Type": mimetypes.guess_type(filepath)[0]},
-                            data=open(filepath, 'rb'))
-    return response
+    with open(filepath, "rb") as f:
+        return requests.put(
+            url,
+            headers={"Content-Type": mimetypes.guess_type(filepath)[0]},
+            data=f,
+        )
 
 # convert title into url safe string
 def title_to_url_safe(title):
@@ -406,214 +417,228 @@ def update_podbean_episode(access_token, episode_id, content, title, status="pub
     return response.json()
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Automated podcast publishing with AI-powered transcription and content generation")
-    parser.add_argument("-f", "--filename", help="Path to audio file (mp3)", default=None)
-    parser.add_argument("-v", "--verbose", action="store_true", help="Print verbose output", default=False)
-    parser.add_argument("-s", "--scan", action="store_true", help="Scan current directory for mp3 and mp4 files", default=False)
-    parser.add_argument("--skip-transcription", action="store_true", help="Skip transcription step (use existing transcript)", default=False)
-    parser.add_argument("-t", "--transcript", help="Path to existing transcript file", default=None)
-    return parser.parse_args()
+    p = argparse.ArgumentParser(
+        description="DevSecOps Talks: transcribe, Claude+Codex article loop, Podbean, YouTube"
+    )
+    p.add_argument("-f", "--filename", help="Path to mp3 (default: scan tools/raw/)", default=None)
+    p.add_argument("-a", "--audio", help="Alias for --filename", default=None)
+    p.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
+    p.add_argument(
+        "-s", "--scan", action="store_true",
+        help="Process every .mp3 in tools/raw/",
+    )
+    p.add_argument("--skip-transcription", action="store_true", help="Use existing transcript in out/")
+    p.add_argument("-t", "--transcript", help="External transcript file path")
+    p.add_argument("--title", default=None, help="Episode title (skip Codex title picker)")
+    p.add_argument("--description", default=None, help="Short teaser (skip Codex description picker)")
+    p.add_argument("--guidance", default=None, help="Editorial angle for drafting/review")
+    p.add_argument("--draft-only", action="store_true", help="Stop after article checkpoints in out/")
+    p.add_argument("--youtube", default="", help="Embed URL — skip upload-post upload")
+    p.add_argument("--video", default=None, help="Path to mp4/mov/mkv (default: same stem as audio in raw/)")
+    p.add_argument(
+        "--youtube-video-url", default="",
+        help="Public HTTPS URL for upload-post to fetch (large files)",
+    )
+    p.add_argument("--youtube-via-r2", action="store_true", help="Always stage local video on R2 before upload-post")
+    p.add_argument("--youtube-no-r2-staging", action="store_true", help="Never use R2 staging for video")
+    p.add_argument("--skip-youtube-upload", action="store_true", help="Do not upload video even if present")
+    p.add_argument(
+        "--participants",
+        default=None,
+        help='Comma-separated names for front matter (default: Paulina, Mattias, Andrey). Example: --participants "Paulina,Mattias,Andrey,Guest Name"',
+    )
+    return p.parse_args()
 
 
-
-
-def main():
-    args = parse_args()
-
-    # Initialize OpenAI client
-    api_key = os.environ.get('OPENAI_API_KEY')
-    if not api_key:
-        print("Error: OPENAI_API_KEY environment variable not set")
+def _collect_audio_paths(args) -> list[str]:
+    """Resolve which mp3 file(s) to process."""
+    explicit = args.filename or args.audio
+    if explicit:
+        if not explicit.endswith(".mp3"):
+            print(f"Expected .mp3 file, got: {explicit}")
+            sys.exit(1)
+        return [os.path.abspath(explicit)]
+    if args.scan:
+        found = find_mp3_files_in_raw()
+        if not found:
+            print(f"No .mp3 files in {RAW_DIR}/")
+            sys.exit(1)
+        return found
+    found = find_mp3_files_in_raw()
+    if len(found) == 1:
+        return found
+    if not found:
+        print(f"No .mp3 in {RAW_DIR}/ — add one or pass -f /path/to/file.mp3")
         sys.exit(1)
+    print("Multiple .mp3 files in raw/; use --scan to process all or -f to pick one:")
+    for f in found:
+        print(f"  {f}")
+    sys.exit(1)
 
-    client = OpenAI(api_key=api_key)
 
-    # Find audio and video files
-    audio_file = None
-    video_file = None
+def _parse_participants_arg(arg: str | None) -> list[str]:
+    if not arg or not str(arg).strip():
+        return list(DEFAULT_PARTICIPANTS)
+    out = [p.strip() for p in str(arg).split(",") if p.strip()]
+    return out if out else list(DEFAULT_PARTICIPANTS)
 
-    if args.filename:
-        if args.filename.endswith('.mp3'):
-            audio_file = args.filename
-        elif args.filename.endswith('.mp4'):
-            video_file = args.filename
-    elif args.scan:
-        # find mp3 and mp4 files in current directory
-        for file in os.listdir():
-            if file.endswith(".mp3"):
-                audio_file = file
-            elif file.endswith(".mp4"):
-                video_file = file
 
-    if not audio_file:
-        print("No mp3 file found for Podbean upload.")
-        sys.exit(1)
+def process_audio(audio_path: str, args, client: OpenAI) -> None:
+    """Run full pipeline for one mp3."""
+    audio_path = os.path.abspath(audio_path)
+    stem = Path(audio_path).stem
+    os.makedirs(OUT_DIR, exist_ok=True)
 
-    mime_type = mimetypes.guess_type(audio_file)[0]
-    if mime_type != "audio/mpeg":
-        print(f"File {audio_file} is not mp3 file.")
-        sys.exit(1)
+    print(f"\n{'='*60}")
+    print(f"Audio: {audio_path}")
+    print(f"File stem: {stem}")
+    print(f"{'='*60}")
 
-    # Calculate total steps based on whether we have a video file
-    total_steps = 10 if video_file else 9
-    step = 0
-
-    def progress(msg):
-        nonlocal step
-        step += 1
-        print(f"\n[{step}/{total_steps}] {msg}")
-
-    print(f"Going to use: {audio_file} and {video_file}")
-
-    # Read Podbean credentials from environment
-    client_id = os.environ.get('PODBEAN_CLIENT_ID')
-    client_secret = os.environ.get('PODBEAN_CLIENT_SECRET')
-
+    client_id = os.environ.get("PODBEAN_CLIENT_ID")
+    client_secret = os.environ.get("PODBEAN_CLIENT_SECRET")
     if not client_id or not client_secret:
-        print("Error: PODBEAN_CLIENT_ID and PODBEAN_CLIENT_SECRET environment variables must be set")
+        print("Error: PODBEAN_CLIENT_ID and PODBEAN_CLIENT_SECRET must be set")
         sys.exit(1)
 
-    # get podbean auth token
-    progress("Authenticating with Podbean...")
+    print("Authenticating with Podbean...")
     auth_token = get_podbean_auth_token(client_id, client_secret)
     print("✓ Authenticated")
 
-    # get last episode number
-    progress("Calculating episode number...")
     episode_number = int(get_last_episode_number(auth_token)) + 1
-    print(f"✓ Episode number: {episode_number}")
+    print(f"✓ Next episode number (from Podbean): {episode_number}")
 
-    # Check for cached title and description
-    title_file = f"episode{episode_number:03d}-title.txt"
-    description_file = f"episode{episode_number:03d}-description.txt"
-    title = None
-    description = None
+    out_base = os.path.join(OUT_DIR, checkpoint_prefix(episode_number))
+    print(f"✓ Checkpoints under: {out_base}-*.txt|.md")
 
-    if os.path.exists(title_file) and os.path.exists(description_file):
-        with open(title_file, 'r', encoding='utf-8') as f:
-            cached_title = f.read().strip()
-        with open(description_file, 'r', encoding='utf-8') as f:
-            cached_description = f.read().strip()
+    transcript_file = f"{out_base}.txt"
+    title_file = f"{out_base}-title.txt"
+    description_file = f"{out_base}-description.txt"
+    guidance_file = f"{out_base}-guidance.txt"
+    youtube_url_file = f"{out_base}-youtube-url.txt"
 
-        print(f"\nFound saved title: {cached_title}")
-        print(f"Found saved description: {cached_description}")
-        choice = input("\nReuse saved title and description? (y/n): ").strip().lower()
+    participants = _parse_participants_arg(getattr(args, "participants", None))
 
-        if choice == 'y':
-            title = cached_title
-            description = cached_description
-            # Skip transcription and AI steps — adjust step counter
-            step += 4  # skip steps 3-6 (transcript, AI gen, title select, description select)
-            print("✓ Reusing saved title and description")
-
-    if title is None:
-        # Transcribe audio (or load existing transcript)
-        progress("Preparing transcript...")
-        transcript = None
-        transcript_file = f"episode{episode_number:03d}.txt"
-
-        if os.path.exists(transcript_file) and not args.skip_transcription:
-            print(f"Found existing transcript: {transcript_file}")
-            with open(transcript_file, 'r', encoding='utf-8') as f:
-                transcript = f.read()
-            print("✓ Loaded existing transcript")
-        elif args.skip_transcription and args.transcript:
-            print(f"Loading transcript from: {args.transcript}")
-            with open(args.transcript, 'r', encoding='utf-8') as f:
-                transcript = f.read()
-            print("✓ Loaded transcript")
+    # Editorial guidance
+    guidance = args.guidance
+    if guidance is None:
+        if os.path.exists(guidance_file):
+            with open(guidance_file, "r", encoding="utf-8") as f:
+                saved_g = f.read().strip()
+            print(f'\nFound saved editorial guidance:\n  "{saved_g[:120]}{"..." if len(saved_g) > 120 else ""}"')
+            print("Press Enter to reuse, or type new guidance: ", end="", flush=True)
+            user_input = input().strip()
+            guidance = user_input if user_input else saved_g
         else:
-            print("Transcribing audio file...")
-            transcript = transcribe_audio_openai(client, audio_file, verbose=args.verbose)
-            with open(transcript_file, 'w', encoding='utf-8') as f:
-                f.write(transcript)
-            print(f"✓ Transcript saved to: {transcript_file}")
+            print("\nEditorial guidance for drafting? (angle, focus, or Enter to skip)")
+            print("> ", end="", flush=True)
+            guidance = input().strip()
+    if guidance:
+        with open(guidance_file, "w", encoding="utf-8") as f:
+            f.write(guidance)
+        print(f"✓ Guidance saved to {guidance_file}")
 
-        # Generate title and description options
-        progress("Generating title and description options with AI...")
-        options = generate_title_and_description_options(client, transcript, verbose=args.verbose)
-        print("✓ Options generated")
+    raw_notes, raw_note_names = load_raw_companion_markdown(audio_path)
+    if raw_note_names:
+        print(f"✓ Companion show notes: {', '.join(raw_note_names)}")
 
-        # Let user select title
-        progress("Select episode title...")
-        while title is None:
-            result = select_option(options.get('titles', []), "title", allow_regenerate=True)
-            if isinstance(result, tuple) and result[0] == 'regenerate':
-                options = generate_title_and_description_options(client, transcript, additional_prompt=result[1], verbose=args.verbose)
-            else:
-                title = result
-        print(f"✓ Title: {title}")
+    # Transcript
+    if args.transcript:
+        with open(args.transcript, "r", encoding="utf-8") as f:
+            transcript = f.read()
+        print(f"✓ Loaded transcript from {args.transcript}")
+    elif os.path.exists(transcript_file):
+        with open(transcript_file, "r", encoding="utf-8") as f:
+            transcript = f.read()
+        print(f"✓ Loaded existing transcript {transcript_file}")
+    elif args.skip_transcription:
+        print(f"Error: --skip-transcription but no transcript at {transcript_file} (use -t)")
+        sys.exit(1)
+    else:
+        print("Transcribing...")
+        transcript = transcribe_audio_openai(client, audio_path, verbose=args.verbose)
+        with open(transcript_file, "w", encoding="utf-8") as f:
+            f.write(transcript)
+        print(f"✓ Transcript saved to {transcript_file}")
 
-        # Let user select description
-        progress("Select episode description...")
-        while description is None:
-            result = select_option(options.get('descriptions', []), "description", allow_regenerate=True)
-            if isinstance(result, tuple) and result[0] == 'regenerate':
-                options = generate_title_and_description_options(client, transcript, additional_prompt=result[1], verbose=args.verbose)
-            else:
-                description = result
-        print("✓ Description selected")
+    article_md = generate_article(
+        transcript,
+        out_base,
+        editorial_guidance=guidance,
+        raw_notes=raw_notes,
+        verbose=args.verbose,
+    )
 
-        # Save title and description for potential reuse
-        with open(title_file, 'w', encoding='utf-8') as f:
-            f.write(title)
-        with open(description_file, 'w', encoding='utf-8') as f:
-            f.write(description)
-        print(f"✓ Saved title to {title_file} and description to {description_file}")
+    if args.draft_only:
+        print(f"\nDraft-only: done. Article: {out_base}-article.md")
+        return
 
-    # Upload audio to Podbean
-    progress("Uploading audio to Podbean...")
-    file_size = os.path.getsize(audio_file)
-    episode_file_name_mp3 = f"{episode_number:03d}-{title_to_url_safe(title)}.mp3"
-    episode_file_name_md = f"{episode_number:03d}-{title_to_url_safe(title)}.md"
-    presigned_url_response = get_podbean_upload_link(auth_token, episode_file_name_mp3, file_size)
+    # Title
+    title = (args.title or "").strip() or None
+    if not title and os.path.exists(title_file):
+        with open(title_file, "r", encoding="utf-8") as f:
+            saved_t = f.read().strip()
+        print(f'\nFound saved title: "{saved_t}"')
+        print("Press Enter to reuse, or type 'new' to pick again: ", end="", flush=True)
+        if input().strip().lower() != "new":
+            title = saved_t
+    if not title:
+        title = pick_title(article_md, editorial_guidance=guidance, verbose=args.verbose)
+    with open(title_file, "w", encoding="utf-8") as f:
+        f.write(title)
+    print(f"✓ Title: {title}")
 
-    if args.verbose:
-        print(presigned_url_response)
+    # Short teaser description (Podbean + above-the-fold)
+    description = (args.description or "").strip() or None
+    if not description and os.path.exists(description_file):
+        with open(description_file, "r", encoding="utf-8") as f:
+            saved_d = f.read().strip()
+        print(f"\nFound saved description ({len(saved_d)} chars). Press Enter to reuse, or 'new': ", end="", flush=True)
+        if input().strip().lower() != "new":
+            description = saved_d
+    if not description:
+        description = pick_description(article_md, editorial_guidance=guidance, verbose=args.verbose)
+    with open(description_file, "w", encoding="utf-8") as f:
+        f.write(description)
+    print("✓ Description saved")
 
-    presigned_url = presigned_url_response["presigned_url"]
-    media_key = presigned_url_response["file_key"]
-
-    if args.verbose:
-        print(f"presigned_url: {presigned_url}")
-        print(f"media_key: {media_key}")
-
-    print(f"Uploading {episode_file_name_mp3} ({file_size / (1024*1024):.1f} MB)...")
-    upload_response = upload_file_to_podbean(presigned_url, audio_file)
-    if args.verbose:
-        print(upload_response)
-    print("✓ Audio uploaded to Podbean")
-
-    # Build metadata
     full_title = f"#{episode_number} - {title}"
 
-    extended_description = (f"{description}<p>&nbsp;</p>"
-     + "<p>We are always happy to answer any questions, hear suggestions for new episodes, or hear from you, our listeners.</p>"
-     + "<p><a href='https://www.linkedin.com/company/devsecops-talks/'>DevSecOps Talks podcast LinkedIn page</a></p>"
-     + "<p><a href='https://devsecops.fm/'>DevSecOps Talks podcast website</a></p>"
-     + "<p><a href='https://youtube.com/channel/UCRjpE9xKxZeBkRgYiLErEjw'>DevSecOps Talks podcast YouTube channel</a></p>")
+    # Podbean upload
+    print("\nUploading audio to Podbean...")
+    file_size = os.path.getsize(audio_path)
+    episode_file_name_mp3 = f"{episode_number:03d}-{title_to_url_safe(title)}.mp3"
+    presigned_url_response = get_podbean_upload_link(auth_token, episode_file_name_mp3, file_size)
+    presigned_url = presigned_url_response["presigned_url"]
+    media_key = presigned_url_response["file_key"]
+    print(f"Uploading {episode_file_name_mp3} ({file_size / (1024*1024):.1f} MB)...")
+    upload_file_to_podbean(presigned_url, audio_path)
+    print("✓ Audio uploaded")
 
-    print("\nPodcast title:", full_title)
-    print("Podcast extended description:", extended_description)
+    extended_description = (
+        f"{description}<p>&nbsp;</p>"
+        "<p>We are always happy to answer any questions, hear suggestions for new episodes, or hear from you, our listeners.</p>"
+        "<p><a href='https://www.linkedin.com/company/devsecops-talks/'>DevSecOps Talks podcast LinkedIn page</a></p>"
+        "<p><a href='https://devsecops.fm/'>DevSecOps Talks podcast website</a></p>"
+        "<p><a href='https://youtube.com/channel/UCRjpE9xKxZeBkRgYiLErEjw'>DevSecOps Talks podcast YouTube channel</a></p>"
+    )
 
-    # Create Podbean episode (before YouTube so it's not blocked by upload failures)
-    progress("Creating Podbean episode...")
     create_episode_response = create_podbean_episode(
         auth_token, full_title, extended_description, episode_number, media_key=media_key
     )
     if args.verbose:
         print(create_episode_response)
 
-    podbean_id = create_episode_response["episode"]["player_url"].split('=')[-1]
-    print(f"✓ Podbean episode id: {podbean_id}")
+    podbean_id = create_episode_response["episode"]["player_url"].split("=")[-1]
+    print(f"✓ Podbean player id: {podbean_id}")
 
-    # Build YouTube description
-    youtube_description_text = re.sub(r'<p[^>]*>', '\n', extended_description)
-    youtube_description_text = re.sub(r'</p>', '', youtube_description_text)
-    youtube_description_text = re.sub(r"<a\s+href=['\"]([^'\"]+)['\"][^>]*>([^<]+)</a>", r'\2 (\1)', youtube_description_text)
-    youtube_description_text = re.sub(r'<[^>]+>', '', youtube_description_text)
+    youtube_description_text = re.sub(r"<p[^>]*>", "\n", extended_description)
+    youtube_description_text = re.sub(r"</p>", "", youtube_description_text)
+    youtube_description_text = re.sub(
+        r"<a\s+href=['\"]([^'\"]+)['\"][^>]*>([^<]+)</a>", r"\2 (\1)", youtube_description_text
+    )
+    youtube_description_text = re.sub(r"<[^>]+>", "", youtube_description_text)
     youtube_description_text = html.unescape(youtube_description_text).strip()
-    youtube_description_text = re.sub(r'\n{3,}', '\n\n', youtube_description_text)
+    youtube_description_text = re.sub(r"\n{3,}", "\n\n", youtube_description_text)
     youtube_description_text += (
         f"\n\nAudio version and show notes: https://devsecops.fm/episodes/"
         f"{episode_number:03d}-{title_to_url_safe(title)}/"
@@ -622,59 +647,99 @@ def main():
         "\n\n#DevSecOps #InfraAsCode #CloudSecurity #DevOps #Podcast #CyberSecurity #Security #SSDLC #Devsecopstalks"
     )
 
-    # YouTube upload (async mode with polling, non-fatal)
-    youtube_id = ""
-    if video_file:
-        progress("Uploading video to YouTube (async)...")
-        print(f"File: {video_file}")
+    # YouTube
+    youtube_embed_url = (args.youtube or "").strip()
+    if not youtube_embed_url and os.path.exists(youtube_url_file):
+        with open(youtube_url_file, "r", encoding="utf-8") as f:
+            youtube_embed_url = f.read().strip()
+        if youtube_embed_url:
+            print(f"✓ Loaded YouTube embed URL from {youtube_url_file}")
+
+    video_source = None
+    if not youtube_embed_url and not args.skip_youtube_upload:
+        override = (args.youtube_video_url or os.environ.get("UPLOAD_POST_VIDEO_URL") or "").strip()
+        if override:
+            video_source = override
+            print(f"\nUsing --youtube-video-url for upload-post: {video_source[:90]}…")
+        else:
+            video_source = args.video or find_companion_video(audio_path)
+            if video_source and not str(video_source).lower().startswith(("http://", "https://")):
+                if not os.path.isfile(video_source):
+                    print(f"⚠ Video path not found: {video_source}")
+                    video_source = None
+
+    r2_staging_key = None
+    if not youtube_embed_url and video_source and os.environ.get("UPLOAD_POST_API_KEY") and os.environ.get(
+        "UPLOAD_POST_USER"
+    ):
+        print(f"\nUploading video to YouTube via upload-post: {video_source}")
+        video_for_upload = video_source
+        is_url = str(video_source).lower().startswith(("http://", "https://"))
         try:
-            youtube_response = upload_to_youtube(video_file, f"DEVSECOPS Talks {full_title}", youtube_description_text)
-            # Try to extract video ID from various response shapes
-            for path in [
-                lambda r: r["results"]["youtube"]["post_id"],
-                lambda r: r["platforms"]["youtube"]["post_id"],
-                lambda r: r["results"]["youtube"]["url"],
-            ]:
-                try:
-                    youtube_id = path(youtube_response)
-                    break
-                except (KeyError, TypeError):
-                    continue
-            if not youtube_id:
-                youtube_id = str(youtube_response)
-            print(f"✓ YouTube video id: {youtube_id}")
+            if not is_url and os.path.isfile(video_source) and use_r2_staging_for_local_video(video_source, args):
+                threshold = int(os.environ.get("YOUTUBE_VIDEO_R2_THRESHOLD_MB", "400"))
+                mb = os.path.getsize(video_source) / (1024 * 1024)
+                if getattr(args, "youtube_via_r2", False):
+                    print("R2 staging: forced via --youtube-via-r2")
+                elif mb >= threshold:
+                    print(f"R2 staging: auto ({mb:.0f} MB >= {threshold} MB)")
+                staged = upload_staging_video_to_r2(video_source, episode_number, verbose=args.verbose)
+                if staged:
+                    video_for_upload, r2_staging_key = staged
+                else:
+                    print("⚠ R2 staging failed — falling back to direct upload to upload-post")
+
+            yt_title = f"DEVSECOPS Talks {full_title}"
+            status = upload_to_youtube(video_for_upload, yt_title, youtube_description_text)
+            youtube_embed_url = status_to_youtube_embed_url(status) or ""
+            if youtube_embed_url:
+                print(f"✓ YouTube embed URL: {youtube_embed_url}")
+                with open(youtube_url_file, "w", encoding="utf-8") as f:
+                    f.write(youtube_embed_url + "\n")
+            else:
+                print("⚠ Could not parse YouTube URL from upload-post; use --youtube with embed URL")
         except Exception as e:
             print(f"⚠ YouTube upload failed: {e}")
-            print("Continuing without YouTube — you can upload manually later.")
-    else:
-        print("\nNo video file found, skipping YouTube upload.")
+        finally:
+            if r2_staging_key:
+                delete_r2_object(r2_staging_key, verbose=args.verbose)
+    elif video_source and not youtube_embed_url:
+        print(
+            "\n⚠ UPLOAD_POST_API_KEY / UPLOAD_POST_USER not set — skipping YouTube upload. "
+            "Use --youtube with embed URL or configure env."
+        )
+    elif not video_source and not youtube_embed_url:
+        print("\nNo companion video — skipping YouTube upload.")
 
-    # Generate episode markdown file
-    progress("Generating episode page...")
-    env = Environment(loader=FileSystemLoader(os.path.dirname(__file__)))
-    template = env.get_template("episode.md.j2")
-    output = template.render(
-        title=full_title,
-        episode_number=episode_number,
-        date=datetime.datetime.now().astimezone().replace(microsecond=0).isoformat(),
-        podbean_id=podbean_id,
-        description=description,
-        youtube_id=youtube_id,
+    video_id = resolve_youtube_video_id(youtube_embed_url)
+
+    episode_path = write_episode_markdown(
+        episode_number,
+        title,
+        description,
+        article_md,
+        podbean_id,
+        video_id,
+        participants=participants,
     )
-    episode_file = os.path.join(os.path.dirname(__file__), "../content/episodes", episode_file_name_md)
-    with open(episode_file, 'w') as f:
-        f.write(output)
-    print(f"✓ Episode file created: {episode_file}")
+    print(f"✓ Episode page: {episode_path}")
 
     print(f"\n{'='*60}")
-    if youtube_id:
-        print(f"All done! 🎉 Episode #{episode_number} published.")
-    else:
-        print(f"Episode #{episode_number} published (YouTube upload pending).")
-        print(f"Upload video manually or re-run the script to retry.")
+    print(f"Episode #{episode_number} complete.")
     print(f"{'='*60}")
 
 
+def main():
+    args = parse_args()
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        print("Error: OPENAI_API_KEY not set")
+        sys.exit(1)
+    client = OpenAI(api_key=api_key)
+
+    audio_paths = _collect_audio_paths(args)
+    for ap in audio_paths:
+        process_audio(ap, args, client)
 
 
 if __name__ == "__main__":

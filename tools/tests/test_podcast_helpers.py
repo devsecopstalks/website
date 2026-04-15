@@ -49,11 +49,24 @@ class TestPodbeanTextHelpers(unittest.TestCase):
     def test_checkpoint_prefix(self):
         self.assertEqual(podbean.checkpoint_prefix(97), "episode097")
 
+    def test_build_youtube_description_plain_has_full_urls(self):
+        text = podbean.build_youtube_description_plain(
+            "Teaser line.", 97, "Shift Left Example"
+        )
+        self.assertIn("https://www.linkedin.com/company/devsecops-talks/", text)
+        self.assertIn("https://devsecops.fm/episodes/097-", text)
+        self.assertNotIn("…", text)
+
     def test_participants_yaml_line(self):
         self.assertEqual(
             podbean._participants_yaml_line(["Paulina", "Mattias", "Andrey"]),
             'participants: ["Paulina", "Mattias", "Andrey"]',
         )
+
+    def test_hugo_shortcode_braces_in_template(self):
+        """podbean_line must emit {{< not {< — f-strings need {{{{ for literal {{."""
+        line = f' {{{{<  podbean id "Title"  >}}}} '
+        self.assertTrue(line.lstrip().startswith("{{<"))
 
 
 class TestEpisodePipelineNumberedPick(unittest.TestCase):

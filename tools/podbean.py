@@ -2,7 +2,6 @@
 
 import os
 import re
-import html
 import argparse
 import requests
 import mimetypes
@@ -83,6 +82,40 @@ def resolve_youtube_video_id(value: str) -> str:
     return youtube_embed_url_to_video_id(s)
 
 
+def build_youtube_description_plain(teaser: str, episode_number: int, title_short: str) -> str:
+    """
+    Plain-text description for upload-post → YouTube.
+
+    Uses short labels with **full URL on the following line** so the YouTube app
+    shows complete clickable links (it often truncates long single-line URLs with …).
+    """
+    slug = title_to_url_safe(title_short)
+    episode_url = f"https://devsecops.fm/episodes/{episode_number:03d}-{slug}/"
+    lines = [
+        teaser.strip(),
+        "",
+        "We are always happy to answer any questions, hear suggestions for new episodes, or hear from you, our listeners.",
+        "",
+        "Podcast website",
+        "https://devsecops.fm/",
+        "",
+        "LinkedIn",
+        "https://www.linkedin.com/company/devsecops-talks/",
+        "",
+        "YouTube channel",
+        "https://www.youtube.com/channel/UCRjpE9xKxZeBkRgYiLErEjw",
+        "",
+        "This episode — audio & show notes",
+        episode_url,
+        "",
+        "Subscribe to the podcast",
+        "https://devsecops.fm/",
+        "",
+        "#DevSecOps #InfraAsCode #CloudSecurity #DevOps #Podcast #CyberSecurity #Security #SSDLC #Devsecopstalks",
+    ]
+    return "\n".join(lines)
+
+
 def _participants_yaml_line(participants: list[str]) -> str:
     """Single YAML line: participants: ["A", "B"] with minimal escaping."""
     esc = [p.replace("\\", "\\\\").replace('"', '\\"') for p in participants]
@@ -108,7 +141,8 @@ def write_episode_markdown(
     date_iso = datetime.datetime.now().astimezone().replace(microsecond=0).isoformat()
     title_yaml = yaml_escape_double_quoted(full_title)
     podbean_title = f"DEVSECOPS Talks {full_title}"
-    podbean_line = f' {{<  podbean {podbean_id} "{podbean_title}"  >}} '
+    # f-strings: {{ → literal {. Hugo needs {{< not {< — use {{{{ for {{ in output.
+    podbean_line = f' {{{{<  podbean {podbean_id} "{podbean_title}"  >}}}} '
 
     parts = [
         "---",
@@ -136,7 +170,7 @@ def write_episode_markdown(
         "",
     ]
     if youtube_video_id:
-        parts.append(f"{{< youtube {youtube_video_id} >}}")
+        parts.append(f"{{{{< youtube {youtube_video_id} >}}}}")
         parts.append("")
     parts.append(article_md.rstrip())
     parts.append("")
@@ -631,21 +665,13 @@ def process_audio(audio_path: str, args, client: OpenAI) -> None:
     podbean_id = create_episode_response["episode"]["player_url"].split("=")[-1]
     print(f"✓ Podbean player id: {podbean_id}")
 
-    youtube_description_text = re.sub(r"<p[^>]*>", "\n", extended_description)
-    youtube_description_text = re.sub(r"</p>", "", youtube_description_text)
-    youtube_description_text = re.sub(
-        r"<a\s+href=['\"]([^'\"]+)['\"][^>]*>([^<]+)</a>", r"\2 (\1)", youtube_description_text
-    )
-    youtube_description_text = re.sub(r"<[^>]+>", "", youtube_description_text)
-    youtube_description_text = html.unescape(youtube_description_text).strip()
-    youtube_description_text = re.sub(r"\n{3,}", "\n\n", youtube_description_text)
-    youtube_description_text += (
-        f"\n\nAudio version and show notes: https://devsecops.fm/episodes/"
-        f"{episode_number:03d}-{title_to_url_safe(title)}/"
-        "\n\nSubscribe to the podcast for the audio version and show notes at https://devsecops.fm/"
-        "\n\nWant to talk? Reach out on LinkedIn: https://www.linkedin.com/company/devsecops-talks"
-        "\n\n#DevSecOps #InfraAsCode #CloudSecurity #DevOps #Podcast #CyberSecurity #Security #SSDLC #Devsecopstalks"
-    )
+    # YouTube: plain text with URLs on their own lines (not HTML→text), so links are not visually cut off with …
+    youtube_description_text = build_youtube_description_plain(description, episode_number, title)
+    yt_desc_path = f"{out_base}-youtube-description.txt"
+    with open(yt_desc_path, "w", encoding="utf-8") as f:
+        f.write(youtube_description_text)
+        f.write("\n")
+    print(f"✓ YouTube description saved to {yt_desc_path}")
 
     # YouTube
     youtube_embed_url = (args.youtube or "").strip()

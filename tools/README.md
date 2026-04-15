@@ -101,6 +101,10 @@ uv run podbean.py -f raw/ep.mp3 --skip-transcription --title "Fixed Title" --des
 uv run podbean.py -f raw/ep.mp3 --youtube-via-r2 --video raw/ep.mp4
 ```
 
+### YouTube description text
+
+The upload uses **plain text** with each important **URL on its own line**, so the YouTube app is less likely to show long links with a `…` in the middle. (Some YouTube clients still shorten link *display*; tap or “Copy” to see the full URL.) The exact text sent to upload-post is also written to `out/episodeNNN-youtube-description.txt` for review.
+
 ### Tests
 
 Pure helpers (URL/embed parsing, slug helpers, numbered-list parsing) are covered by stdlib `unittest`:

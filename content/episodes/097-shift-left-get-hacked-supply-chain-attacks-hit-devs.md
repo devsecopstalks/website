@@ -15,13 +15,13 @@ March 2026 made supply chain attacks feel a lot less theoretical, but what made 
 
 <!-- Player -->
 
- {<  podbean sb67i-1a9d44e-pb "DEVSECOPS Talks #97 - Shift Left, Get Hacked: Supply Chain Attacks Hit Devs"  >}
+ {{<  podbean sb67i-1a9d44e-pb "DEVSECOPS Talks #97 - Shift Left, Get Hacked: Supply Chain Attacks Hit Devs"  >}} 
 
 ---
 
 <!-- Video -->
 
-{< youtube Vz-i7xodtlA >}
+{{< youtube Vz-i7xodtlA >}}
 
 ## Summary
 Attackers are now shifting left faster than defenders — and they are going straight for the developers. In this full-squad episode, Andrey, Mattias, and Paulina unpack the March 2026 supply chain attack chain that started with Aqua Security's Trivy scanner, cascaded into LiteLLM on PyPI, and was made glaringly obvious to human engineers when the attackers' own coding mistake turned their credential stealer into a fork bomb — though automated detection tools like Sonatype's also flagged the malicious releases within seconds. The hosts also cover the North Korean-attributed Axios NPM compromise and lay out practical remediation steps — from dev containers and version delays to disabling post-install scripts — arguing that the old advice of "just check if the package looks legit" no longer holds when the attackers are compromising the publishers themselves.

@@ -11,7 +11,7 @@ fi
 
 uv sync
 
-cp ~/Downloads/*.mp3 raw/
-cp ~/Downloads/*.mp4 raw/
+mv ~/Downloads/*.mp3 raw/
+mv ~/Downloads/*.mp4 raw/
 
 op run --env-file="./.env" -- uv run python3 -u podbean.py "$@"

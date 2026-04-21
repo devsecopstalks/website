@@ -89,20 +89,25 @@ def delete_r2_object(r2_key: str, verbose=False):
         return False
 
 
-def use_r2_staging_for_local_video(local_path: str, args) -> bool:
+def wants_r2_staging_for_local_video(local_path: str, args) -> bool:
     """
-    Whether to put the local MP4 on R2 first and give upload-post an HTTPS URL.
-    Auto when file size >= YOUTUBE_VIDEO_R2_THRESHOLD_MB (default 400), or if
-    --youtube-via-r2 is set.
+    Policy: this local file should use R2 staging (before checking R2 env).
+    True when size >= YOUTUBE_VIDEO_R2_THRESHOLD_MB (default 400) or --youtube-via-r2.
     """
     if not os.path.isfile(local_path):
         return False
     if getattr(args, "youtube_no_r2_staging", False):
-        return False
-    if not r2_public_uploads_configured():
         return False
     if getattr(args, "youtube_via_r2", False):
         return True
     threshold_mb = int(os.environ.get("YOUTUBE_VIDEO_R2_THRESHOLD_MB", "400"))
     size_mb = os.path.getsize(local_path) / (1024 * 1024)
     return size_mb >= threshold_mb
+
+
+def use_r2_staging_for_local_video(local_path: str, args) -> bool:
+    """
+    Whether to put the local MP4 on R2 first and give upload-post an HTTPS URL.
+    Same policy as wants_r2_staging_for_local_video, but only if R2 is configured.
+    """
+    return wants_r2_staging_for_local_video(local_path, args) and r2_public_uploads_configured()

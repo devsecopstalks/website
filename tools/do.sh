@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Warm up 1Password auth (optional; comment out if not using op)
-op whoami
+op signin
 
 if ! command -v uv &>/dev/null; then
   echo "uv not found. Installing uv..."

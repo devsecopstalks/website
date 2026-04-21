@@ -22,8 +22,9 @@ from episode_pipeline import (
 )
 from r2_staging import (
     delete_r2_object,
+    r2_public_uploads_configured,
     upload_staging_video_to_r2,
-    use_r2_staging_for_local_video,
+    wants_r2_staging_for_local_video,
 )
 from youtube import (
     status_to_youtube_embed_url,
@@ -702,7 +703,18 @@ def process_audio(audio_path: str, args, client: OpenAI) -> None:
         video_for_upload = video_source
         is_url = str(video_source).lower().startswith(("http://", "https://"))
         try:
-            if not is_url and os.path.isfile(video_source) and use_r2_staging_for_local_video(video_source, args):
+            if not is_url and os.path.isfile(video_source) and wants_r2_staging_for_local_video(
+                video_source, args
+            ):
+                if not r2_public_uploads_configured():
+                    print(
+                        "Error: R2 staging is required for this local video (size >= "
+                        f"{os.environ.get('YOUTUBE_VIDEO_R2_THRESHOLD_MB', '400')} MB or --youtube-via-r2) "
+                        "but R2 is not fully configured. Set R2_PUBLIC_URL and R2_ACCOUNT_ID, "
+                        "R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY (see tools/README.md). "
+                        "Or pass --youtube-no-r2-staging to allow direct upload-post (fragile for large files)."
+                    )
+                    sys.exit(1)
                 threshold = int(os.environ.get("YOUTUBE_VIDEO_R2_THRESHOLD_MB", "400"))
                 mb = os.path.getsize(video_source) / (1024 * 1024)
                 if getattr(args, "youtube_via_r2", False):
@@ -710,10 +722,14 @@ def process_audio(audio_path: str, args, client: OpenAI) -> None:
                 elif mb >= threshold:
                     print(f"R2 staging: auto ({mb:.0f} MB >= {threshold} MB)")
                 staged = upload_staging_video_to_r2(video_source, episode_number, verbose=args.verbose)
-                if staged:
-                    video_for_upload, r2_staging_key = staged
-                else:
-                    print("⚠ R2 staging failed — falling back to direct upload to upload-post")
+                if not staged:
+                    print(
+                        "Error: R2 staging upload failed; refusing direct upload to upload-post. "
+                        "Fix R2 credentials/bucket or use --youtube-video-url / UPLOAD_POST_VIDEO_URL "
+                        "with a public HTTPS URL, or --youtube-no-r2-staging if you accept direct upload."
+                    )
+                    sys.exit(1)
+                video_for_upload, r2_staging_key = staged
 
             yt_title = f"DEVSECOPS Talks {full_title}"
             status = upload_to_youtube(video_for_upload, yt_title, youtube_description_text)

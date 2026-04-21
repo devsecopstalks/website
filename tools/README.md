@@ -68,7 +68,7 @@ If there is exactly one `raw/*.mp3`, it is chosen automatically. If there are se
 
 Direct multipart uploads to upload-post can hit **499/504** on very large files. Options:
 
-1. **R2 staging (recommended when configured):** local files at or above `YOUTUBE_VIDEO_R2_THRESHOLD_MB` (default 400) are uploaded to `podcast/youtube-staging/{episode}-{id}.mp4`, the public HTTPS URL is sent to upload-post, then the object is deleted. Requires a **public GET** URL for the bucket path (`R2_PUBLIC_URL`).
+1. **R2 staging (recommended when configured):** local files at or above `YOUTUBE_VIDEO_R2_THRESHOLD_MB` (default 400) are uploaded to `podcast/youtube-staging/{episode}-{id}.mp4`, the public HTTPS URL is sent to upload-post, then the object is deleted. Requires a **public GET** URL for the bucket path (`R2_PUBLIC_URL`). If R2 staging is required but not configured, or the staging upload fails, the run **exits with an error** instead of falling back to a direct multipart upload to upload-post.
 2. **Force R2 for any size:** `--youtube-via-r2`
 3. **Disable R2:** `--youtube-no-r2-staging`
 4. **Manual URL:** `--youtube-video-url 'https://…/episode.mp4'` or env `UPLOAD_POST_VIDEO_URL`

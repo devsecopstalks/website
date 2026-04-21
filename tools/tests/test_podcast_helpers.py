@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import os
 import sys
+import tempfile
+import types
 import unittest
 
 # Tests live under tools/tests/; package imports use tools/ on path.
@@ -13,6 +15,7 @@ if _TOOLS_ROOT not in sys.path:
 
 from youtube import status_to_youtube_embed_url, youtube_embed_url_to_video_id  # noqa: E402
 import podbean  # noqa: E402
+from r2_staging import wants_r2_staging_for_local_video  # noqa: E402
 
 
 class TestYoutubeEmbedParsing(unittest.TestCase):
@@ -67,6 +70,31 @@ class TestPodbeanTextHelpers(unittest.TestCase):
         """podbean_line must emit {{< not {< — f-strings need {{{{ for literal {{."""
         line = f' {{{{<  podbean id "Title"  >}}}} '
         self.assertTrue(line.lstrip().startswith("{{<"))
+
+
+class TestR2StagingPolicy(unittest.TestCase):
+    def test_wants_r2_respects_threshold_and_opt_out(self):
+        with tempfile.NamedTemporaryFile(delete=False) as f:
+            f.write(b"x")
+            path = f.name
+        old_thr = os.environ.get("YOUTUBE_VIDEO_R2_THRESHOLD_MB")
+        try:
+            os.environ["YOUTUBE_VIDEO_R2_THRESHOLD_MB"] = "999999"
+            args = types.SimpleNamespace(youtube_no_r2_staging=False, youtube_via_r2=False)
+            self.assertFalse(wants_r2_staging_for_local_video(path, args))
+            os.environ["YOUTUBE_VIDEO_R2_THRESHOLD_MB"] = "0"
+            self.assertTrue(wants_r2_staging_for_local_video(path, args))
+            args_opt = types.SimpleNamespace(youtube_no_r2_staging=True, youtube_via_r2=False)
+            self.assertFalse(wants_r2_staging_for_local_video(path, args_opt))
+            args_force = types.SimpleNamespace(youtube_no_r2_staging=False, youtube_via_r2=True)
+            os.environ["YOUTUBE_VIDEO_R2_THRESHOLD_MB"] = "999999"
+            self.assertTrue(wants_r2_staging_for_local_video(path, args_force))
+        finally:
+            if old_thr is None:
+                os.environ.pop("YOUTUBE_VIDEO_R2_THRESHOLD_MB", None)
+            else:
+                os.environ["YOUTUBE_VIDEO_R2_THRESHOLD_MB"] = old_thr
+            os.unlink(path)
 
 
 class TestEpisodePipelineNumberedPick(unittest.TestCase):

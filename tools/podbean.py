@@ -741,7 +741,8 @@ def process_audio(audio_path: str, args, client: OpenAI) -> None:
             else:
                 print("⚠ Could not parse YouTube URL from upload-post; use --youtube with embed URL")
         except Exception as e:
-            print(f"⚠ YouTube upload failed: {e}")
+            print(f"Error: YouTube upload failed: {e}")
+            sys.exit(1)
         finally:
             if r2_staging_key:
                 delete_r2_object(r2_staging_key, verbose=args.verbose)

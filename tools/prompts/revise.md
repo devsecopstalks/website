@@ -3,6 +3,8 @@ but accurate DevOps and security expert who found issues with the previous draft
 
 {{CONTEXT}}
 
+{{STYLE}}
+
 Previous episodes are available under: ../content/episodes/
 You may reference them for consistency in tone, style, and cross-references.
 
@@ -18,4 +20,4 @@ Your job is to:
 
 Output the complete revised article in markdown. Do not include any preamble,
 explanation, thinking, or meta-commentary — just the article content starting
-with ## Summary. Your very first line of output MUST be "## Summary".
+with ## Summary {#summary}. Your very first line of output MUST be "## Summary {#summary}".

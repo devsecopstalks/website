@@ -21,8 +21,10 @@ from episode_pipeline import (
     pick_title,
 )
 from r2_staging import (
-    delete_r2_object,
+    load_r2_youtube_staging_marker,
+    remove_r2_youtube_staging_marker,
     r2_public_uploads_configured,
+    save_r2_youtube_staging_marker,
     upload_staging_video_to_r2,
     wants_r2_staging_for_local_video,
 )
@@ -30,6 +32,7 @@ from youtube import (
     status_to_youtube_embed_url,
     upload_to_youtube,
     youtube_embed_url_to_video_id,
+    youtube_status_error_message,
 )
 
 # Podbean API docs
@@ -87,11 +90,14 @@ def build_youtube_description_plain(teaser: str, episode_number: int, title_shor
     """
     Plain-text description for upload-post → YouTube.
 
-    Uses short labels with **full URL on the following line** so the YouTube app
-    shows complete clickable links (it often truncates long single-line URLs with …).
+    Uses short labels with **URL on the following line**. Episode link uses
+    ``/episodes/NNN/`` (requires matching Hugo ``aliases`` on the episode page)
+    so paths stay short — YouTube often ellipsizes long URLs in the description UI.
+    ``title_short`` is kept for a stable call signature; the website still uses
+    the full slug in the episode filename and canonical URL.
     """
-    slug = title_to_url_safe(title_short)
-    episode_url = f"https://devsecops.fm/episodes/{episode_number:03d}-{slug}/"
+    _ = title_short
+    episode_url = f"https://devsecops.fm/episodes/{episode_number:03d}/"
     lines = [
         teaser.strip(),
         "",
@@ -101,7 +107,7 @@ def build_youtube_description_plain(teaser: str, episode_number: int, title_shor
         "https://devsecops.fm/",
         "",
         "LinkedIn",
-        "https://www.linkedin.com/company/devsecops-talks/",
+        "https://linkedin.com/company/devsecops-talks/",
         "",
         "YouTube channel",
         "https://www.youtube.com/channel/UCRjpE9xKxZeBkRgYiLErEjw",
@@ -119,8 +125,7 @@ def build_youtube_description_plain(teaser: str, episode_number: int, title_shor
 
 def _participants_yaml_line(participants: list[str]) -> str:
     """Single YAML line: participants: ["A", "B"] with minimal escaping."""
-    esc = [p.replace("\\", "\\\\").replace('"', '\\"') for p in participants]
-    inner = ", ".join(f'"{x}"' for x in esc)
+    inner = ", ".join(f'"{yaml_escape_double_quoted(p)}"' for p in participants)
     return f"participants: [{inner}]"
 
 
@@ -153,6 +158,8 @@ def write_episode_markdown(
         f"episode: {episode_number}",
         'author: "DevSecOps Talks"',
         _participants_yaml_line(participants),
+        "aliases:",
+        f'  - "/episodes/{episode_number:03d}/"',
         "---",
         "",
         description,
@@ -184,7 +191,7 @@ def write_episode_markdown(
 
 def compress_audio_for_transcription(audio_file_path, bitrate='32k', verbose=False):
     """
-    Compress audio file using ffmpeg to reduce file size for Whisper API.
+    Compress audio file using ffmpeg to reduce file size for OpenAI transcription uploads.
     
     Args:
         audio_file_path: Path to the audio file
@@ -230,6 +237,7 @@ def compress_audio_for_transcription(audio_file_path, bitrate='32k', verbose=Fal
 
 
 # gpt-4o-transcribe accepts at most 1400s per request; stay below with chunk size.
+_TRANSCRIPTION_MODEL = "gpt-4o-transcribe"
 _MAX_TRANSCRIPTION_SECONDS = 1400
 _CHUNK_SECONDS = 1200
 
@@ -290,7 +298,7 @@ def extract_audio_segment(
 
 def transcribe_audio_openai(client, audio_file_path, verbose=False):
     """
-    Transcribe an audio file using OpenAI Whisper API.
+    Transcribe an audio file using OpenAI audio transcriptions API (see _TRANSCRIPTION_MODEL).
     Automatically compresses large files if needed.
     Long audio is split into segments under the API duration limit, then merged.
     
@@ -324,14 +332,14 @@ def transcribe_audio_openai(client, audio_file_path, verbose=False):
         def transcribe_one(path):
             with open(path, "rb") as audio_file:
                 return client.audio.transcriptions.create(
-                    model="gpt-4o-transcribe",
+                    model=_TRANSCRIPTION_MODEL,
                     file=audio_file,
                     response_format="text",
                     language="en",
                     prompt=_TRANSCRIPTION_PROMPT,
                 )
 
-        print("Using OpenAI Whisper API...")
+        print(_TRANSCRIPTION_MODEL)
 
         if duration_sec <= _MAX_TRANSCRIPTION_SECONDS:
             transcript = transcribe_one(file_to_transcribe)
@@ -550,6 +558,7 @@ def process_audio(audio_path: str, args, client: OpenAI) -> None:
     description_file = f"{out_base}-description.txt"
     guidance_file = f"{out_base}-guidance.txt"
     youtube_url_file = f"{out_base}-youtube-url.txt"
+    youtube_staging_marker = f"{out_base}-r2-youtube-staging.txt"
 
     participants = _parse_participants_arg(getattr(args, "participants", None))
 
@@ -682,6 +691,12 @@ def process_audio(audio_path: str, args, client: OpenAI) -> None:
         if youtube_embed_url:
             print(f"✓ Loaded YouTube embed URL from {youtube_url_file}")
 
+    if youtube_embed_url and os.path.isfile(youtube_staging_marker):
+        print(
+            f"✓ YouTube embed present; removing R2 staging marker and object ({youtube_staging_marker})"
+        )
+        remove_r2_youtube_staging_marker(youtube_staging_marker)
+
     video_source = None
     if not youtube_embed_url and not args.skip_youtube_upload:
         override = (args.youtube_video_url or os.environ.get("UPLOAD_POST_VIDEO_URL") or "").strip()
@@ -695,7 +710,6 @@ def process_audio(audio_path: str, args, client: OpenAI) -> None:
                     print(f"⚠ Video path not found: {video_source}")
                     video_source = None
 
-    r2_staging_key = None
     if not youtube_embed_url and video_source and os.environ.get("UPLOAD_POST_API_KEY") and os.environ.get(
         "UPLOAD_POST_USER"
     ):
@@ -721,15 +735,34 @@ def process_audio(audio_path: str, args, client: OpenAI) -> None:
                     print("R2 staging: forced via --youtube-via-r2")
                 elif mb >= threshold:
                     print(f"R2 staging: auto ({mb:.0f} MB >= {threshold} MB)")
-                staged = upload_staging_video_to_r2(video_source, episode_number, verbose=args.verbose)
-                if not staged:
-                    print(
-                        "Error: R2 staging upload failed; refusing direct upload to upload-post. "
-                        "Fix R2 credentials/bucket or use --youtube-video-url / UPLOAD_POST_VIDEO_URL "
-                        "with a public HTTPS URL, or --youtube-no-r2-staging if you accept direct upload."
+                cached_stage = load_r2_youtube_staging_marker(youtube_staging_marker, episode_number)
+                if cached_stage:
+                    video_for_upload, _ = cached_stage
+                    preview = (
+                        video_for_upload
+                        if len(video_for_upload) <= 90
+                        else video_for_upload[:88] + "…"
                     )
-                    sys.exit(1)
-                video_for_upload, r2_staging_key = staged
+                    print(
+                        f"✓ Reusing R2-staged video from {youtube_staging_marker} "
+                        f"(no re-upload to R2): {preview}"
+                    )
+                else:
+                    staged = upload_staging_video_to_r2(video_source, episode_number, verbose=args.verbose)
+                    if not staged:
+                        print(
+                            "Error: R2 staging upload failed; refusing direct upload to upload-post. "
+                            "Fix R2 credentials/bucket or use --youtube-video-url / UPLOAD_POST_VIDEO_URL "
+                            "with a public HTTPS URL, or --youtube-no-r2-staging if you accept direct upload."
+                        )
+                        sys.exit(1)
+                    video_for_upload, new_key = staged
+                    save_r2_youtube_staging_marker(
+                        youtube_staging_marker,
+                        video_for_upload,
+                        new_key,
+                        episode_number,
+                    )
 
             yt_title = f"DEVSECOPS Talks {full_title}"
             status = upload_to_youtube(video_for_upload, yt_title, youtube_description_text)
@@ -738,14 +771,35 @@ def process_audio(audio_path: str, args, client: OpenAI) -> None:
                 print(f"✓ YouTube embed URL: {youtube_embed_url}")
                 with open(youtube_url_file, "w", encoding="utf-8") as f:
                     f.write(youtube_embed_url + "\n")
+                remove_r2_youtube_staging_marker(youtube_staging_marker)
             else:
-                print("⚠ Could not parse YouTube URL from upload-post; use --youtube with embed URL")
+                yt_err = (
+                    youtube_status_error_message(status)
+                    if isinstance(status, dict)
+                    else None
+                )
+                if yt_err:
+                    print(f"⚠ YouTube did not publish a video: {yt_err}")
+                else:
+                    print(
+                        "⚠ Upload-post job completed but no YouTube embed URL was found "
+                        "(see response above)."
+                    )
+                print(
+                    f"  Staged MP4 kept on R2 for retry; URL and key in {youtube_staging_marker}. "
+                    "Re-run after fixing upload-post / YouTube, or add the embed URL to "
+                    f"{youtube_url_file} — staging is removed only after a successful embed URL is saved."
+                )
+                sys.exit(1)
         except Exception as e:
-            print(f"Error: YouTube upload failed: {e}")
+            print("Error: YouTube upload failed:")
+            for line in str(e).splitlines():
+                print(f"  {line}")
+            if os.path.isfile(youtube_staging_marker):
+                print(
+                    f"  Staged MP4 kept on R2 for retry; URL and key in {youtube_staging_marker}"
+                )
             sys.exit(1)
-        finally:
-            if r2_staging_key:
-                delete_r2_object(r2_staging_key, verbose=args.verbose)
     elif video_source and not youtube_embed_url:
         print(
             "\n⚠ UPLOAD_POST_API_KEY / UPLOAD_POST_USER not set — skipping YouTube upload. "

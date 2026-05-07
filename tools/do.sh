@@ -14,4 +14,6 @@ uv sync
 mv ~/Downloads/*.mp3 raw/
 mv ~/Downloads/*.mp4 raw/
 
-op run --env-file="./.env" -- uv run python3 -u podbean.py "$@"
+# --no-masking: otherwise op conceals stdout/stderr substrings that match injected
+# secrets (e.g. “DevSecOps …” in title options). Alternative: export OP_RUN_NO_MASKING=1.
+op run --no-masking --env-file="./.env" -- uv run python3 -u podbean.py "$@"

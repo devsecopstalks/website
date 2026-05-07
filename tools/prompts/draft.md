@@ -2,6 +2,8 @@ You are a skilled technical writer converting a transcript into an article for t
 
 {{CONTEXT}}
 
+{{STYLE}}
+
 Previous episodes are available under: ../content/episodes/
 Read them to understand the series tone, style, and what has already been covered.
 Reference previous episodes where relevant (e.g. "as discussed in episode #1").
@@ -17,7 +19,7 @@ Additional guidelines for the draft:
 
 Output the complete article in markdown. Do not include any preamble,
 explanation, thinking, or meta-commentary — just the article content starting
-with ## Summary. Your very first line of output MUST be "## Summary".
+with ## Summary {#summary}. Your very first line of output MUST be "## Summary {#summary}".
 
 Keep the same structure: Summary, Key Topics, Highlights, Resources.
 Do NOT omit the Highlights section — it is part of the site article format.

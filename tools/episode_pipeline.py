@@ -1,6 +1,6 @@
 """
 Claude Code + Codex adversarial review loop for episode articles.
-Checkpoints under tools/out/{stem}-* — see SiRob process-recording pattern.
+Checkpoints use the ``out_base`` passed by callers (e.g. ``podbean.py`` → ``out/episodeNNN``).
 """
 
 from __future__ import annotations
@@ -16,27 +16,40 @@ from typing import Callable
 
 TOOLS_DIR = os.path.dirname(os.path.abspath(__file__))
 EPISODES_DIR = os.path.join(TOOLS_DIR, "..", "content", "episodes")
+REPO_ROOT = os.path.abspath(os.path.join(TOOLS_DIR, ".."))
 PROMPTS_DIR = os.path.join(TOOLS_DIR, "prompts")
 CONTEXT_FILE = os.path.join(TOOLS_DIR, "podcast-context.md")
+STYLE_FILE = os.path.join(TOOLS_DIR, "writing-style.md")
 
-MAX_REVIEW_ITERATIONS = 5
+MAX_REVIEW_ITERATIONS = 10
 
 with open(CONTEXT_FILE, "r", encoding="utf-8") as _f:
     _CONTENT_CONTEXT = _f.read()
 
+with open(STYLE_FILE, "r", encoding="utf-8") as _f:
+    _WRITING_STYLE = _f.read()
+
 
 def load_prompt(name: str) -> str:
-    """Load a prompt template from prompts/ and inject the podcast context."""
+    """Load a prompt template from prompts/ and inject context + writing style."""
     path = os.path.join(PROMPTS_DIR, f"{name}.md")
     with open(path, "r", encoding="utf-8") as f:
         template = f.read()
-    return template.replace("{{CONTEXT}}", _CONTENT_CONTEXT)
+    return (
+        template.replace("{{CONTEXT}}", _CONTENT_CONTEXT).replace("{{STYLE}}", _WRITING_STYLE)
+    )
 
 
 DRAFT_PROMPT = load_prompt("draft")
 REVISE_PROMPT = load_prompt("revise")
+REVIEW_PROMPT = load_prompt("review")
 TITLES_PROMPT = load_prompt("titles")
 DESCRIPTIONS_PROMPT = load_prompt("descriptions")
+
+
+def _review_ends_good_to_go(review_text: str) -> bool:
+    """True when Codex ended the review with exactly GOOD_TO_GO on the last line."""
+    return review_text.strip().splitlines()[-1].strip() == "GOOD_TO_GO"
 
 
 def run_claude(prompt: str, verbose=False, allow_web=False) -> str:
@@ -50,6 +63,7 @@ def run_claude(prompt: str, verbose=False, allow_web=False) -> str:
         "--print",
         "--model", "opus",
         "--add-dir", EPISODES_DIR,
+        "--add-dir", REPO_ROOT,
     ]
     if allow_web:
         cmd += ["--allowedTools", "WebSearch", "WebFetch"]
@@ -93,7 +107,17 @@ def run_codex(prompt: str, stdin_text: str = "", verbose=False) -> str:
         tmp_path = tmp.name
 
     try:
-        cmd = ["codex", "exec", "-o", tmp_path, "--full-auto", "--add-dir", EPISODES_DIR]
+        cmd = [
+            "codex",
+            "exec",
+            "-o",
+            tmp_path,
+            "--full-auto",
+            "--add-dir",
+            EPISODES_DIR,
+            "--add-dir",
+            REPO_ROOT,
+        ]
         if stdin_text:
             cmd.append(prompt)
             input_data = stdin_text
@@ -208,7 +232,7 @@ def review_with_codex(
     """Review draft using Codex CLI. Returns (review_text, is_good)."""
     print("Reviewing with Codex (grumpy expert mode)...")
 
-    prompt = "Read the review instructions from prompts/review.md, then review the article provided on stdin."
+    prompt = REVIEW_PROMPT + "\n\nThe article to review is provided on stdin."
     if previous_review_file:
         prompt += (
             f" Also read your previous review from {previous_review_file} — "
@@ -217,7 +241,7 @@ def review_with_codex(
 
     review = run_codex(prompt, stdin_text=draft, verbose=verbose)
 
-    is_good = review.strip().splitlines()[-1].strip() == "GOOD_TO_GO"
+    is_good = _review_ends_good_to_go(review)
     if verbose:
         print(f"Review length: {len(review)} chars, GOOD_TO_GO: {is_good}")
 
@@ -326,7 +350,7 @@ def generate_article(
             print(f"Loading existing review {iteration}...")
             with open(review_file, "r", encoding="utf-8") as f:
                 review = f.read()
-            is_good = review.strip().splitlines()[-1].strip() == "GOOD_TO_GO"
+            is_good = _review_ends_good_to_go(review)
         else:
             review, is_good = review_with_codex(
                 draft, previous_review_file=prev_review_path, verbose=verbose

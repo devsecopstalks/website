@@ -1,3 +1,7 @@
+{{CONTEXT}}
+
+{{STYLE}}
+
 You generate short, punchy episode titles for the DevSecOps Talks podcast.
 
 Rules:

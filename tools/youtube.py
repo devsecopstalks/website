@@ -4,12 +4,89 @@ import os
 import re
 import time
 from pathlib import Path
+from typing import Any
 
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from upload_post import UploadPostClient, UploadPostError
+from upload_progress import ProgressBinaryReader, progress_enabled
 
 import requests
+
+# Log enough of error responses to debug gateway issues without megabytes of HTML.
+_UPLOAD_POST_ERROR_BODY_MAX = 4096
+
+
+def _upload_post_retry() -> Retry:
+    """
+    urllib3-level retries for flaky networks (connection drops, gateway errors).
+
+    POST is included so a failed connection during multipart can retry.
+    Env: UPLOAD_POST_HTTP_MAX_RETRIES (default 8), UPLOAD_POST_HTTP_BACKOFF (1.5),
+    UPLOAD_POST_HTTP_BACKOFF_MAX_S (120), UPLOAD_POST_HTTP_RETRY_STATUS (comma list).
+    """
+    total = int(os.environ.get("UPLOAD_POST_HTTP_MAX_RETRIES", "8"))
+    total = max(3, total)
+    backoff = float(os.environ.get("UPLOAD_POST_HTTP_BACKOFF", "1.5"))
+    backoff_max = int(os.environ.get("UPLOAD_POST_HTTP_BACKOFF_MAX_S", "120"))
+    raw = (os.environ.get("UPLOAD_POST_HTTP_RETRY_STATUS") or "429,502,503,504,499").strip()
+    status_forcelist: tuple[int, ...] = tuple(
+        int(x.strip()) for x in raw.split(",") if x.strip().isdigit()
+    ) or (429, 502, 503, 504, 499)
+    # POST must be allowed or urllib3 will not retry upload requests.
+    return Retry(
+        total=total,
+        connect=total,
+        read=total,
+        status=total,
+        backoff_factor=backoff,
+        backoff_max=backoff_max,
+        status_forcelist=status_forcelist,
+        allowed_methods=frozenset(
+            ("DELETE", "GET", "HEAD", "OPTIONS", "POST", "PUT", "TRACE")
+        ),
+        raise_on_status=False,
+    )
+
+
+def _format_requests_error(exc: requests.exceptions.RequestException) -> str:
+    """Human-readable diagnostics for upload-post / HTTP failures."""
+    lines: list[str] = [f"{type(exc).__name__}: {exc}"]
+    resp = getattr(exc, "response", None)
+    if resp is not None:
+        reason = getattr(resp, "reason", None) or ""
+        lines.append(f"  HTTP {resp.status_code} {reason}".rstrip())
+        hdr_lower = {k.lower(): v for k, v in resp.headers.items()}
+        for h in ("cf-ray", "x-request-id", "request-id", "server", "retry-after"):
+            v = hdr_lower.get(h)
+            if v:
+                lines.append(f"  {h}: {v}")
+        ct = (resp.headers.get("Content-Type") or "").split(";")[0].strip()
+        if ct:
+            lines.append(f"  content-type: {ct}")
+        try:
+            body = (resp.text or "").strip()
+        except Exception:
+            body = ""
+        if body:
+            if len(body) > _UPLOAD_POST_ERROR_BODY_MAX:
+                body = body[:_UPLOAD_POST_ERROR_BODY_MAX] + f"\n  … ({len(resp.text)} response chars total)"
+            body_lines = body.splitlines()
+            lines.append("  response body:")
+            for bl in body_lines[:80]:
+                lines.append(f"    {bl}")
+            if len(body_lines) > 80:
+                lines.append("    … (more lines omitted)")
+    req = getattr(exc, "request", None)
+    if req is not None and resp is None:
+        url = req.url or ""
+        if len(url) > 240:
+            url = url[:240] + "…"
+        lines.append(f"  request: {req.method} {url}")
+    c = exc.__cause__
+    if c is not None:
+        lines.append(f"  caused by: {type(c).__name__}: {c}")
+    return "\n".join(lines)
 
 
 class LongTimeoutUploadPostClient(UploadPostClient):
@@ -17,10 +94,81 @@ class LongTimeoutUploadPostClient(UploadPostClient):
     upload-post's client uses requests without timeouts; large MP4s can also hit
     proxy idle limits. More importantly, the API gateway may return 504 before
     the body finishes — for very large files prefer an HTTPS URL (server fetch).
+
+    Timeouts are overridable via UPLOAD_POST_CONNECT_TIMEOUT_S,
+    UPLOAD_POST_READ_TIMEOUT_MULTIPART_S, UPLOAD_POST_READ_TIMEOUT_DEFAULT_S.
     """
 
-    _TIMEOUT_MULTIPART = (120.0, 4 * 60 * 60)  # connect 2m, read 4h
-    _TIMEOUT_DEFAULT = (60.0, 600.0)
+    def __init__(self, api_key: str):
+        super().__init__(api_key)
+        connect = float(os.environ.get("UPLOAD_POST_CONNECT_TIMEOUT_S", "120"))
+        read_mp = float(
+            os.environ.get("UPLOAD_POST_READ_TIMEOUT_MULTIPART_S", str(4 * 60 * 60))
+        )
+        read_def = float(os.environ.get("UPLOAD_POST_READ_TIMEOUT_DEFAULT_S", "600"))
+        self._TIMEOUT_MULTIPART = (connect, read_mp)
+        self._TIMEOUT_DEFAULT = (connect, read_def)
+
+    def upload_video(
+        self,
+        video_path: str | Path,
+        title: str | None = None,
+        user: str = "",
+        platforms: list[str] | None = None,
+        **kwargs: Any,
+    ) -> dict:
+        """
+        Same as upload_post.UploadPostClient.upload_video, but wrap local files with
+        ProgressBinaryReader when UPLOAD_PROGRESS is enabled (see upload_progress.py).
+        """
+        data: list[tuple] = []
+        files: list[tuple] = []
+        video_file = None
+
+        try:
+            video_str = str(video_path)
+            if video_str.lower().startswith(("http://", "https://")):
+                return super().upload_video(
+                    video_path, title=title, user=user, platforms=platforms, **kwargs
+                )
+
+            video_p = Path(video_path)
+            if not video_p.exists():
+                raise UploadPostError(f"Video file not found: {video_p}")
+            total = video_p.stat().st_size
+            raw = video_p.open("rb")
+            if progress_enabled() and total > 0:
+                video_file = ProgressBinaryReader(
+                    raw, total, "upload-post (video body)"
+                )
+            else:
+                video_file = raw
+            files.append(("video", (video_p.name, video_file)))
+
+            self._add_common_params(data, user, title, platforms, **kwargs)
+
+            if platforms and "tiktok" in platforms:
+                self._add_tiktok_params(data, is_video=True, **kwargs)
+            if platforms and "instagram" in platforms:
+                self._add_instagram_params(data, is_video=True, **kwargs)
+            if platforms and "youtube" in platforms:
+                self._add_youtube_params(data, **kwargs)
+            if platforms and "linkedin" in platforms:
+                self._add_linkedin_params(data, **kwargs)
+            if platforms and "facebook" in platforms:
+                self._add_facebook_params(data, is_video=True, **kwargs)
+            if platforms and "pinterest" in platforms:
+                self._add_pinterest_params(data, is_video=True, **kwargs)
+            if platforms and "x" in platforms:
+                self._add_x_params(data, is_text=False, **kwargs)
+            if platforms and "threads" in platforms:
+                self._add_threads_params(data, **kwargs)
+
+            return self._request("/upload", "POST", data=data, files=files if files else None)
+
+        finally:
+            if video_file is not None:
+                video_file.close()
 
     def _request(
         self,
@@ -53,14 +201,19 @@ class LongTimeoutUploadPostClient(UploadPostClient):
             return response.json()
 
         except requests.exceptions.RequestException as e:
-            error_msg = str(e)
-            if hasattr(e, "response") and e.response is not None:
+            detail = _format_requests_error(e)
+            api_hint = ""
+            if getattr(e, "response", None) is not None:
                 try:
                     error_data = e.response.json()
-                    error_msg = error_data.get("message") or error_data.get("detail") or str(error_data)
-                except (ValueError, KeyError):
-                    pass
-            raise UploadPostError(f"API request failed: {error_msg}") from e
+                    api_hint = error_data.get("message") or error_data.get("detail") or ""
+                    if api_hint is not None and not isinstance(api_hint, str):
+                        api_hint = str(api_hint)
+                except (ValueError, TypeError, AttributeError):
+                    api_hint = ""
+            if api_hint:
+                raise UploadPostError(f"API request failed: {api_hint}\n{detail}") from e
+            raise UploadPostError(f"API request failed:\n{detail}") from e
 
 
 def status_to_youtube_embed_url(status: dict) -> str | None:
@@ -118,6 +271,29 @@ def status_to_youtube_embed_url(status: dict) -> str | None:
     return None
 
 
+def youtube_status_error_message(status: dict) -> str | None:
+    """
+    If the upload-post job finished but YouTube did not publish, return the first
+    platform error string (e.g. session expired). Used to decide R2 staging cleanup.
+    """
+    if not isinstance(status, dict):
+        return None
+    results = status.get("results")
+    if not isinstance(results, list):
+        return None
+    for item in results:
+        if not isinstance(item, dict):
+            continue
+        if item.get("platform") != "youtube":
+            continue
+        if item.get("success") is True:
+            continue
+        msg = item.get("error_message") or item.get("message")
+        if msg:
+            return str(msg).strip() or None
+    return None
+
+
 def youtube_embed_url_to_video_id(embed_url: str) -> str:
     """Return 11-char video id for Hugo shortcode, or empty string."""
     if not embed_url:
@@ -154,13 +330,15 @@ def upload_to_youtube(
 
     client = LongTimeoutUploadPostClient(api_key=api_key)
 
-    retry_strategy = Retry(
-        total=3,
-        backoff_factor=2,
-        status_forcelist=[502, 503, 504],
+    pool = int(os.environ.get("UPLOAD_POST_POOL_MAXSIZE", "4"))
+    pools = int(os.environ.get("UPLOAD_POST_POOL_CONNECTIONS", "4"))
+    adapter = HTTPAdapter(
+        max_retries=_upload_post_retry(),
+        pool_connections=max(1, pools),
+        pool_maxsize=max(1, pool),
     )
-    adapter = HTTPAdapter(max_retries=retry_strategy)
     client.session.mount("https://", adapter)
+    client.session.mount("http://", adapter)
 
     use_url = _is_http_video_source(str(video_path))
     if use_url:
@@ -192,7 +370,9 @@ def upload_to_youtube(
             print("Upload submitted:", response)
             break
         except Exception as e:
-            print(f"Upload attempt {attempt} failed: {e}")
+            print(f"Upload attempt {attempt} failed:")
+            for line in str(e).splitlines():
+                print(f"  {line}")
             if attempt == max_retries:
                 raise
             wait = 2**attempt * 5

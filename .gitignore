@@ -2,3 +2,4 @@
 *.DS_Store
 *.DS_Store.hugo_build.lock
 .hugo_build.lock
+.claude/settings.local.json

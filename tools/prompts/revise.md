@@ -17,6 +17,8 @@ Your job is to:
 4. Do NOT remove content that the reviewer didn't flag.
 5. Use web search to verify any resource URLs the reviewer flagged as suspicious.
 6. Maintain the same article structure: Summary, Key Topics, Highlights, Resources.
+7. If Editorial Guidance includes a "Guest Context" section, preserve accurate
+   guest introductions near the start and relevant guest links in Resources.
 
 Output the complete revised article in markdown. Do not include any preamble,
 explanation, thinking, or meta-commentary — just the article content starting

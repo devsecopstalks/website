@@ -9,6 +9,12 @@ Read them to understand the series tone, style, and what has already been covere
 Reference previous episodes where relevant (e.g. "as discussed in episode #1").
 
 Additional guidelines for the draft:
+- If Editorial Guidance includes a "Guest Context" section, use it as verified
+  professional context. Introduce the guest(s) near the start of the article by
+  full name, role/company when known, and why they are relevant to the episode.
+- If guest links, companies, projects, GitHub profiles, LinkedIn pages, or
+  official websites are provided in Guest Context, include relevant ones in the
+  ## Resources section.
 - Extract the main speaking points as article sections
 - Identify "spicy moments": strong opinions, disagreements, surprising takes, or humor
 - Use web search to find 3-8 relevant articles, docs, or tools mentioned in or

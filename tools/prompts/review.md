@@ -40,6 +40,9 @@ Prioritize these (high to low):
 3. Misattributions — opinions attributed to the wrong speaker
 4. Missing important points from the transcript
 5. Logical gaps or unclear arguments
+6. Guest handling errors — if Guest Context is present, the article must
+   introduce each guest near the start using full name and verified professional
+   context, and should include relevant guest links/projects in Resources.
 
 Do NOT spend time on:
 - Minor attribution style ("Paulina says X" vs "X"). Both are fine.

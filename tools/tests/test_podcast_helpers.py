@@ -139,6 +139,36 @@ class TestPodbeanTextHelpers(unittest.TestCase):
             'participants: ["Paulina", "Mattias", "Andrey"]',
         )
 
+    def test_participants_append_detected_guests_without_manual_override(self):
+        guest_context = {
+            "guests": [
+                {"full_name": "Paul Stack", "participant_name": "Paul Stack"},
+                {"full_name": "Cole Bittel", "participant_name": "Cole Bittel"},
+            ]
+        }
+        self.assertEqual(
+            podbean._participants_for_episode(None, guest_context),
+            ["Paulina", "Mattias", "Andrey", "Paul Stack", "Cole Bittel"],
+        )
+
+    def test_participants_manual_override_does_not_append_guests(self):
+        guest_context = {"guests": [{"full_name": "Paul Stack"}]}
+        self.assertEqual(
+            podbean._participants_for_episode("Mattias,Paul Stack", guest_context),
+            ["Mattias", "Paul Stack"],
+        )
+
+    def test_text_includes_guest_names(self):
+        guest_context = {"guests": [{"full_name": "Paul Stack"}]}
+        self.assertTrue(
+            podbean._text_includes_guest_names(
+                "Agent-Native Infra with Paul Stack", guest_context
+            )
+        )
+        self.assertFalse(
+            podbean._text_includes_guest_names("Agent-Native Infra", guest_context)
+        )
+
     def test_hugo_shortcode_braces_in_template(self):
         """podbean_line must emit {{< not {< — f-strings need {{{{ for literal {{."""
         line = f' {{{{<  podbean id "Title"  >}}}} '
@@ -184,6 +214,52 @@ class TestEpisodePipelineNumberedPick(unittest.TestCase):
         self.assertNotIn("{{CONTEXT}}", DRAFT_PROMPT)
         self.assertNotIn("{{STYLE}}", DRAFT_PROMPT)
         self.assertIn("DevSecOps Talks", DRAFT_PROMPT)
+
+    def test_guest_context_to_prompt_text(self):
+        from episode_pipeline import guest_context_to_prompt_text  # noqa: E402
+
+        text = guest_context_to_prompt_text(
+            {
+                "status": "verified",
+                "guests": [
+                    {
+                        "full_name": "Paul Stack",
+                        "role": "Founder",
+                        "company": "System Initiative",
+                        "professional_summary": "Works on Swamp.",
+                        "links": [
+                            {
+                                "label": "Swamp",
+                                "url": "https://github.com/systeminit/swamp",
+                                "type": "project",
+                            }
+                        ],
+                    }
+                ],
+            }
+        )
+        self.assertIn("Detected guest(s): Paul Stack.", text)
+        self.assertIn("every title option must include all guest full names", text)
+        self.assertIn("https://github.com/systeminit/swamp", text)
+
+    def test_normalize_guest_context_preserves_needs_operator_without_names(self):
+        from episode_pipeline import normalize_guest_context  # noqa: E402
+
+        data = normalize_guest_context(
+            {
+                "status": "needs_operator",
+                "guests": [{"full_name": "", "question": "Which Ian is this?"}],
+                "notes": "Ambiguous first name.",
+            }
+        )
+        self.assertEqual(data["status"], "needs_operator")
+        self.assertEqual(data["guests"], [])
+        self.assertEqual(data["notes"], "Ambiguous first name.")
+
+    def test_extract_json_object_tolerates_fence(self):
+        from episode_pipeline import _extract_json_object  # noqa: E402
+
+        self.assertEqual(_extract_json_object('```json\n{"status":"no_guests"}\n```'), {"status": "no_guests"})
 
     def test_review_ends_good_to_go(self):
         from episode_pipeline import _review_ends_good_to_go  # noqa: E402

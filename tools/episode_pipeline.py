@@ -6,6 +6,7 @@ Checkpoints use the ``out_base`` passed by callers (e.g. ``podbean.py`` → ``ou
 from __future__ import annotations
 
 import glob
+import json
 import os
 import re
 import shutil
@@ -45,6 +46,7 @@ REVISE_PROMPT = load_prompt("revise")
 REVIEW_PROMPT = load_prompt("review")
 TITLES_PROMPT = load_prompt("titles")
 DESCRIPTIONS_PROMPT = load_prompt("descriptions")
+GUESTS_PROMPT = load_prompt("guests")
 
 
 def _review_ends_good_to_go(review_text: str) -> bool:
@@ -196,6 +198,164 @@ def extract_article(text: str) -> str:
         print(f"⚠ Article very short ({len(article)} chars)")
 
     return article
+
+
+def _extract_json_object(text: str) -> dict:
+    """Parse a JSON object from model output, tolerating fenced JSON."""
+    stripped = text.strip()
+    if stripped.startswith("```"):
+        stripped = re.sub(r"^```(?:json)?\s*", "", stripped, flags=re.IGNORECASE)
+        stripped = re.sub(r"\s*```$", "", stripped)
+
+    try:
+        data = json.loads(stripped)
+    except json.JSONDecodeError:
+        match = re.search(r"\{.*\}", stripped, flags=re.DOTALL)
+        if not match:
+            raise
+        data = json.loads(match.group(0))
+
+    if not isinstance(data, dict):
+        raise ValueError("guest lookup output must be a JSON object")
+    return data
+
+
+def normalize_guest_context(data: dict) -> dict:
+    """Normalize guest lookup data to the stable checkpoint schema."""
+    status = str(data.get("status") or "").strip().lower()
+    if status not in ("no_guests", "verified", "needs_operator"):
+        status = "verified" if data.get("guests") else "no_guests"
+
+    guests: list[dict] = []
+    for raw_guest in data.get("guests") or []:
+        if not isinstance(raw_guest, dict):
+            continue
+        full_name = str(raw_guest.get("full_name") or "").strip()
+        if not full_name:
+            continue
+        participant_name = str(raw_guest.get("participant_name") or full_name).strip()
+        links = raw_guest.get("links") or []
+        clean_links: list[dict] = []
+        for raw_link in links:
+            if not isinstance(raw_link, dict):
+                continue
+            url = str(raw_link.get("url") or "").strip()
+            if not url:
+                continue
+            clean_links.append(
+                {
+                    "label": str(raw_link.get("label") or url).strip(),
+                    "url": url,
+                    "type": str(raw_link.get("type") or "").strip(),
+                }
+            )
+        guests.append(
+            {
+                "full_name": full_name,
+                "participant_name": participant_name or full_name,
+                "role": str(raw_guest.get("role") or "").strip(),
+                "company": str(raw_guest.get("company") or "").strip(),
+                "professional_summary": str(raw_guest.get("professional_summary") or "").strip(),
+                "links": clean_links,
+                "confidence": str(raw_guest.get("confidence") or "").strip(),
+                "needs_operator": bool(raw_guest.get("needs_operator")),
+                "question": str(raw_guest.get("question") or "").strip(),
+            }
+        )
+
+    if not guests and status != "needs_operator":
+        status = "no_guests"
+    elif status == "no_guests":
+        status = "verified"
+
+    return {
+        "status": status,
+        "guests": guests,
+        "notes": str(data.get("notes") or "").strip(),
+    }
+
+
+def load_guest_context(path: str) -> dict:
+    with open(path, "r", encoding="utf-8") as f:
+        return normalize_guest_context(json.load(f))
+
+
+def save_guest_context(path: str, guest_context: dict) -> None:
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(normalize_guest_context(guest_context), f, indent=2, ensure_ascii=False)
+        f.write("\n")
+
+
+def guest_context_to_prompt_text(guest_context: dict) -> str:
+    """Format verified guest context for article/title/description prompts."""
+    guest_context = normalize_guest_context(guest_context)
+    guests = guest_context.get("guests", [])
+    if not guests:
+        return ""
+
+    names = ", ".join(g["full_name"] for g in guests)
+    lines = [
+        "## Guest Context",
+        "",
+        f"Detected guest(s): {names}.",
+        (
+            "These are guests because they are speakers other than Andrey, Mattias, "
+            "or Paulina. Repeat guests are still guests."
+        ),
+        "Use the verified professional details below for factual context only.",
+        "Introduce the guest(s) near the start of the article.",
+        "When generating titles, every title option must include all guest full names.",
+        "When generating podcast descriptions, mention the guest full names.",
+        "Include relevant guest links, companies, projects, or profiles in Resources.",
+        "",
+    ]
+    for guest in guests:
+        role = guest.get("role", "")
+        company = guest.get("company", "")
+        summary = guest.get("professional_summary", "")
+        heading_bits = [guest["full_name"]]
+        detail = ", ".join(x for x in (role, company) if x)
+        if detail:
+            heading_bits.append(f"({detail})")
+        lines.append(f"- {' '.join(heading_bits)}")
+        if summary:
+            lines.append(f"  Professional context: {summary}")
+        for link in guest.get("links", []):
+            label = link.get("label") or link.get("url")
+            url = link.get("url")
+            link_type = link.get("type", "")
+            suffix = f" [{link_type}]" if link_type else ""
+            lines.append(f"  Link: {label}{suffix} — {url}")
+    return "\n".join(lines)
+
+
+def detect_guests(
+    transcript: str,
+    editorial_guidance: str = "",
+    raw_notes: str = "",
+    verbose: bool = False,
+) -> dict:
+    """Identify and research episode guests using Claude Code with web search."""
+    print("Detecting and researching episode guests with Claude Code...")
+
+    parts: list[str] = [GUESTS_PROMPT]
+    if editorial_guidance:
+        parts.append(f"\n\n## Editorial Guidance\n{editorial_guidance}")
+    if raw_notes:
+        parts.append(
+            "\n\n--- SHOW NOTES (companion .md files from raw/, same filename prefix as the audio) ---\n"
+            f"{raw_notes}"
+        )
+    parts.append(f"\n\n--- TRANSCRIPT ---\n{transcript}\n")
+
+    output = run_claude("".join(parts), verbose=verbose, allow_web=True)
+    guest_context = normalize_guest_context(_extract_json_object(output))
+    guests = guest_context.get("guests", [])
+    if guests:
+        print("✓ Guests: " + ", ".join(g["full_name"] for g in guests))
+    else:
+        print("✓ No guests detected")
+    return guest_context
 
 
 def generate_draft(

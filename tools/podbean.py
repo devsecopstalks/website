@@ -15,10 +15,14 @@ from pathlib import Path
 from openai import OpenAI
 
 from episode_pipeline import (
+    detect_guests,
     generate_article,
+    guest_context_to_prompt_text,
     load_raw_companion_markdown,
+    load_guest_context,
     pick_description,
     pick_title,
+    save_guest_context,
 )
 from r2_staging import (
     load_r2_youtube_staging_marker,
@@ -526,6 +530,154 @@ def _parse_participants_arg(arg: str | None) -> list[str]:
     return out if out else list(DEFAULT_PARTICIPANTS)
 
 
+def _guest_names(guest_context: dict) -> list[str]:
+    names: list[str] = []
+    for guest in guest_context.get("guests") or []:
+        if not isinstance(guest, dict):
+            continue
+        name = str(guest.get("full_name") or guest.get("participant_name") or "").strip()
+        if name:
+            names.append(name)
+    return names
+
+
+def _text_includes_guest_names(text: str, guest_context: dict) -> bool:
+    required = _guest_names(guest_context)
+    if not required:
+        return True
+    folded = text.casefold()
+    return all(name.casefold() in folded for name in required)
+
+
+def _participants_for_episode(arg: str | None, guest_context: dict) -> list[str]:
+    participants = _parse_participants_arg(arg)
+    if arg and str(arg).strip():
+        return participants
+
+    seen = {p.casefold() for p in participants}
+    for guest_name in _guest_names(guest_context):
+        key = guest_name.casefold()
+        if key not in seen:
+            participants.append(guest_name)
+            seen.add(key)
+    return participants
+
+
+def _guest_context_needs_operator(guest_context: dict) -> bool:
+    if guest_context.get("status") == "needs_operator":
+        return True
+    for guest in guest_context.get("guests") or []:
+        if isinstance(guest, dict) and guest.get("needs_operator"):
+            return True
+    return False
+
+
+def _manual_guest_context_from_operator(guest_context: dict) -> dict:
+    print("\nGuest lookup needs clarification.")
+    notes = str(guest_context.get("notes") or "").strip()
+    if notes:
+        print(f"Notes: {notes}")
+    for guest in guest_context.get("guests") or []:
+        if not isinstance(guest, dict):
+            continue
+        question = str(guest.get("question") or "").strip()
+        full_name = str(guest.get("full_name") or "Unknown guest").strip()
+        if question:
+            print(f"- {full_name}: {question}")
+
+    while True:
+        print(
+            "Enter guest context as 'Full Name - role, company, links'. "
+            "Separate multiple guests with ';'. Type 'none' if there are no guests."
+        )
+        print("> ", end="", flush=True)
+        raw = input().strip()
+        if not raw:
+            print("Guest clarification is required to continue.")
+            continue
+        if raw.lower() in ("none", "no", "no guests"):
+            return {"status": "no_guests", "guests": [], "notes": "Operator reported no guests."}
+
+        guests: list[dict] = []
+        for chunk in re.split(r"\s*;\s*", raw):
+            chunk = chunk.strip()
+            if not chunk:
+                continue
+            name = chunk
+            details = ""
+            for sep in (" - ", " -- ", " – ", " — "):
+                if sep in chunk:
+                    name, details = chunk.split(sep, 1)
+                    break
+            if not details and "," in chunk:
+                name, details = chunk.split(",", 1)
+            name = name.strip()
+            details = details.strip()
+            if not name:
+                continue
+            urls = re.findall(r"https?://\S+", details)
+            links = [
+                {"label": url.rstrip(".,)"), "url": url.rstrip(".,)"), "type": "operator"}
+                for url in urls
+            ]
+            guests.append(
+                {
+                    "full_name": name,
+                    "participant_name": name,
+                    "role": "",
+                    "company": "",
+                    "professional_summary": details,
+                    "links": links,
+                    "confidence": "operator",
+                    "needs_operator": False,
+                    "question": "",
+                }
+            )
+        if guests:
+            return {
+                "status": "verified",
+                "guests": guests,
+                "notes": "Guest context provided by operator.",
+            }
+        print("Could not parse a guest name. Try again.")
+
+
+def _load_or_detect_guest_context(
+    guest_context_file: str,
+    transcript: str,
+    guidance: str,
+    raw_notes: str,
+    verbose: bool,
+) -> dict:
+    guest_context: dict | None = None
+    if os.path.exists(guest_context_file):
+        try:
+            saved = load_guest_context(guest_context_file)
+            names = _guest_names(saved)
+            summary = ", ".join(names) if names else "no guests"
+            print(f'\nFound saved guest context: {summary}')
+            print("Press Enter to reuse, or type 'new' to refresh guest lookup: ", end="", flush=True)
+            if input().strip().lower() != "new":
+                guest_context = saved
+        except Exception as e:
+            print(f"⚠ Could not read saved guest context ({e}); regenerating")
+
+    if guest_context is None:
+        guest_context = detect_guests(
+            transcript,
+            editorial_guidance=guidance,
+            raw_notes=raw_notes,
+            verbose=verbose,
+        )
+
+    if _guest_context_needs_operator(guest_context):
+        guest_context = _manual_guest_context_from_operator(guest_context)
+
+    save_guest_context(guest_context_file, guest_context)
+    print(f"✓ Guest context saved to {guest_context_file}")
+    return guest_context
+
+
 def process_audio(audio_path: str, args, client: OpenAI) -> None:
     """Run full pipeline for one mp3."""
     audio_path = os.path.abspath(audio_path)
@@ -557,10 +709,9 @@ def process_audio(audio_path: str, args, client: OpenAI) -> None:
     title_file = f"{out_base}-title.txt"
     description_file = f"{out_base}-description.txt"
     guidance_file = f"{out_base}-guidance.txt"
+    guest_context_file = f"{out_base}-guests.json"
     youtube_url_file = f"{out_base}-youtube-url.txt"
     youtube_staging_marker = f"{out_base}-r2-youtube-staging.txt"
-
-    participants = _parse_participants_arg(getattr(args, "participants", None))
 
     # Editorial guidance
     guidance = args.guidance
@@ -604,10 +755,20 @@ def process_audio(audio_path: str, args, client: OpenAI) -> None:
             f.write(transcript)
         print(f"✓ Transcript saved to {transcript_file}")
 
+    guest_context = _load_or_detect_guest_context(
+        guest_context_file,
+        transcript,
+        guidance,
+        raw_notes,
+        args.verbose,
+    )
+    guest_prompt_text = guest_context_to_prompt_text(guest_context)
+    article_guidance = "\n\n".join(x for x in (guidance, guest_prompt_text) if x).strip()
+
     article_md = generate_article(
         transcript,
         out_base,
-        editorial_guidance=guidance,
+        editorial_guidance=article_guidance,
         raw_notes=raw_notes,
         verbose=args.verbose,
     )
@@ -618,29 +779,67 @@ def process_audio(audio_path: str, args, client: OpenAI) -> None:
 
     # Title
     title = (args.title or "").strip() or None
+    if title and not _text_includes_guest_names(title, guest_context):
+        print(
+            "Error: --title must include guest full name(s): "
+            + ", ".join(_guest_names(guest_context))
+        )
+        sys.exit(1)
     if not title and os.path.exists(title_file):
         with open(title_file, "r", encoding="utf-8") as f:
             saved_t = f.read().strip()
         print(f'\nFound saved title: "{saved_t}"')
-        print("Press Enter to reuse, or type 'new' to pick again: ", end="", flush=True)
-        if input().strip().lower() != "new":
+        if not _text_includes_guest_names(saved_t, guest_context):
+            print("Saved title does not include guest full name(s); picking again.")
+        else:
+            print("Press Enter to reuse, or type 'new' to pick again: ", end="", flush=True)
+        if _text_includes_guest_names(saved_t, guest_context) and input().strip().lower() != "new":
             title = saved_t
     if not title:
-        title = pick_title(article_md, editorial_guidance=guidance, verbose=args.verbose)
+        while not title:
+            picked_title = pick_title(
+                article_md, editorial_guidance=article_guidance, verbose=args.verbose
+            )
+            if _text_includes_guest_names(picked_title, guest_context):
+                title = picked_title
+            else:
+                print(
+                    "Picked title is missing guest full name(s): "
+                    + ", ".join(_guest_names(guest_context))
+                )
     with open(title_file, "w", encoding="utf-8") as f:
         f.write(title)
     print(f"✓ Title: {title}")
 
     # Short teaser description (Podbean + above-the-fold)
     description = (args.description or "").strip() or None
+    if description and not _text_includes_guest_names(description, guest_context):
+        print(
+            "Error: --description must include guest full name(s): "
+            + ", ".join(_guest_names(guest_context))
+        )
+        sys.exit(1)
     if not description and os.path.exists(description_file):
         with open(description_file, "r", encoding="utf-8") as f:
             saved_d = f.read().strip()
-        print(f"\nFound saved description ({len(saved_d)} chars). Press Enter to reuse, or 'new': ", end="", flush=True)
-        if input().strip().lower() != "new":
+        if not _text_includes_guest_names(saved_d, guest_context):
+            print("\nSaved description does not include guest full name(s); picking again.")
+        else:
+            print(f"\nFound saved description ({len(saved_d)} chars). Press Enter to reuse, or 'new': ", end="", flush=True)
+        if _text_includes_guest_names(saved_d, guest_context) and input().strip().lower() != "new":
             description = saved_d
     if not description:
-        description = pick_description(article_md, editorial_guidance=guidance, verbose=args.verbose)
+        while not description:
+            picked_description = pick_description(
+                article_md, editorial_guidance=article_guidance, verbose=args.verbose
+            )
+            if _text_includes_guest_names(picked_description, guest_context):
+                description = picked_description
+            else:
+                print(
+                    "Picked description is missing guest full name(s): "
+                    + ", ".join(_guest_names(guest_context))
+                )
     with open(description_file, "w", encoding="utf-8") as f:
         f.write(description)
     print("✓ Description saved")
@@ -817,7 +1016,7 @@ def process_audio(audio_path: str, args, client: OpenAI) -> None:
         article_md,
         podbean_id,
         video_id,
-        participants=participants,
+        participants=_participants_for_episode(getattr(args, "participants", None), guest_context),
     )
     print(f"✓ Episode page: {episode_path}")
 

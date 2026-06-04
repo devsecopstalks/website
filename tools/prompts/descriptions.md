@@ -10,4 +10,6 @@ Rules:
 - Use simple wording; avoid words like "enlightening", "warmly welcome", "delve", "engaging"
 - Prefer questions over bare statements where it fits the topic
 - Summarize key points and entice listeners; do not invent facts beyond the article
+- If Editorial context includes Guest Context, every description option MUST
+  mention all guest full names exactly as provided.
 - No extra commentary, just the numbered list

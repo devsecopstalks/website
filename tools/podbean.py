@@ -463,6 +463,38 @@ def update_podbean_episode(access_token, episode_id, content, title, status="pub
     })
     return response.json()
 
+
+def prompt_podbean_episode_status(input_func=input) -> str:
+    """Ask whether the new Podbean episode should publish immediately or stay draft."""
+    print("\nPodbean episode status")
+    print("Publish the Podbean episode now, or keep it in draft mode?")
+    print("  [d] draft (default)")
+    print("  [p] publish")
+    while True:
+        print("> ", end="", flush=True)
+        try:
+            choice = input_func().strip().lower()
+        except EOFError:
+            print("\nNo input received; keeping Podbean episode in draft mode.")
+            return "draft"
+
+        if choice in ("", "d", "draft"):
+            return "draft"
+        if choice in ("p", "publish", "y", "yes"):
+            return "publish"
+        print("Please enter 'd' for draft or 'p' for publish.")
+
+
+def resolve_podbean_episode_status(status_arg: str) -> str:
+    """Resolve CLI status selection; prompts only for the interactive default."""
+    status = (status_arg or "ask").strip().lower()
+    if status == "ask":
+        return prompt_podbean_episode_status()
+    if status in ("draft", "publish"):
+        return status
+    raise ValueError(f"Unsupported Podbean status: {status_arg}")
+
+
 def parse_args():
     p = argparse.ArgumentParser(
         description="DevSecOps Talks: transcribe, Claude+Codex article loop, Podbean, YouTube"
@@ -480,6 +512,12 @@ def parse_args():
     p.add_argument("--description", default=None, help="Short teaser (skip Codex description picker)")
     p.add_argument("--guidance", default=None, help="Editorial angle for drafting/review")
     p.add_argument("--draft-only", action="store_true", help="Stop after article checkpoints in out/")
+    p.add_argument(
+        "--podbean-status",
+        choices=("ask", "draft", "publish"),
+        default="ask",
+        help="Podbean episode status: ask at publish time (default), draft, or publish",
+    )
     p.add_argument("--youtube", default="", help="Embed URL — skip upload-post upload")
     p.add_argument("--video", default=None, help="Path to mp4/mov/mkv (default: same stem as audio in raw/)")
     p.add_argument(
@@ -864,15 +902,21 @@ def process_audio(audio_path: str, args, client: OpenAI) -> None:
         "<p><a href='https://devsecops.fm/'>DevSecOps Talks podcast website</a></p>"
         "<p><a href='https://youtube.com/channel/UCRjpE9xKxZeBkRgYiLErEjw'>DevSecOps Talks podcast YouTube channel</a></p>"
     )
+    podbean_status = resolve_podbean_episode_status(args.podbean_status)
 
     create_episode_response = create_podbean_episode(
-        auth_token, full_title, extended_description, episode_number, media_key=media_key
+        auth_token,
+        full_title,
+        extended_description,
+        episode_number,
+        media_key=media_key,
+        status=podbean_status,
     )
     if args.verbose:
         print(create_episode_response)
 
     podbean_id = create_episode_response["episode"]["player_url"].split("=")[-1]
-    print(f"✓ Podbean player id: {podbean_id}")
+    print(f"✓ Podbean player id: {podbean_id} ({podbean_status})")
 
     # YouTube: plain text with URLs on their own lines (not HTML→text), so links are not visually cut off with …
     youtube_description_text = build_youtube_description_plain(description, episode_number, title)

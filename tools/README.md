@@ -1,6 +1,6 @@
 ## DevSecOps Talks — podcast publish pipeline
 
-End-to-end flow: drop an MP3 in `raw/`, run `./do.sh` (or `uv run python podbean.py`), transcribe with OpenAI, generate a long-form episode article with **Claude Code** (draft + revisions) and **Codex** (adversarial review until `GOOD_TO_GO`), pick title and short teaser with **Codex**, upload audio to **Podbean**, optionally upload video to **YouTube** via [upload-post.com](https://upload-post.com), and write `content/episodes/NNN-slug.md`.
+End-to-end flow: drop an MP3 in `raw/`, run `./do.sh` (or `uv run python podbean.py`), transcribe with OpenAI, generate a long-form episode article with **Claude Code** (draft + revisions) and **Codex** (adversarial review until `GOOD_TO_GO`), pick title and short teaser with **Codex**, upload audio to **Podbean**, ask whether the Podbean episode should publish now or stay in draft mode, optionally upload video to **YouTube** via [upload-post.com](https://upload-post.com), and write `content/episodes/NNN-slug.md`.
 
 Checkpoint files live under `out/episodeNNN-*` (NNN = next Podbean episode number at run start) so you can resume after interruptions.
 
@@ -109,6 +109,7 @@ Outputs are under `out/episodeNNN-*` (NNN = next Podbean episode number queried 
 uv run podbean.py -f raw/my-show.mp3 -v
 uv run python podbean.py --scan --draft-only   # stop after out/episodeNNN-article.md (NNN from Podbean)
 uv run podbean.py -f raw/ep.mp3 --skip-transcription --title "Fixed Title" --description "Short teaser"
+uv run podbean.py -f raw/ep.mp3 --podbean-status publish
 uv run podbean.py -f raw/ep.mp3 --youtube-via-r2 --video raw/ep.mp4
 ```
 

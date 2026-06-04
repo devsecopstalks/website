@@ -7,6 +7,8 @@ import sys
 import tempfile
 import types
 import unittest
+from contextlib import redirect_stdout
+from io import StringIO
 from unittest.mock import patch
 
 # Tests live under tools/tests/; package imports use tools/ on path.
@@ -173,6 +175,18 @@ class TestPodbeanTextHelpers(unittest.TestCase):
         """podbean_line must emit {{< not {< — f-strings need {{{{ for literal {{."""
         line = f' {{{{<  podbean id "Title"  >}}}} '
         self.assertTrue(line.lstrip().startswith("{{<"))
+
+    def test_prompt_podbean_episode_status_defaults_to_draft(self):
+        with redirect_stdout(StringIO()):
+            self.assertEqual(podbean.prompt_podbean_episode_status(lambda: ""), "draft")
+
+    def test_prompt_podbean_episode_status_accepts_publish(self):
+        with redirect_stdout(StringIO()):
+            self.assertEqual(podbean.prompt_podbean_episode_status(lambda: "p"), "publish")
+
+    def test_resolve_podbean_episode_status_uses_cli_value(self):
+        self.assertEqual(podbean.resolve_podbean_episode_status("draft"), "draft")
+        self.assertEqual(podbean.resolve_podbean_episode_status("publish"), "publish")
 
 
 class TestR2StagingPolicy(unittest.TestCase):

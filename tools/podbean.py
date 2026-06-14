@@ -11,7 +11,9 @@ import tempfile
 import subprocess
 import shutil
 import math
+from dataclasses import dataclass
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from openai import OpenAI
 
 from episode_pipeline import (
@@ -34,6 +36,7 @@ from r2_staging import (
     wants_r2_staging_for_local_video,
 )
 from youtube import (
+    scheduled_upload_job_id,
     status_to_youtube_embed_url,
     upload_to_youtube,
     youtube_embed_url_to_video_id,
@@ -50,6 +53,28 @@ EPISODES_DIR = os.path.join(TOOLS_DIR, "..", "content", "episodes")
 
 # Default Hugo front matter when --participants is omitted (current hosts).
 DEFAULT_PARTICIPANTS = ["Paulina", "Mattias", "Andrey"]
+
+
+@dataclass(frozen=True)
+class PublishSchedule:
+    """Normalized publish time for Podbean and upload-post."""
+
+    source: str
+    podbean_timestamp: int
+    podbean_datetime: datetime.datetime
+    display: str
+    upload_post_scheduled_date: str
+    upload_post_timezone: str | None = None
+
+
+@dataclass(frozen=True)
+class PodbeanEpisodePlan:
+    """Episode numbering and scheduling context from Podbean."""
+
+    next_episode_number: int
+    anchor_episode: dict | None
+    anchor_datetime: datetime.datetime | None
+
 
 GUEST_ROLE_STARTERS = {
     "advocate",
@@ -125,6 +150,242 @@ def resolve_youtube_video_id(value: str) -> str:
     return youtube_embed_url_to_video_id(s)
 
 
+def _local_timezone() -> datetime.tzinfo:
+    return datetime.datetime.now().astimezone().tzinfo or datetime.timezone.utc
+
+
+def _iso_utc_z(dt: datetime.datetime) -> str:
+    return dt.astimezone(datetime.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def publish_schedule_from_datetime(dt: datetime.datetime, source: str) -> PublishSchedule:
+    """Build a schedule from an aware publish datetime."""
+    if dt.tzinfo is None:
+        raise ValueError("publish datetime must include a timezone")
+    dt = dt.replace(microsecond=0)
+    if dt <= datetime.datetime.now(dt.tzinfo):
+        raise ValueError("scheduled publish time must be in the future")
+    return PublishSchedule(
+        source=source,
+        podbean_timestamp=int(dt.timestamp()),
+        podbean_datetime=dt,
+        display=dt.isoformat(),
+        upload_post_scheduled_date=_iso_utc_z(dt),
+        upload_post_timezone=None,
+    )
+
+
+def parse_publish_schedule(value: str | None, timezone_name: str | None = None) -> PublishSchedule | None:
+    """
+    Parse a future publish date for Podbean and upload-post.
+
+    Accepted values are ISO-8601 datetimes, e.g. ``2026-07-01T09:00:00Z``,
+    ``2026-07-01T11:00:00+02:00``, or a naive local time such as
+    ``2026-07-01 11:00``. Naive values use ``--schedule-timezone`` when
+    provided, otherwise the machine's local timezone.
+    """
+    raw = (value or "").strip()
+    if not raw:
+        if timezone_name:
+            raise ValueError("--schedule-timezone requires --schedule-at")
+        return None
+
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", raw):
+        raise ValueError("--schedule-at must include a time, e.g. 2026-07-01T09:00:00Z")
+
+    normalized = raw[:-1] + "+00:00" if raw.endswith("Z") else raw
+    try:
+        parsed = datetime.datetime.fromisoformat(normalized)
+    except ValueError as e:
+        raise ValueError(
+            f"Invalid --schedule-at value: {raw!r}. Use an ISO-8601 datetime."
+        ) from e
+
+    if parsed.tzinfo is not None and timezone_name:
+        raise ValueError(
+            "--schedule-timezone is only valid when --schedule-at has no timezone offset"
+        )
+
+    upload_post_timezone = None
+    if parsed.tzinfo is None:
+        if timezone_name:
+            try:
+                tz = ZoneInfo(timezone_name)
+            except ZoneInfoNotFoundError as e:
+                raise ValueError(f"Unknown --schedule-timezone: {timezone_name}") from e
+            podbean_dt = parsed.replace(tzinfo=tz)
+            upload_post_date = parsed.replace(microsecond=0).isoformat()
+            upload_post_timezone = timezone_name
+        else:
+            podbean_dt = parsed.replace(tzinfo=_local_timezone())
+            upload_post_date = _iso_utc_z(podbean_dt)
+    else:
+        podbean_dt = parsed
+        upload_post_date = _iso_utc_z(parsed)
+
+    podbean_dt = podbean_dt.replace(microsecond=0)
+    if podbean_dt <= datetime.datetime.now(podbean_dt.tzinfo):
+        raise ValueError("--schedule-at must be in the future")
+
+    return PublishSchedule(
+        source=raw,
+        podbean_timestamp=int(podbean_dt.timestamp()),
+        podbean_datetime=podbean_dt,
+        display=podbean_dt.isoformat(),
+        upload_post_scheduled_date=upload_post_date,
+        upload_post_timezone=upload_post_timezone,
+    )
+
+
+def _coerce_int(value) -> int | None:
+    try:
+        if value is None or value == "":
+            return None
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _episode_number_from_title(title: str) -> int | None:
+    match = re.search(r"#\s*(\d+)", title or "")
+    return int(match.group(1)) if match else None
+
+
+def _episode_number_value(episode: dict) -> int | None:
+    explicit = _coerce_int(episode.get("episode_number"))
+    if explicit is not None and explicit > 0:
+        return explicit
+    return _episode_number_from_title(str(episode.get("title") or ""))
+
+
+def _episode_publish_timestamp(episode: dict) -> int | None:
+    if str(episode.get("status") or "").strip().lower() == "draft":
+        return None
+    for key in ("publish_time", "publish_timestamp", "published_at"):
+        value = _coerce_int(episode.get(key))
+        if value is not None and value > 0:
+            return value
+    return None
+
+
+def _episode_display_title(episode: dict | None) -> str:
+    if not episode:
+        return "episode"
+    number = _episode_number_value(episode)
+    title = str(episode.get("title") or "").strip()
+    if number and title:
+        return f"episode #{number} ({title})"
+    if number:
+        return f"episode #{number}"
+    return title or "episode"
+
+
+def episode_plan_from_podbean_response(data: dict, local_tz: datetime.tzinfo | None = None) -> PodbeanEpisodePlan:
+    """Calculate next episode number and latest published/scheduled anchor."""
+    local_tz = local_tz or _local_timezone()
+    episodes = data.get("episodes") if isinstance(data, dict) else []
+    if not isinstance(episodes, list):
+        episodes = []
+
+    numbers = [
+        n
+        for n in (_episode_number_value(ep) for ep in episodes if isinstance(ep, dict))
+        if n is not None
+    ]
+    count = _coerce_int(data.get("count") if isinstance(data, dict) else None) or 0
+    next_episode_number = max(numbers + [count, 0]) + 1
+
+    anchor_episode = None
+    anchor_ts = None
+    for episode in episodes:
+        if not isinstance(episode, dict):
+            continue
+        ts = _episode_publish_timestamp(episode)
+        if ts is None:
+            continue
+        if anchor_ts is None or ts > anchor_ts:
+            anchor_ts = ts
+            anchor_episode = episode
+    anchor_datetime = (
+        datetime.datetime.fromtimestamp(anchor_ts, local_tz).replace(microsecond=0)
+        if anchor_ts is not None
+        else None
+    )
+    return PodbeanEpisodePlan(next_episode_number, anchor_episode, anchor_datetime)
+
+
+def should_prompt_for_schedule(
+    anchor_datetime: datetime.datetime | None,
+    now: datetime.datetime | None = None,
+    minimum_spacing_days: int = 7,
+) -> bool:
+    if anchor_datetime is None:
+        return False
+    now = now or datetime.datetime.now(anchor_datetime.tzinfo)
+    if anchor_datetime >= now:
+        return True
+    return now - anchor_datetime < datetime.timedelta(days=minimum_spacing_days)
+
+
+def prompt_schedule_after_anchor(
+    anchor_episode: dict,
+    anchor_datetime: datetime.datetime,
+    input_func=input,
+) -> PublishSchedule | None:
+    """Ask whether to schedule relative to latest published/scheduled episode."""
+    now = datetime.datetime.now(anchor_datetime.tzinfo)
+    delta = anchor_datetime - now
+    if delta.total_seconds() >= 0:
+        relation = f"scheduled {max(0, math.ceil(delta.total_seconds() / 86400))} day(s) from now"
+    else:
+        relation = f"published {max(0, math.floor((-delta).total_seconds() / 86400))} day(s) ago"
+
+    print("\nEpisode spacing")
+    print(
+        f"Latest published/scheduled Podbean episode: {_episode_display_title(anchor_episode)} "
+        f"at {anchor_datetime.isoformat()} ({relation})."
+    )
+    print("Schedule this episode relative to that latest episode? [y/N]")
+    print("> ", end="", flush=True)
+    try:
+        choice = input_func().strip().lower()
+    except EOFError:
+        print("\nNo input received; not scheduling this episode.")
+        return None
+    if choice not in ("y", "yes"):
+        return None
+
+    while True:
+        print("How many days after that episode should this one publish? [7]")
+        print("> ", end="", flush=True)
+        try:
+            raw_days = input_func().strip()
+        except EOFError:
+            raw_days = ""
+        if not raw_days:
+            days = 7.0
+        else:
+            try:
+                days = float(raw_days)
+            except ValueError:
+                print("Please enter a number of days, for example 7.")
+                continue
+        if days <= 0:
+            print("Please enter a positive number of days.")
+            continue
+        candidate = (anchor_datetime + datetime.timedelta(days=days)).replace(microsecond=0)
+        if candidate <= datetime.datetime.now(candidate.tzinfo):
+            print(
+                f"That would schedule at {candidate.isoformat()}, which is not in the future. "
+                "Enter a larger number of days."
+            )
+            continue
+        return publish_schedule_from_datetime(
+            candidate,
+            f"{days:g} days after {_episode_display_title(anchor_episode)}",
+        )
+
+
 def build_youtube_description_plain(teaser: str, episode_number: int, title_short: str) -> str:
     """
     Plain-text description for upload-post → YouTube.
@@ -176,6 +437,7 @@ def write_episode_markdown(
     podbean_id: str,
     youtube_video_id: str,
     participants: list[str] | None = None,
+    publish_datetime: datetime.datetime | None = None,
 ) -> str:
     """Write Hugo episode page; mirrors published episode layout."""
     participants = participants if participants is not None else list(DEFAULT_PARTICIPANTS)
@@ -183,7 +445,8 @@ def write_episode_markdown(
     slug = title_to_url_safe(title_short)
     filename = f"{episode_number:03d}-{slug}.md"
     path = os.path.join(EPISODES_DIR, filename)
-    date_iso = datetime.datetime.now().astimezone().replace(microsecond=0).isoformat()
+    page_datetime = publish_datetime or datetime.datetime.now().astimezone()
+    date_iso = page_datetime.astimezone().replace(microsecond=0).isoformat()
     title_yaml = yaml_escape_double_quoted(full_title)
     podbean_title = f"DEVSECOPS Talks {full_title}"
     # f-strings: {{ → literal {. Hugo needs {{< not {< — use {{{{ for {{ in output.
@@ -463,11 +726,40 @@ def upload_file_to_podbean(url, filepath):
 def title_to_url_safe(title):
     return re.sub(r"[^0-9a-zA-Z]+", "-", title).lower()
 
-# get last episode number by getting all episodes till there are no more left
+# get episodes from Podbean; used for next number and schedule anchor
 # curl https://api.podbean.com/v1/episodes -G -d 'access_token=YOUR_ACCESS_TOKEN' -d 'offset=0' -d 'limit=10'
+def get_podbean_episodes(access_token, url="https://api.podbean.com/v1/episodes"):
+    offset = 0
+    limit = 100
+    episodes: list[dict] = []
+    total_count = 0
+    while True:
+        response = requests.get(
+            url,
+            params={"access_token": access_token, "offset": offset, "limit": limit},
+        )
+        data = response.json()
+        page_episodes = data.get("episodes") or []
+        if isinstance(page_episodes, list):
+            episodes.extend(ep for ep in page_episodes if isinstance(ep, dict))
+        total_count = _coerce_int(data.get("count")) or max(total_count, len(episodes))
+        if not data.get("has_more"):
+            break
+        offset += limit
+        if total_count and offset >= total_count:
+            break
+    return {
+        "episodes": episodes,
+        "count": max(total_count, len(episodes)),
+        "offset": 0,
+        "limit": limit,
+        "has_more": False,
+    }
+
+
 def get_last_episode_number(access_token, url="https://api.podbean.com/v1/episodes"):
-    response = requests.get(url, params={"access_token": access_token, "limit": 100})
-    return response.json()["count"]
+    """Backward-compatible helper: return highest known Podbean episode number/count."""
+    return episode_plan_from_podbean_response(get_podbean_episodes(access_token, url)).next_episode_number - 1
 
 # create new podbean episode
 # curl https://api.podbean.com/v1/episodes -X POST -d access_token=YOUR_ACCESS_TOKEN -d title="Good day" \
@@ -476,12 +768,15 @@ def get_last_episode_number(access_token, url="https://api.podbean.com/v1/episod
 # -d episode_number=1 -d apple_episode_type=full -d publish_timestamp=1667850511 -d content_explicit=clean
 def create_podbean_episode(
         access_token, title, content, episode_number, media_key=None, status="draft", type="public",
-        url="https://api.podbean.com/v1/episodes"):
+        publish_timestamp=None, url="https://api.podbean.com/v1/episodes"):
+    data = {"access_token": access_token, "title": title,
+            "content": content, "status": status, "type": type,
+            "media_key": media_key, "episode_number": episode_number}
+    if publish_timestamp is not None:
+        data["publish_timestamp"] = str(int(publish_timestamp))
     response = requests.post(
         url,
-        data={"access_token": access_token, "title": title,
-              "content": content, "status": status, "type": type,
-              "media_key": media_key, "episode_number": episode_number}
+        data=data
         )
     return response.json()
 
@@ -552,6 +847,19 @@ def parse_args():
         choices=("ask", "draft", "publish"),
         default="ask",
         help="Podbean episode status: ask at publish time (default), draft, or publish",
+    )
+    p.add_argument(
+        "--schedule-at",
+        default=None,
+        help=(
+            "Future publish datetime for Podbean and upload-post YouTube, "
+            "e.g. 2026-07-01T09:00:00Z or '2026-07-01 11:00'"
+        ),
+    )
+    p.add_argument(
+        "--schedule-timezone",
+        default=None,
+        help="IANA timezone for naive --schedule-at values, e.g. Europe/Madrid",
     )
     p.add_argument("--youtube", default="", help="Embed URL — skip upload-post upload")
     p.add_argument("--video", default=None, help="Path to mp4/mov/mkv (default: same stem as audio in raw/)")
@@ -851,12 +1159,35 @@ def process_audio(audio_path: str, args, client: OpenAI) -> None:
         print("Error: PODBEAN_CLIENT_ID and PODBEAN_CLIENT_SECRET must be set")
         sys.exit(1)
 
+    try:
+        publish_schedule = parse_publish_schedule(args.schedule_at, args.schedule_timezone)
+    except ValueError as e:
+        print(f"Error: {e}")
+        sys.exit(1)
+    if publish_schedule:
+        print(f"✓ Episode will be scheduled for: {publish_schedule.display}")
+
     print("Authenticating with Podbean...")
     auth_token = get_podbean_auth_token(client_id, client_secret)
     print("✓ Authenticated")
 
-    episode_number = int(get_last_episode_number(auth_token)) + 1
-    print(f"✓ Next episode number (from Podbean): {episode_number}")
+    podbean_episode_data = get_podbean_episodes(auth_token)
+    episode_plan = episode_plan_from_podbean_response(podbean_episode_data)
+    episode_number = episode_plan.next_episode_number
+    print(f"✓ Next episode number (from Podbean episodes): {episode_number}")
+
+    if (
+        publish_schedule is None
+        and args.schedule_at is None
+        and args.podbean_status == "ask"
+        and should_prompt_for_schedule(episode_plan.anchor_datetime)
+    ):
+        publish_schedule = prompt_schedule_after_anchor(
+            episode_plan.anchor_episode or {},
+            episode_plan.anchor_datetime,
+        )
+        if publish_schedule:
+            print(f"✓ Episode will be scheduled for: {publish_schedule.display}")
 
     out_base = os.path.join(OUT_DIR, checkpoint_prefix(episode_number))
     print(f"✓ Checkpoints under: {out_base}-*.txt|.md")
@@ -867,6 +1198,7 @@ def process_audio(audio_path: str, args, client: OpenAI) -> None:
     guidance_file = f"{out_base}-guidance.txt"
     guest_context_file = f"{out_base}-guests.json"
     youtube_url_file = f"{out_base}-youtube-url.txt"
+    youtube_scheduled_file = f"{out_base}-youtube-scheduled.txt"
     youtube_staging_marker = f"{out_base}-r2-youtube-staging.txt"
 
     # Editorial guidance
@@ -1020,7 +1352,13 @@ def process_audio(audio_path: str, args, client: OpenAI) -> None:
         "<p><a href='https://devsecops.fm/'>DevSecOps Talks podcast website</a></p>"
         "<p><a href='https://youtube.com/channel/UCRjpE9xKxZeBkRgYiLErEjw'>DevSecOps Talks podcast YouTube channel</a></p>"
     )
-    podbean_status = resolve_podbean_episode_status(args.podbean_status)
+    if publish_schedule and args.podbean_status == "draft":
+        print("Error: --schedule-at cannot be combined with --podbean-status draft")
+        sys.exit(1)
+    if publish_schedule:
+        podbean_status = "publish"
+    else:
+        podbean_status = resolve_podbean_episode_status(args.podbean_status)
 
     create_episode_response = create_podbean_episode(
         auth_token,
@@ -1029,12 +1367,19 @@ def process_audio(audio_path: str, args, client: OpenAI) -> None:
         episode_number,
         media_key=media_key,
         status=podbean_status,
+        publish_timestamp=publish_schedule.podbean_timestamp if publish_schedule else None,
     )
     if args.verbose:
         print(create_episode_response)
 
     podbean_id = create_episode_response["episode"]["player_url"].split("=")[-1]
-    print(f"✓ Podbean player id: {podbean_id} ({podbean_status})")
+    if publish_schedule:
+        print(
+            f"✓ Podbean player id: {podbean_id} "
+            f"({podbean_status}, scheduled {publish_schedule.display})"
+        )
+    else:
+        print(f"✓ Podbean player id: {podbean_id} ({podbean_status})")
 
     # YouTube: plain text with URLs on their own lines (not HTML→text), so links are not visually cut off with …
     youtube_description_text = build_youtube_description_plain(description, episode_number, title)
@@ -1046,20 +1391,29 @@ def process_audio(audio_path: str, args, client: OpenAI) -> None:
 
     # YouTube
     youtube_embed_url = (args.youtube or "").strip()
+    youtube_scheduled = False
     if not youtube_embed_url and os.path.exists(youtube_url_file):
         with open(youtube_url_file, "r", encoding="utf-8") as f:
             youtube_embed_url = f.read().strip()
         if youtube_embed_url:
             print(f"✓ Loaded YouTube embed URL from {youtube_url_file}")
+    if not youtube_embed_url and os.path.exists(youtube_scheduled_file):
+        with open(youtube_scheduled_file, "r", encoding="utf-8") as f:
+            marker = f.read().strip()
+        if marker:
+            youtube_scheduled = True
+            print(f"✓ Loaded scheduled YouTube upload marker from {youtube_scheduled_file}")
 
     if youtube_embed_url and os.path.isfile(youtube_staging_marker):
         print(
             f"✓ YouTube embed present; removing R2 staging marker and object ({youtube_staging_marker})"
         )
         remove_r2_youtube_staging_marker(youtube_staging_marker)
+    if youtube_embed_url and os.path.isfile(youtube_scheduled_file):
+        os.unlink(youtube_scheduled_file)
 
     video_source = None
-    if not youtube_embed_url and not args.skip_youtube_upload:
+    if not youtube_embed_url and not youtube_scheduled and not args.skip_youtube_upload:
         override = (args.youtube_video_url or os.environ.get("UPLOAD_POST_VIDEO_URL") or "").strip()
         if override:
             video_source = override
@@ -1126,13 +1480,36 @@ def process_audio(audio_path: str, args, client: OpenAI) -> None:
                     )
 
             yt_title = f"DEVSECOPS Talks {full_title}"
-            status = upload_to_youtube(video_for_upload, yt_title, youtube_description_text)
+            status = upload_to_youtube(
+                video_for_upload,
+                yt_title,
+                youtube_description_text,
+                scheduled_date=publish_schedule.upload_post_scheduled_date if publish_schedule else None,
+                schedule_timezone=publish_schedule.upload_post_timezone if publish_schedule else None,
+            )
             youtube_embed_url = status_to_youtube_embed_url(status) or ""
+            youtube_job_id = scheduled_upload_job_id(status)
             if youtube_embed_url:
                 print(f"✓ YouTube embed URL: {youtube_embed_url}")
                 with open(youtube_url_file, "w", encoding="utf-8") as f:
                     f.write(youtube_embed_url + "\n")
                 remove_r2_youtube_staging_marker(youtube_staging_marker)
+            elif youtube_job_id:
+                youtube_scheduled = True
+                with open(youtube_scheduled_file, "w", encoding="utf-8") as f:
+                    f.write(f"job_id={youtube_job_id}\n")
+                    if isinstance(status, dict) and status.get("scheduled_date"):
+                        f.write(f"scheduled_date={status['scheduled_date']}\n")
+                    if publish_schedule:
+                        f.write(f"requested_schedule={publish_schedule.source}\n")
+                print(
+                    f"✓ YouTube upload scheduled via upload-post: {youtube_job_id} "
+                    f"({publish_schedule.upload_post_scheduled_date if publish_schedule else 'scheduled'})"
+                )
+                if os.path.isfile(youtube_staging_marker):
+                    print(
+                        f"  R2 staging marker kept until the scheduled video is published: {youtube_staging_marker}"
+                    )
             else:
                 yt_err = (
                     youtube_status_error_message(status)
@@ -1166,7 +1543,7 @@ def process_audio(audio_path: str, args, client: OpenAI) -> None:
             "\n⚠ UPLOAD_POST_API_KEY / UPLOAD_POST_USER not set — skipping YouTube upload. "
             "Use --youtube with embed URL or configure env."
         )
-    elif not video_source and not youtube_embed_url:
+    elif not video_source and not youtube_embed_url and not youtube_scheduled:
         print("\nNo companion video — skipping YouTube upload.")
 
     video_id = resolve_youtube_video_id(youtube_embed_url)
@@ -1179,6 +1556,7 @@ def process_audio(audio_path: str, args, client: OpenAI) -> None:
         podbean_id,
         video_id,
         participants=_participants_for_episode(getattr(args, "participants", None), guest_context),
+        publish_datetime=publish_schedule.podbean_datetime if publish_schedule else None,
     )
     print(f"✓ Episode page: {episode_path}")
 

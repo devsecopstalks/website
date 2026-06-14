@@ -1,8 +1,8 @@
 ## DevSecOps Talks — podcast publish pipeline
 
-End-to-end flow: drop an MP3 in `raw/`, run `./do.sh` (or `uv run python podbean.py`), transcribe with OpenAI, generate a long-form episode article with **Claude Code** (draft + revisions) and **Codex** (adversarial review until `GOOD_TO_GO`), pick title and short teaser with **Codex**, upload audio to **Podbean**, ask whether the Podbean episode should publish now or stay in draft mode, optionally upload video to **YouTube** via [upload-post.com](https://upload-post.com), and write `content/episodes/NNN-slug.md`.
+End-to-end flow: drop an MP3 in `raw/`, run `./do.sh` (or `uv run python podbean.py`), transcribe with OpenAI, generate a long-form episode article with **Claude Code** (draft + revisions) and **Codex** (adversarial review until `GOOD_TO_GO`), pick title and short teaser with **Codex**, upload audio to **Podbean**, ask whether the Podbean episode should publish now or stay in draft mode, optionally schedule it for the future, optionally upload video to **YouTube** via [upload-post.com](https://upload-post.com), and write `content/episodes/NNN-slug.md`.
 
-Checkpoint files live under `out/episodeNNN-*` (NNN = next Podbean episode number at run start) so you can resume after interruptions.
+Checkpoint files live under `out/episodeNNN-*` (NNN = next Podbean episode number at run start) so you can resume after interruptions. The next number is calculated from the highest existing Podbean episode number, so future scheduled episodes are included.
 
 ### Prerequisites
 
@@ -87,6 +87,19 @@ Direct multipart uploads to upload-post can hit **499/504** on very large files.
 
 A successful embed URL is cached in `out/episodeNNN-youtube-url.txt` for reruns. You can also create that file with `seed_progress_markers.py` (`--episode N` or `--stem episodeNNN`).
 
+### Scheduling
+
+Use `--schedule-at` to publish Podbean and the optional upload-post YouTube video in the future. The value must be an ISO-8601 datetime in the future:
+
+```bash
+uv run podbean.py -f raw/ep.mp3 --schedule-at 2026-07-01T09:00:00Z
+uv run podbean.py -f raw/ep.mp3 --schedule-at "2026-07-01 11:00" --schedule-timezone Europe/Madrid
+```
+
+For Podbean, the script sends `publish_timestamp` and uses `status=publish`. Do not combine `--schedule-at` with `--podbean-status draft`. For upload-post, the script sends `scheduled_date` and optional `timezone`; upload-post returns a scheduled `job_id`, so no YouTube embed URL exists yet. That job is cached in `out/episodeNNN-youtube-scheduled.txt` to avoid duplicate submissions on reruns. If R2 staging was used for a scheduled YouTube video, the R2 marker and object are kept until the video has actually published and an embed URL is available.
+
+When running the default `bash do.sh` flow with no scheduling flags, the script checks the latest non-draft Podbean `publish_time`, including future scheduled episodes. If that latest episode is scheduled in the future or was published less than 7 days ago, the operator is asked whether to schedule this new episode and how many days after that latest episode it should publish. The suggested spacing default is 7 days.
+
 ### Participants (Hugo front matter)
 
 By default, new episode pages get `participants: ["Paulina", "Mattias", "Andrey"]`. Override with:
@@ -97,7 +110,7 @@ uv run podbean.py -f raw/ep.mp3 --participants "Paulina,Mattias,Andrey,Guest Nam
 
 ### Resumability
 
-Outputs are under `out/episodeNNN-*` (NNN = next Podbean episode number queried at run start). The draft–review loop runs up to **10** Codex review rounds (or stops early on `GOOD_TO_GO`). Re-running reuses existing transcript, draft/review checkpoints, final article, and cached title/description when those files exist. Delete a checkpoint file to force that step to run again. Older runs may have used long MP3-stem names under `out/`; new runs use the `episodeNNN` prefix only.
+Outputs are under `out/episodeNNN-*` (NNN = next Podbean episode number calculated at run start, including already scheduled episodes). The draft–review loop runs up to **10** Codex review rounds (or stops early on `GOOD_TO_GO`). Re-running reuses existing transcript, draft/review checkpoints, final article, and cached title/description when those files exist. Delete a checkpoint file to force that step to run again. Older runs may have used long MP3-stem names under `out/`; new runs use the `episodeNNN` prefix only.
 
 ### `article.py` (legacy)
 
@@ -110,6 +123,7 @@ uv run podbean.py -f raw/my-show.mp3 -v
 uv run python podbean.py --scan --draft-only   # stop after out/episodeNNN-article.md (NNN from Podbean)
 uv run podbean.py -f raw/ep.mp3 --skip-transcription --title "Fixed Title" --description "Short teaser"
 uv run podbean.py -f raw/ep.mp3 --podbean-status publish
+uv run podbean.py -f raw/ep.mp3 --schedule-at 2026-07-01T09:00:00Z
 uv run podbean.py -f raw/ep.mp3 --youtube-via-r2 --video raw/ep.mp4
 ```
 

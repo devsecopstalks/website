@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime
 import os
 import sys
 import tempfile
@@ -17,6 +18,7 @@ if _TOOLS_ROOT not in sys.path:
     sys.path.insert(0, _TOOLS_ROOT)
 
 from youtube import (  # noqa: E402
+    scheduled_upload_job_id,
     status_to_youtube_embed_url,
     youtube_embed_url_to_video_id,
     youtube_status_error_message,
@@ -65,6 +67,19 @@ class TestYoutubeEmbedParsing(unittest.TestCase):
             ],
         }
         self.assertIsNone(youtube_status_error_message(status))
+
+    def test_scheduled_upload_job_id(self):
+        self.assertEqual(
+            scheduled_upload_job_id(
+                {
+                    "success": True,
+                    "job_id": "job_123",
+                    "scheduled_date": "2026-07-01T09:00:00Z",
+                }
+            ),
+            "job_123",
+        )
+        self.assertIsNone(scheduled_upload_job_id({"request_id": "req_123"}))
 
 
 class TestR2YoutubeStagingMarker(unittest.TestCase):
@@ -298,6 +313,99 @@ class TestPodbeanTextHelpers(unittest.TestCase):
     def test_resolve_podbean_episode_status_uses_cli_value(self):
         self.assertEqual(podbean.resolve_podbean_episode_status("draft"), "draft")
         self.assertEqual(podbean.resolve_podbean_episode_status("publish"), "publish")
+
+    def test_parse_publish_schedule_aware_datetime(self):
+        schedule = podbean.parse_publish_schedule("2099-07-01T09:00:00Z")
+        self.assertEqual(schedule.upload_post_scheduled_date, "2099-07-01T09:00:00Z")
+        self.assertIsNone(schedule.upload_post_timezone)
+        self.assertEqual(schedule.podbean_timestamp, 4086579600)
+
+    def test_parse_publish_schedule_naive_with_timezone(self):
+        schedule = podbean.parse_publish_schedule("2099-07-01 11:00", "Europe/Madrid")
+        self.assertEqual(schedule.upload_post_scheduled_date, "2099-07-01T11:00:00")
+        self.assertEqual(schedule.upload_post_timezone, "Europe/Madrid")
+        self.assertEqual(schedule.podbean_timestamp, 4086579600)
+
+    def test_create_podbean_episode_includes_publish_timestamp(self):
+        with patch("podbean.requests.post") as mock_post:
+            mock_post.return_value.json.return_value = {"ok": True}
+            response = podbean.create_podbean_episode(
+                "token",
+                "title",
+                "content",
+                123,
+                media_key="audio.mp3",
+                status="publish",
+                publish_timestamp=4086579600,
+                url="https://example.test/episodes",
+            )
+        self.assertEqual(response, {"ok": True})
+        _, kwargs = mock_post.call_args
+        self.assertEqual(kwargs["data"]["publish_timestamp"], "4086579600")
+
+    def test_episode_plan_uses_highest_episode_number_and_latest_schedule(self):
+        tz = datetime.timezone.utc
+        data = {
+            "count": 2,
+            "episodes": [
+                {
+                    "title": "#104 - Scheduled",
+                    "episode_number": 104,
+                    "publish_time": 4086579600,
+                    "status": "publish",
+                },
+                {
+                    "title": "#103 - Published",
+                    "episode_number": 103,
+                    "publish_time": 4085974800,
+                    "status": "publish",
+                },
+                {
+                    "title": "#200 - Draft",
+                    "episode_number": 200,
+                    "publish_time": 4087184400,
+                    "status": "draft",
+                },
+            ],
+        }
+        plan = podbean.episode_plan_from_podbean_response(data, local_tz=tz)
+        self.assertEqual(plan.next_episode_number, 201)
+        self.assertEqual(plan.anchor_episode["title"], "#104 - Scheduled")
+        self.assertEqual(plan.anchor_datetime, datetime.datetime(2099, 7, 1, 9, tzinfo=tz))
+
+    def test_should_prompt_for_schedule_recent_or_future_anchor(self):
+        tz = datetime.timezone.utc
+        now = datetime.datetime(2099, 7, 1, 9, tzinfo=tz)
+        self.assertTrue(
+            podbean.should_prompt_for_schedule(
+                datetime.datetime(2099, 6, 28, 9, tzinfo=tz),
+                now=now,
+            )
+        )
+        self.assertTrue(
+            podbean.should_prompt_for_schedule(
+                datetime.datetime(2099, 7, 8, 9, tzinfo=tz),
+                now=now,
+            )
+        )
+        self.assertFalse(
+            podbean.should_prompt_for_schedule(
+                datetime.datetime(2099, 6, 20, 9, tzinfo=tz),
+                now=now,
+            )
+        )
+
+    def test_prompt_schedule_after_anchor_calculates_days_from_anchor(self):
+        tz = datetime.timezone.utc
+        anchor = datetime.datetime.now(tz) + datetime.timedelta(days=2)
+        with redirect_stdout(StringIO()):
+            schedule = podbean.prompt_schedule_after_anchor(
+                {"title": "#104 - Scheduled", "episode_number": 104},
+                anchor,
+                input_func=iter(["y", "7"]).__next__,
+            )
+        expected = (anchor + datetime.timedelta(days=7)).replace(microsecond=0)
+        self.assertEqual(schedule.podbean_datetime, expected)
 
 
 class TestR2StagingPolicy(unittest.TestCase):

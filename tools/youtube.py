@@ -294,6 +294,17 @@ def youtube_status_error_message(status: dict) -> str | None:
     return None
 
 
+def scheduled_upload_job_id(status: dict) -> str | None:
+    """Return upload-post scheduled job id, if this response is a scheduled upload."""
+    if not isinstance(status, dict):
+        return None
+    job_id = status.get("job_id")
+    scheduled_date = status.get("scheduled_date")
+    if job_id and scheduled_date:
+        return str(job_id)
+    return None
+
+
 def youtube_embed_url_to_video_id(embed_url: str) -> str:
     """Return 11-char video id for Hugo shortcode, or empty string."""
     if not embed_url:
@@ -311,6 +322,8 @@ def upload_to_youtube(
     video_path,
     title,
     description,
+    scheduled_date=None,
+    schedule_timezone=None,
     poll_interval=15,
     poll_timeout=600,
     max_retries=4,
@@ -356,7 +369,13 @@ def upload_to_youtube(
     response = None
     for attempt in range(1, max_retries + 1):
         try:
-            print(f"Submitting async upload (attempt {attempt}/{max_retries})...")
+            if scheduled_date:
+                print(
+                    f"Submitting scheduled upload-post job (attempt {attempt}/{max_retries}): "
+                    f"{scheduled_date}"
+                )
+            else:
+                print(f"Submitting async upload (attempt {attempt}/{max_retries})...")
             response = client.upload_video(
                 video_path=video_path,
                 title=title,
@@ -366,6 +385,8 @@ def upload_to_youtube(
                 privacyStatus="public",
                 selfDeclaredMadeForKids=False,
                 async_upload=True,
+                scheduled_date=scheduled_date,
+                timezone=schedule_timezone,
             )
             print("Upload submitted:", response)
             break
@@ -380,6 +401,8 @@ def upload_to_youtube(
             time.sleep(wait)
 
     request_id = response.get("request_id")
+    if scheduled_upload_job_id(response):
+        return response
     if not request_id:
         return response
 

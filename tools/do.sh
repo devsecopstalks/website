@@ -11,8 +11,8 @@ fi
 
 uv sync
 
-mv ~/Downloads/*.mp3 raw/
-mv ~/Downloads/*.mp4 raw/
+#mv ~/Downloads/*.mp3 raw/
+#mv ~/Downloads/*.mp4 raw/
 
 # --no-masking: otherwise op conceals stdout/stderr substrings that match injected
 # secrets (e.g. “DevSecOps …” in title options). Alternative: export OP_RUN_NO_MASKING=1.

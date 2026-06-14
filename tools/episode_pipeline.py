@@ -54,11 +54,14 @@ def _review_ends_good_to_go(review_text: str) -> bool:
     return review_text.strip().splitlines()[-1].strip() == "GOOD_TO_GO"
 
 
-def run_claude(prompt: str, verbose=False, allow_web=False) -> str:
+def run_claude(prompt: str, verbose=False, allow_web=False, fatal: bool = True) -> str:
     """Run Claude Code CLI with the given prompt on stdin. Returns output text."""
     if not shutil.which("claude"):
-        print("Error: 'claude' CLI not found. Install Claude Code.")
-        sys.exit(1)
+        message = "Error: 'claude' CLI not found. Install Claude Code."
+        if fatal:
+            print(message)
+            sys.exit(1)
+        raise RuntimeError(message)
 
     cmd = [
         "claude",
@@ -84,14 +87,20 @@ def run_claude(prompt: str, verbose=False, allow_web=False) -> str:
     )
 
     if result.returncode != 0:
-        print(f"Claude failed (exit {result.returncode})")
-        print(f"stdout: {result.stdout[:2000]}")
-        sys.exit(1)
+        message = f"Claude failed (exit {result.returncode})"
+        if fatal:
+            print(message)
+            print(f"stdout: {result.stdout[:2000]}")
+            sys.exit(1)
+        raise RuntimeError(f"{message}: {result.stdout[:2000]}")
 
     output = result.stdout.strip()
     if not output:
-        print("Claude returned empty response")
-        sys.exit(1)
+        message = "Claude returned empty response"
+        if fatal:
+            print(message)
+            sys.exit(1)
+        raise RuntimeError(message)
 
     return output
 
@@ -327,6 +336,76 @@ def guest_context_to_prompt_text(guest_context: dict) -> str:
             suffix = f" [{link_type}]" if link_type else ""
             lines.append(f"  Link: {label}{suffix} — {url}")
     return "\n".join(lines)
+
+
+def normalize_operator_guest_notes(
+    operator_notes: str,
+    previous_guest_context: dict | None = None,
+    verbose: bool = False,
+) -> dict:
+    """Normalize free-form operator guest notes into the guest checkpoint schema."""
+    print("Normalizing operator guest context with Claude Code...")
+    previous_json = json.dumps(
+        normalize_guest_context(previous_guest_context or {}),
+        ensure_ascii=False,
+        indent=2,
+    )
+    prompt = f"""Normalize operator-provided guest clarification for the DevSecOps Talks publishing pipeline.
+
+The operator text is authoritative for the intended guest names. Extract clean full names only into
+`full_name` and `participant_name`; do not include roles, companies, titles, or links in those fields.
+Put roles/titles into `role`, organizations/projects into `company`, and URLs into `links`.
+
+Use web search for every operator-provided guest to find and verify relevant public professional
+sources. Prefer official personal sites, company profile/team pages, LinkedIn profiles, GitHub
+profiles, conference speaker bios, project documentation, and other authoritative professional
+pages. Include the best relevant sources in `links`, especially LinkedIn when you can confidently
+identify the right profile. Do not invent URLs or include uncertain profile matches.
+
+If verification is not possible, still return the operator-provided names with `confidence` set to
+"medium" or "low".
+Do not ask follow-up questions unless the operator text is genuinely impossible to split into guests.
+
+Return exactly one JSON object and nothing else. Do not wrap it in markdown.
+
+Schema:
+
+{{
+  "status": "no_guests|verified|needs_operator",
+  "guests": [
+    {{
+      "full_name": "Full Name",
+      "participant_name": "Full Name",
+      "role": "Professional role or title",
+      "company": "Company or project, if known",
+      "professional_summary": "One or two factual professional sentences.",
+      "links": [
+        {{
+          "label": "Source label",
+          "url": "https://example.com/",
+          "type": "official|company|linkedin|github|conference|project|operator"
+        }}
+      ],
+      "confidence": "high|medium|low|operator",
+      "needs_operator": false,
+      "question": ""
+    }}
+  ],
+  "notes": "Short note about uncertainty, or empty string."
+}}
+
+Previous ambiguous guest context:
+{previous_json}
+
+Operator-provided guest notes:
+{operator_notes}
+"""
+    output = run_claude(prompt, verbose=verbose, allow_web=True, fatal=False)
+    guest_context = normalize_guest_context(_extract_json_object(output))
+    guests = guest_context.get("guests", [])
+    if guests:
+        print("✓ Normalized guests: " + ", ".join(g["full_name"] for g in guests))
+    return guest_context
 
 
 def detect_guests(

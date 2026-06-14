@@ -20,6 +20,7 @@ from episode_pipeline import (
     guest_context_to_prompt_text,
     load_raw_companion_markdown,
     load_guest_context,
+    normalize_operator_guest_notes,
     pick_description,
     pick_title,
     save_guest_context,
@@ -49,6 +50,40 @@ EPISODES_DIR = os.path.join(TOOLS_DIR, "..", "content", "episodes")
 
 # Default Hugo front matter when --participants is omitted (current hosts).
 DEFAULT_PARTICIPANTS = ["Paulina", "Mattias", "Andrey"]
+
+GUEST_ROLE_STARTERS = {
+    "advocate",
+    "architect",
+    "ceo",
+    "chief",
+    "ciso",
+    "cloud",
+    "co-founder",
+    "cofounder",
+    "consultant",
+    "cto",
+    "developer",
+    "director",
+    "engineer",
+    "engineering",
+    "evangelist",
+    "founder",
+    "head",
+    "lead",
+    "manager",
+    "maintainer",
+    "owner",
+    "principal",
+    "product",
+    "professor",
+    "researcher",
+    "security",
+    "senior",
+    "software",
+    "staff",
+    "vice",
+    "vp",
+}
 
 
 def checkpoint_prefix(episode_number: int) -> str:
@@ -573,10 +608,88 @@ def _guest_names(guest_context: dict) -> list[str]:
     for guest in guest_context.get("guests") or []:
         if not isinstance(guest, dict):
             continue
-        name = str(guest.get("full_name") or guest.get("participant_name") or "").strip()
+        name = str(guest.get("participant_name") or guest.get("full_name") or "").strip()
         if name:
             names.append(name)
     return names
+
+
+def _split_operator_guest_chunk(chunk: str) -> tuple[str, str]:
+    """Split loose operator input into a likely full name and details."""
+    chunk = chunk.strip()
+    name = chunk
+    details = ""
+    for sep in (" - ", " -- ", " – ", " — "):
+        if sep in chunk:
+            name, details = chunk.split(sep, 1)
+            return name.strip(), details.strip()
+    if "," in chunk:
+        name, details = chunk.split(",", 1)
+        return name.strip(), details.strip()
+
+    tokens = chunk.split()
+    if len(tokens) < 3:
+        return name, details
+    for idx in range(2, len(tokens)):
+        token = tokens[idx].strip(".,:;()[]{}").casefold()
+        if token in GUEST_ROLE_STARTERS:
+            return " ".join(tokens[:idx]).strip(), " ".join(tokens[idx:]).strip()
+    return name, details
+
+
+def _operator_details_to_fields(details: str) -> tuple[str, str, str]:
+    """Convert loose role/company details into structured fields."""
+    details = details.strip()
+    clean_details = re.sub(r"https?://\S+", "", details).strip(" ,.;")
+    if not clean_details:
+        return "", "", ""
+
+    if "@" in clean_details:
+        role, company = clean_details.split("@", 1)
+        return role.strip(" ,.;"), company.strip(" ,.;"), ""
+
+    org_match = re.match(r"(.+?)\s+(?:at|from|for)\s+(.+)$", clean_details, flags=re.I)
+    if org_match:
+        return org_match.group(1).strip(" ,.;"), org_match.group(2).strip(" ,.;"), ""
+
+    tokens = clean_details.split()
+    role_tokens: list[str] = []
+    for token in tokens:
+        key = token.strip(".,:;()[]{}").casefold()
+        if key in GUEST_ROLE_STARTERS or key in {"&", "and", "of"}:
+            role_tokens.append(token)
+            continue
+        break
+
+    if len(role_tokens) >= 2 and len(role_tokens) < len(tokens):
+        company = " ".join(tokens[len(role_tokens) :]).strip(" ,.;")
+        return " ".join(role_tokens).strip(" ,.;"), company, ""
+
+    return "", "", details
+
+
+def _repair_guest_context_names(guest_context: dict) -> dict:
+    """Fix old operator checkpoints where full_name accidentally included role/company."""
+    for guest in guest_context.get("guests") or []:
+        if not isinstance(guest, dict):
+            continue
+        full_name = str(guest.get("full_name") or "").strip()
+        participant_name = str(guest.get("participant_name") or "").strip()
+        if not full_name or (participant_name and participant_name != full_name):
+            continue
+        name, details = _split_operator_guest_chunk(full_name)
+        if not details or name == full_name:
+            continue
+        guest["full_name"] = name
+        guest["participant_name"] = name
+        role, company, summary = _operator_details_to_fields(details)
+        if role and not str(guest.get("role") or "").strip():
+            guest["role"] = role
+        if company and not str(guest.get("company") or "").strip():
+            guest["company"] = company
+        if summary and not str(guest.get("professional_summary") or "").strip():
+            guest["professional_summary"] = summary
+    return guest_context
 
 
 def _text_includes_guest_names(text: str, guest_context: dict) -> bool:
@@ -610,7 +723,44 @@ def _guest_context_needs_operator(guest_context: dict) -> bool:
     return False
 
 
-def _manual_guest_context_from_operator(guest_context: dict) -> dict:
+def _fallback_manual_guest_context(raw: str) -> dict:
+    guests: list[dict] = []
+    for chunk in re.split(r"\s*;\s*", raw):
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        name, details = _split_operator_guest_chunk(chunk)
+        if not name:
+            continue
+        urls = re.findall(r"https?://\S+", details)
+        links = [
+            {"label": url.rstrip(".,)"), "url": url.rstrip(".,)"), "type": "operator"}
+            for url in urls
+        ]
+        role, company, summary = _operator_details_to_fields(details)
+        guests.append(
+            {
+                "full_name": name,
+                "participant_name": name,
+                "role": role,
+                "company": company,
+                "professional_summary": summary,
+                "links": links,
+                "confidence": "operator",
+                "needs_operator": False,
+                "question": "",
+            }
+        )
+    if guests:
+        return {
+            "status": "verified",
+            "guests": guests,
+            "notes": "Guest context provided by operator.",
+        }
+    return {"status": "needs_operator", "guests": [], "notes": "Could not parse guest names."}
+
+
+def _manual_guest_context_from_operator(guest_context: dict, verbose: bool = False) -> dict:
     print("\nGuest lookup needs clarification.")
     notes = str(guest_context.get("notes") or "").strip()
     if notes:
@@ -625,8 +775,8 @@ def _manual_guest_context_from_operator(guest_context: dict) -> dict:
 
     while True:
         print(
-            "Enter guest context as 'Full Name - role, company, links'. "
-            "Separate multiple guests with ';'. Type 'none' if there are no guests."
+            "Enter guest context as free-form text with names, roles, companies, and links. "
+            "Type 'none' if there are no guests."
         )
         print("> ", end="", flush=True)
         raw = input().strip()
@@ -636,47 +786,14 @@ def _manual_guest_context_from_operator(guest_context: dict) -> dict:
         if raw.lower() in ("none", "no", "no guests"):
             return {"status": "no_guests", "guests": [], "notes": "Operator reported no guests."}
 
-        guests: list[dict] = []
-        for chunk in re.split(r"\s*;\s*", raw):
-            chunk = chunk.strip()
-            if not chunk:
-                continue
-            name = chunk
-            details = ""
-            for sep in (" - ", " -- ", " – ", " — "):
-                if sep in chunk:
-                    name, details = chunk.split(sep, 1)
-                    break
-            if not details and "," in chunk:
-                name, details = chunk.split(",", 1)
-            name = name.strip()
-            details = details.strip()
-            if not name:
-                continue
-            urls = re.findall(r"https?://\S+", details)
-            links = [
-                {"label": url.rstrip(".,)"), "url": url.rstrip(".,)"), "type": "operator"}
-                for url in urls
-            ]
-            guests.append(
-                {
-                    "full_name": name,
-                    "participant_name": name,
-                    "role": "",
-                    "company": "",
-                    "professional_summary": details,
-                    "links": links,
-                    "confidence": "operator",
-                    "needs_operator": False,
-                    "question": "",
-                }
-            )
-        if guests:
-            return {
-                "status": "verified",
-                "guests": guests,
-                "notes": "Guest context provided by operator.",
-            }
+        try:
+            normalized = normalize_operator_guest_notes(raw, guest_context, verbose=verbose)
+        except Exception as e:
+            print(f"⚠ Could not normalize guest context with Claude ({e}); using local parser.")
+            normalized = _fallback_manual_guest_context(raw)
+        normalized = _repair_guest_context_names(normalized)
+        if normalized.get("guests"):
+            return normalized
         print("Could not parse a guest name. Try again.")
 
 
@@ -696,7 +813,7 @@ def _load_or_detect_guest_context(
             print(f'\nFound saved guest context: {summary}')
             print("Press Enter to reuse, or type 'new' to refresh guest lookup: ", end="", flush=True)
             if input().strip().lower() != "new":
-                guest_context = saved
+                guest_context = _repair_guest_context_names(saved)
         except Exception as e:
             print(f"⚠ Could not read saved guest context ({e}); regenerating")
 
@@ -709,7 +826,8 @@ def _load_or_detect_guest_context(
         )
 
     if _guest_context_needs_operator(guest_context):
-        guest_context = _manual_guest_context_from_operator(guest_context)
+        guest_context = _manual_guest_context_from_operator(guest_context, verbose=verbose)
+    guest_context = _repair_guest_context_names(guest_context)
 
     save_guest_context(guest_context_file, guest_context)
     print(f"✓ Guest context saved to {guest_context_file}")

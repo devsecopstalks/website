@@ -171,6 +171,117 @@ class TestPodbeanTextHelpers(unittest.TestCase):
             podbean._text_includes_guest_names("Agent-Native Infra", guest_context)
         )
 
+    def test_manual_guest_context_splits_role_details_without_dash(self):
+        raw = (
+            "Mark Shine Co-Founder & CTO @ Ankra; "
+            "Pawel Piwosz Developer Advocate @ UpCloud; "
+            "Filipe Berti Engineering Manager UpCloud"
+        )
+        with (
+            patch("builtins.input", return_value=raw),
+            patch(
+                "podbean.normalize_operator_guest_notes",
+                side_effect=RuntimeError("claude unavailable"),
+            ),
+            redirect_stdout(StringIO()),
+        ):
+            guest_context = podbean._manual_guest_context_from_operator(
+                {"status": "needs_operator"}
+            )
+
+        self.assertEqual(
+            podbean._guest_names(guest_context),
+            ["Mark Shine", "Pawel Piwosz", "Filipe Berti"],
+        )
+        self.assertTrue(
+            podbean._text_includes_guest_names(
+                "European Cloud Sovereignty with Mark Shine, Pawel Piwosz and Filipe Berti",
+                guest_context,
+            )
+        )
+        self.assertEqual(guest_context["guests"][0]["role"], "Co-Founder & CTO")
+        self.assertEqual(guest_context["guests"][0]["company"], "Ankra")
+        self.assertEqual(guest_context["guests"][1]["role"], "Developer Advocate")
+        self.assertEqual(guest_context["guests"][1]["company"], "UpCloud")
+        self.assertEqual(guest_context["guests"][2]["role"], "Engineering Manager")
+        self.assertEqual(guest_context["guests"][2]["company"], "UpCloud")
+
+    def test_manual_guest_context_accepts_agent_normalized_free_form(self):
+        raw = (
+            "The guests are Mark Shine, Co-Founder and CTO at Ankra, "
+            "plus Pawel Piwosz from UpCloud. Mark's company site is https://ankra.io."
+        )
+        normalized = {
+            "status": "verified",
+            "guests": [
+                {
+                    "full_name": "Mark Shine",
+                    "participant_name": "Mark Shine",
+                    "role": "Co-Founder and CTO",
+                    "company": "Ankra",
+                    "professional_summary": "",
+                    "links": [
+                        {
+                            "label": "Ankra",
+                            "url": "https://ankra.io",
+                            "type": "company",
+                        }
+                    ],
+                    "confidence": "operator",
+                    "needs_operator": False,
+                    "question": "",
+                },
+                {
+                    "full_name": "Pawel Piwosz",
+                    "participant_name": "Pawel Piwosz",
+                    "role": "",
+                    "company": "UpCloud",
+                    "professional_summary": "",
+                    "links": [],
+                    "confidence": "operator",
+                    "needs_operator": False,
+                    "question": "",
+                },
+            ],
+            "notes": "",
+        }
+        with (
+            patch("builtins.input", return_value=raw),
+            patch("podbean.normalize_operator_guest_notes", return_value=normalized) as mock_norm,
+            redirect_stdout(StringIO()),
+        ):
+            guest_context = podbean._manual_guest_context_from_operator(
+                {"status": "needs_operator"},
+                verbose=True,
+            )
+
+        mock_norm.assert_called_once_with(raw, {"status": "needs_operator"}, verbose=True)
+        self.assertEqual(podbean._guest_names(guest_context), ["Mark Shine", "Pawel Piwosz"])
+        self.assertTrue(
+            podbean._text_includes_guest_names(
+                "EU Cloud with Mark Shine and Pawel Piwosz", guest_context
+            )
+        )
+
+    def test_repair_guest_context_names_fixes_old_operator_checkpoint(self):
+        guest_context = {
+            "guests": [
+                {
+                    "full_name": "Mark Shine Co-Founder & CTO @ Ankra",
+                    "participant_name": "Mark Shine Co-Founder & CTO @ Ankra",
+                    "professional_summary": "",
+                }
+            ]
+        }
+
+        repaired = podbean._repair_guest_context_names(guest_context)
+
+        self.assertEqual(podbean._guest_names(repaired), ["Mark Shine"])
+        self.assertEqual(repaired["guests"][0]["full_name"], "Mark Shine")
+        self.assertEqual(repaired["guests"][0]["role"], "Co-Founder & CTO")
+        self.assertEqual(repaired["guests"][0]["company"], "Ankra")
+        self.assertEqual(repaired["guests"][0].get("professional_summary", ""), "")
+
     def test_hugo_shortcode_braces_in_template(self):
         """podbean_line must emit {{< not {< — f-strings need {{{{ for literal {{."""
         line = f' {{{{<  podbean id "Title"  >}}}} '
@@ -255,6 +366,47 @@ class TestEpisodePipelineNumberedPick(unittest.TestCase):
         self.assertIn("Detected guest(s): Paul Stack.", text)
         self.assertIn("every title option must include all guest full names", text)
         self.assertIn("https://github.com/systeminit/swamp", text)
+
+    def test_normalize_operator_guest_notes_requests_web_profile_lookup(self):
+        import episode_pipeline  # noqa: E402
+
+        def fake_run_claude(prompt, verbose=False, allow_web=False, fatal=True):
+            self.assertTrue(allow_web)
+            self.assertFalse(fatal)
+            self.assertIn("Use web search for every operator-provided guest", prompt)
+            self.assertIn("LinkedIn profiles", prompt)
+            self.assertIn("GitHub", prompt)
+            return """
+            {
+              "status": "verified",
+              "guests": [
+                {
+                  "full_name": "Mark Shine",
+                  "participant_name": "Mark Shine",
+                  "role": "Co-Founder & CTO",
+                  "company": "Ankra",
+                  "professional_summary": "",
+                  "links": [
+                    {
+                      "label": "LinkedIn",
+                      "url": "https://www.linkedin.com/in/example/",
+                      "type": "linkedin"
+                    }
+                  ],
+                  "confidence": "high",
+                  "needs_operator": false,
+                  "question": ""
+                }
+              ],
+              "notes": ""
+            }
+            """
+
+        with patch("episode_pipeline.run_claude", side_effect=fake_run_claude):
+            data = episode_pipeline.normalize_operator_guest_notes("Mark Shine from Ankra")
+
+        self.assertEqual(data["guests"][0]["full_name"], "Mark Shine")
+        self.assertEqual(data["guests"][0]["links"][0]["type"], "linkedin")
 
     def test_normalize_guest_context_preserves_needs_operator_without_names(self):
         from episode_pipeline import normalize_guest_context  # noqa: E402

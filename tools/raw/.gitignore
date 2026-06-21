@@ -1,3 +1,4 @@
+# Preserved when the staging flow clears raw/.
 *.mp3
 *.mp4
 *.md

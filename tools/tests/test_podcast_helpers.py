@@ -131,6 +131,56 @@ class TestR2YoutubeStagingMarker(unittest.TestCase):
 
 
 class TestPodbeanTextHelpers(unittest.TestCase):
+    def test_stage_downloads_can_replace_existing_raw_contents(self):
+        with (
+            tempfile.TemporaryDirectory() as downloads_dir,
+            tempfile.TemporaryDirectory() as raw_dir,
+        ):
+            downloads = Path(downloads_dir)
+            raw = Path(raw_dir)
+            (downloads / "new.mp3").write_bytes(b"new audio")
+            (downloads / "new.mp4").write_bytes(b"new video")
+            (raw / "old.mp3").write_bytes(b"old audio")
+            (raw / "old-notes.md").write_text("old notes")
+            (raw / ".gitignore").write_text("*.mp3\n")
+
+            with (
+                patch.object(podbean, "DOWNLOADS_DIR", downloads_dir),
+                patch.object(podbean, "RAW_DIR", raw_dir),
+                patch("builtins.input", return_value=""),
+                redirect_stdout(StringIO()),
+            ):
+                podbean.stage_downloads_to_raw()
+
+            self.assertEqual(
+                sorted(path.name for path in raw.iterdir()),
+                [".gitignore", "new.mp3", "new.mp4"],
+            )
+            self.assertEqual(list(downloads.iterdir()), [])
+
+    def test_stage_downloads_decline_preserves_both_locations(self):
+        with (
+            tempfile.TemporaryDirectory() as downloads_dir,
+            tempfile.TemporaryDirectory() as raw_dir,
+        ):
+            downloads = Path(downloads_dir)
+            raw = Path(raw_dir)
+            (downloads / "new.mp3").write_bytes(b"new audio")
+            (raw / "old.mp3").write_bytes(b"old audio")
+
+            with (
+                patch.object(podbean, "DOWNLOADS_DIR", downloads_dir),
+                patch.object(podbean, "RAW_DIR", raw_dir),
+                patch("builtins.input", return_value="n"),
+                redirect_stdout(StringIO()),
+                self.assertRaises(SystemExit) as exit_context,
+            ):
+                podbean.stage_downloads_to_raw()
+
+            self.assertEqual(exit_context.exception.code, 0)
+            self.assertTrue((downloads / "new.mp3").exists())
+            self.assertTrue((raw / "old.mp3").exists())
+
     def test_title_to_url_safe(self):
         self.assertEqual(podbean.title_to_url_safe("Hello World!"), "hello-world-")
 
@@ -361,26 +411,17 @@ class TestPodbeanTextHelpers(unittest.TestCase):
         line = f' {{{{<  podbean id "Title"  >}}}} '
         self.assertTrue(line.lstrip().startswith("{{<"))
 
-    def test_prompt_podbean_episode_status_defaults_to_draft(self):
-        with redirect_stdout(StringIO()):
-            self.assertEqual(podbean.prompt_podbean_episode_status(lambda: ""), "draft")
-
-    def test_prompt_podbean_episode_status_accepts_publish(self):
-        with redirect_stdout(StringIO()):
-            self.assertEqual(podbean.prompt_podbean_episode_status(lambda: "p"), "publish")
-
-    def test_resolve_podbean_episode_status_uses_cli_value(self):
-        self.assertEqual(podbean.resolve_podbean_episode_status("draft"), "draft")
-        self.assertEqual(podbean.resolve_podbean_episode_status("publish"), "publish")
-
     def test_scheduled_episode_is_created_as_draft(self):
-        schedule = podbean.parse_publish_schedule("2099-07-01T09:00:00Z")
+        schedule = podbean.publish_schedule_from_datetime(
+            datetime.datetime(2099, 7, 1, 11, tzinfo=datetime.timezone.utc),
+            "test",
+        )
         self.assertEqual(
-            podbean.podbean_creation_status("publish", schedule),
+            podbean.podbean_creation_status(schedule),
             "draft",
         )
         self.assertEqual(
-            podbean.podbean_creation_status("publish", None),
+            podbean.podbean_creation_status(None),
             "publish",
         )
 
@@ -422,18 +463,6 @@ class TestPodbeanTextHelpers(unittest.TestCase):
             podbean.find_podbean_episode({"episodes": [episode]}, 104),
             episode,
         )
-
-    def test_parse_publish_schedule_aware_datetime(self):
-        schedule = podbean.parse_publish_schedule("2099-07-01T09:00:00Z")
-        self.assertEqual(schedule.upload_post_scheduled_date, "2099-07-01T09:00:00Z")
-        self.assertIsNone(schedule.upload_post_timezone)
-        self.assertEqual(schedule.podbean_timestamp, 4086579600)
-
-    def test_parse_publish_schedule_naive_with_timezone(self):
-        schedule = podbean.parse_publish_schedule("2099-07-01 11:00", "Europe/Madrid")
-        self.assertEqual(schedule.upload_post_scheduled_date, "2099-07-01T11:00:00")
-        self.assertEqual(schedule.upload_post_timezone, "Europe/Madrid")
-        self.assertEqual(schedule.podbean_timestamp, 4086579600)
 
     def test_publish_schedule_from_existing_podbean_episode(self):
         schedule = podbean.publish_schedule_from_podbean_episode(
@@ -494,54 +523,100 @@ class TestPodbeanTextHelpers(unittest.TestCase):
         self.assertEqual(plan.next_episode_number, 201)
         self.assertEqual(plan.anchor_episode["title"], "#104 - Scheduled")
         self.assertEqual(plan.anchor_datetime, datetime.datetime(2099, 7, 1, 9, tzinfo=tz))
+        self.assertEqual(len(plan.publish_datetimes), 2)
 
-    def test_should_prompt_for_schedule_recent_or_future_anchor(self):
+    def test_next_available_monday_uses_today_before_1100_utc(self):
         tz = datetime.timezone.utc
-        now = datetime.datetime(2099, 7, 1, 9, tzinfo=tz)
-        self.assertTrue(
-            podbean.should_prompt_for_schedule(
-                datetime.datetime(2099, 6, 28, 9, tzinfo=tz),
-                now=now,
-            )
-        )
-        self.assertTrue(
-            podbean.should_prompt_for_schedule(
-                datetime.datetime(2099, 7, 8, 9, tzinfo=tz),
-                now=now,
-            )
-        )
-        self.assertFalse(
-            podbean.should_prompt_for_schedule(
-                datetime.datetime(2099, 6, 20, 9, tzinfo=tz),
-                now=now,
-            )
+        plan = podbean.episode_plan_from_podbean_response({}, local_tz=tz)
+        self.assertEqual(
+            podbean.next_available_monday(
+                plan,
+                now=datetime.datetime(2099, 6, 22, 10, tzinfo=tz),
+            ),
+            datetime.datetime(2099, 6, 22, 11, tzinfo=tz),
         )
 
-    def test_prompt_schedule_after_anchor_calculates_days_from_anchor(self):
+    def test_next_available_monday_uses_next_week_after_1100_utc(self):
         tz = datetime.timezone.utc
-        anchor = datetime.datetime.now(tz) + datetime.timedelta(days=2)
+        plan = podbean.episode_plan_from_podbean_response({}, local_tz=tz)
+        self.assertEqual(
+            podbean.next_available_monday(
+                plan,
+                now=datetime.datetime(2099, 6, 22, 11, tzinfo=tz),
+            ),
+            datetime.datetime(2099, 6, 29, 11, tzinfo=tz),
+        )
+
+    def test_next_available_monday_follows_latest_scheduled_episode(self):
+        tz = datetime.timezone.utc
+        latest = datetime.datetime(2099, 6, 30, 11, tzinfo=tz)
+        plan = podbean.episode_plan_from_podbean_response(
+            {
+                "episodes": [
+                    {
+                        "title": "#104 - Scheduled",
+                        "status": "publish",
+                        "publish_time": int(latest.timestamp()),
+                    }
+                ]
+            },
+            local_tz=tz,
+        )
+        self.assertEqual(
+            podbean.next_available_monday(
+                plan,
+                now=datetime.datetime(2099, 6, 22, 10, tzinfo=tz),
+            ),
+            datetime.datetime(2099, 7, 6, 11, tzinfo=tz),
+        )
+
+    def test_next_available_monday_skips_occupied_monday(self):
+        tz = datetime.timezone.utc
+        occupied = datetime.datetime(2099, 6, 22, 9, tzinfo=tz)
+        plan = podbean.episode_plan_from_podbean_response(
+            {
+                "episodes": [
+                    {
+                        "title": "#104 - Published",
+                        "status": "publish",
+                        "publish_time": int(occupied.timestamp()),
+                    }
+                ]
+            },
+            local_tz=tz,
+        )
+        self.assertEqual(
+            podbean.next_available_monday(
+                plan,
+                now=datetime.datetime(2099, 6, 22, 10, tzinfo=tz),
+            ),
+            datetime.datetime(2099, 6, 29, 11, tzinfo=tz),
+        )
+
+    def test_prompt_publish_action_defaults_to_schedule(self):
+        tz = datetime.timezone.utc
+        plan = podbean.episode_plan_from_podbean_response({}, local_tz=tz)
         with redirect_stdout(StringIO()):
-            schedule = podbean.prompt_schedule_after_anchor(
-                {"title": "#104 - Scheduled", "episode_number": 104},
-                anchor,
-                input_func=iter(["7"]).__next__,
-            )
-        expected = (anchor + datetime.timedelta(days=7)).replace(microsecond=0)
-        self.assertEqual(schedule.podbean_datetime, expected)
-
-    def test_prompt_schedule_accepts_days_at_first_prompt(self):
-        tz = datetime.timezone.utc
-        anchor = datetime.datetime.now(tz) + datetime.timedelta(days=2)
-        with redirect_stdout(StringIO()):
-            schedule = podbean.prompt_schedule_after_anchor(
-                {"title": "#104 - Scheduled", "episode_number": 104},
-                anchor,
-                input_func=iter(["8"]).__next__,
+            schedule = podbean.prompt_publish_action(
+                plan,
+                input_func=lambda: "",
+                now=datetime.datetime(2099, 6, 22, 10, tzinfo=tz),
             )
         self.assertEqual(
             schedule.podbean_datetime,
-            (anchor + datetime.timedelta(days=8)).replace(microsecond=0),
+            datetime.datetime(2099, 6, 22, 11, tzinfo=tz),
         )
+
+    def test_prompt_publish_action_accepts_publish_now(self):
+        tz = datetime.timezone.utc
+        plan = podbean.episode_plan_from_podbean_response({}, local_tz=tz)
+        with redirect_stdout(StringIO()):
+            schedule = podbean.prompt_publish_action(
+                plan,
+                input_func=lambda: "p",
+                now=datetime.datetime(2099, 6, 22, 10, tzinfo=tz),
+            )
+        self.assertIsNone(schedule)
 
 
 class TestR2StagingPolicy(unittest.TestCase):

@@ -16,7 +16,6 @@ import math
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from openai import OpenAI
 
 from episode_pipeline import (
@@ -78,6 +77,7 @@ class PodbeanEpisodePlan:
     next_episode_number: int
     anchor_episode: dict | None
     anchor_datetime: datetime.datetime | None
+    publish_datetimes: tuple[datetime.datetime, ...]
 
 
 GUEST_ROLE_STARTERS = {
@@ -230,8 +230,8 @@ def stage_downloads_to_raw() -> None:
 
     Cases:
     - Downloads has media, raw/ is empty: move everything in and proceed.
-    - Both Downloads and raw/ have media: refuse and ask the operator to clean
-      up raw/ first, so a re-run never mixes old and new files.
+    - Both Downloads and raw/ have media: offer to clear raw/ and replace its
+      contents with the new downloads.
     - Only raw/ has media (typical re-run): confirm proceeding with raw/
       (defaults to yes).
     - Neither has media: nothing to do; downstream resolution reports it.
@@ -247,11 +247,22 @@ def stage_downloads_to_raw() -> None:
         print(f"  {RAW_DIR}/:")
         for f in raw:
             print(f"    {os.path.basename(f)}")
-        print(
-            "\nClean up raw/ before proceeding so old and new files do not mix, "
-            "then re-run."
-        )
-        sys.exit(1)
+        answer = input(
+            "\nDelete everything currently in raw/ and move the new "
+            "Downloads files in? [Y/n]: "
+        ).strip().lower()
+        if answer in ("n", "no"):
+            print("Aborting without changing raw/ or ~/Downloads.")
+            sys.exit(0)
+
+        for entry in Path(RAW_DIR).iterdir():
+            if entry.name == ".gitignore":
+                continue
+            if entry.is_dir() and not entry.is_symlink():
+                shutil.rmtree(entry)
+            else:
+                entry.unlink()
+        print(f"Cleared {RAW_DIR}/.")
 
     if downloads:
         os.makedirs(RAW_DIR, exist_ok=True)
@@ -332,68 +343,6 @@ def publish_schedule_from_podbean_episode(
         display=publish_dt.isoformat(),
         upload_post_scheduled_date=_iso_utc_z(publish_dt),
         upload_post_timezone=None,
-    )
-
-
-def parse_publish_schedule(value: str | None, timezone_name: str | None = None) -> PublishSchedule | None:
-    """
-    Parse a future publish date for Podbean and upload-post.
-
-    Accepted values are ISO-8601 datetimes, e.g. ``2026-07-01T09:00:00Z``,
-    ``2026-07-01T11:00:00+02:00``, or a naive local time such as
-    ``2026-07-01 11:00``. Naive values use ``--schedule-timezone`` when
-    provided, otherwise the machine's local timezone.
-    """
-    raw = (value or "").strip()
-    if not raw:
-        if timezone_name:
-            raise ValueError("--schedule-timezone requires --schedule-at")
-        return None
-
-    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", raw):
-        raise ValueError("--schedule-at must include a time, e.g. 2026-07-01T09:00:00Z")
-
-    normalized = raw[:-1] + "+00:00" if raw.endswith("Z") else raw
-    try:
-        parsed = datetime.datetime.fromisoformat(normalized)
-    except ValueError as e:
-        raise ValueError(
-            f"Invalid --schedule-at value: {raw!r}. Use an ISO-8601 datetime."
-        ) from e
-
-    if parsed.tzinfo is not None and timezone_name:
-        raise ValueError(
-            "--schedule-timezone is only valid when --schedule-at has no timezone offset"
-        )
-
-    upload_post_timezone = None
-    if parsed.tzinfo is None:
-        if timezone_name:
-            try:
-                tz = ZoneInfo(timezone_name)
-            except ZoneInfoNotFoundError as e:
-                raise ValueError(f"Unknown --schedule-timezone: {timezone_name}") from e
-            podbean_dt = parsed.replace(tzinfo=tz)
-            upload_post_date = parsed.replace(microsecond=0).isoformat()
-            upload_post_timezone = timezone_name
-        else:
-            podbean_dt = parsed.replace(tzinfo=_local_timezone())
-            upload_post_date = _iso_utc_z(podbean_dt)
-    else:
-        podbean_dt = parsed
-        upload_post_date = _iso_utc_z(parsed)
-
-    podbean_dt = podbean_dt.replace(microsecond=0)
-    if podbean_dt <= datetime.datetime.now(podbean_dt.tzinfo):
-        raise ValueError("--schedule-at must be in the future")
-
-    return PublishSchedule(
-        source=raw,
-        podbean_timestamp=int(podbean_dt.timestamp()),
-        podbean_datetime=podbean_dt,
-        display=podbean_dt.isoformat(),
-        upload_post_scheduled_date=upload_post_date,
-        upload_post_timezone=upload_post_timezone,
     )
 
 
@@ -511,12 +460,16 @@ def episode_plan_from_podbean_response(data: dict, local_tz: datetime.tzinfo | N
 
     anchor_episode = None
     anchor_ts = None
+    publish_datetimes: list[datetime.datetime] = []
     for episode in episodes:
         if not isinstance(episode, dict):
             continue
         ts = _episode_publish_timestamp(episode)
         if ts is None:
             continue
+        publish_datetimes.append(
+            datetime.datetime.fromtimestamp(ts, local_tz).replace(microsecond=0)
+        )
         if anchor_ts is None or ts > anchor_ts:
             anchor_ts = ts
             anchor_episode = episode
@@ -525,84 +478,72 @@ def episode_plan_from_podbean_response(data: dict, local_tz: datetime.tzinfo | N
         if anchor_ts is not None
         else None
     )
-    return PodbeanEpisodePlan(next_episode_number, anchor_episode, anchor_datetime)
+    return PodbeanEpisodePlan(
+        next_episode_number,
+        anchor_episode,
+        anchor_datetime,
+        tuple(publish_datetimes),
+    )
 
 
-def should_prompt_for_schedule(
-    anchor_datetime: datetime.datetime | None,
+def next_available_monday(
+    episode_plan: PodbeanEpisodePlan,
     now: datetime.datetime | None = None,
-    minimum_spacing_days: int = 7,
-) -> bool:
-    if anchor_datetime is None:
-        return False
-    now = now or datetime.datetime.now(anchor_datetime.tzinfo)
-    if anchor_datetime >= now:
-        return True
-    return now - anchor_datetime < datetime.timedelta(days=minimum_spacing_days)
+) -> datetime.datetime:
+    """Return the first unoccupied Monday at 11:00 UTC after the current queue."""
+    utc = datetime.timezone.utc
+    now_utc = (now or datetime.datetime.now(utc)).astimezone(utc).replace(microsecond=0)
+    anchor_utc = (
+        episode_plan.anchor_datetime.astimezone(utc)
+        if episode_plan.anchor_datetime is not None
+        else None
+    )
+    threshold = max(now_utc, anchor_utc) if anchor_utc is not None else now_utc
+    candidate_date = threshold.date() + datetime.timedelta(
+        days=(-threshold.weekday()) % 7
+    )
+    candidate = datetime.datetime.combine(
+        candidate_date,
+        datetime.time(hour=11),
+        tzinfo=utc,
+    )
+    if candidate <= threshold:
+        candidate += datetime.timedelta(days=7)
+
+    occupied_dates = {
+        publish_dt.astimezone(utc).date()
+        for publish_dt in episode_plan.publish_datetimes
+    }
+    while candidate.date() in occupied_dates:
+        candidate += datetime.timedelta(days=7)
+    return candidate
 
 
-def prompt_schedule_after_anchor(
-    anchor_episode: dict,
-    anchor_datetime: datetime.datetime,
+def prompt_publish_action(
+    episode_plan: PodbeanEpisodePlan,
     input_func=input,
+    now: datetime.datetime | None = None,
 ) -> PublishSchedule | None:
-    """Ask whether to schedule relative to latest published/scheduled episode."""
-    now = datetime.datetime.now(anchor_datetime.tzinfo)
-    delta = anchor_datetime - now
-    if delta.total_seconds() >= 0:
-        relation = f"scheduled {max(0, math.ceil(delta.total_seconds() / 86400))} day(s) from now"
-    else:
-        relation = f"published {max(0, math.floor((-delta).total_seconds() / 86400))} day(s) ago"
-
-    print("\nEpisode spacing")
-    print(
-        f"Latest published/scheduled Podbean episode: {_episode_display_title(anchor_episode)} "
-        f"at {anchor_datetime.isoformat()} ({relation})."
-    )
-    default_datetime = (anchor_datetime + datetime.timedelta(days=7)).replace(
-        microsecond=0
-    )
-    print("Enter the number of days after that episode to schedule this one.")
-    print(
-        f"  Example: 7 → {default_datetime.isoformat()}\n"
-        "  Press Enter to not schedule and choose draft or immediate publication."
-    )
-
-    raw_days: str | None = None
-    while raw_days is None:
+    """Choose between the next available Monday and immediate publication."""
+    candidate = next_available_monday(episode_plan, now=now)
+    print("\nPublishing action — choose what happens when the episode is created:")
+    print(f"  [Enter/s] Schedule for {candidate:%A, %d %B %Y at %H:%M UTC}")
+    print("  [p]       Publish immediately")
+    while True:
         print("> ", end="", flush=True)
         try:
             choice = input_func().strip().lower()
         except EOFError:
-            print("\nNo input received; not scheduling this episode.")
-            return None
-        if choice in ("", "n", "no"):
-            return None
-        # Keep `y` compatible with the old prompt by treating it as the
-        # displayed seven-day default. Numeric input schedules directly.
-        raw_days = "7" if choice in ("y", "yes") else choice
-        try:
-            days = float(raw_days)
-        except ValueError:
-            print("Please enter a number of days, for example 8, or press Enter.")
-            raw_days = None
-            continue
-        if days <= 0:
-            print("Please enter a positive number of days.")
-            raw_days = None
-            continue
-        candidate = (anchor_datetime + datetime.timedelta(days=days)).replace(microsecond=0)
-        if candidate <= datetime.datetime.now(candidate.tzinfo):
-            print(
-                f"That would schedule at {candidate.isoformat()}, which is not in the future. "
-                "Enter a larger number of days."
+            print("\nNo input received; using the default schedule.")
+            choice = ""
+        if choice in ("", "s", "schedule"):
+            return publish_schedule_from_datetime(
+                candidate,
+                "next available Monday at 11:00 UTC",
             )
-            raw_days = None
-            continue
-        return publish_schedule_from_datetime(
-            candidate,
-            f"{days:g} days after {_episode_display_title(anchor_episode)}",
-        )
+        if choice in ("p", "publish", "y", "yes"):
+            return None
+        print("Please press Enter to schedule, or enter 'p' to publish immediately.")
 
 
 def build_youtube_description_plain(teaser: str, episode_number: int, title_short: str) -> str:
@@ -1015,44 +956,9 @@ def update_podbean_episode(access_token, episode_id, content, title, status="pub
     return response.json()
 
 
-def prompt_podbean_episode_status(input_func=input) -> str:
-    """Ask whether the new Podbean episode should publish immediately or stay draft."""
-    print("\nPodbean action — choose what happens when the episode is created:")
-    print("  [Enter/d] Save as draft (not publicly visible)")
-    print("  [p]       Publish immediately")
-    while True:
-        print("> ", end="", flush=True)
-        try:
-            choice = input_func().strip().lower()
-        except EOFError:
-            print("\nNo input received; keeping Podbean episode in draft mode.")
-            return "draft"
-
-        if choice in ("", "d", "draft"):
-            print("✓ Podbean action selected: save as draft")
-            return "draft"
-        if choice in ("p", "publish", "y", "yes"):
-            print("✓ Podbean action selected: publish immediately")
-            return "publish"
-        print("Please enter 'd' for draft or 'p' for publish.")
-
-
-def resolve_podbean_episode_status(status_arg: str) -> str:
-    """Resolve CLI status selection; prompts only for the interactive default."""
-    status = (status_arg or "ask").strip().lower()
-    if status == "ask":
-        return prompt_podbean_episode_status()
-    if status in ("draft", "publish"):
-        return status
-    raise ValueError(f"Unsupported Podbean status: {status_arg}")
-
-
-def podbean_creation_status(
-    requested_status: str,
-    publish_schedule: PublishSchedule | None,
-) -> str:
+def podbean_creation_status(publish_schedule: PublishSchedule | None) -> str:
     """Podbean schedules future episodes as drafts with a publish timestamp."""
-    return "draft" if publish_schedule is not None else requested_status
+    return "draft" if publish_schedule is not None else "publish"
 
 
 def parse_args():
@@ -1077,25 +983,6 @@ def parse_args():
         type=int,
         default=None,
         help="Resume an existing numbered episode instead of choosing the next Podbean number",
-    )
-    p.add_argument(
-        "--podbean-status",
-        choices=("ask", "draft", "publish"),
-        default="ask",
-        help="Podbean episode status: ask at publish time (default), draft, or publish",
-    )
-    p.add_argument(
-        "--schedule-at",
-        default=None,
-        help=(
-            "Future publish datetime for Podbean and upload-post YouTube, "
-            "e.g. 2026-07-01T09:00:00Z or '2026-07-01 11:00'"
-        ),
-    )
-    p.add_argument(
-        "--schedule-timezone",
-        default=None,
-        help="IANA timezone for naive --schedule-at values, e.g. Europe/Madrid",
     )
     p.add_argument("--youtube", default="", help="Embed URL — skip upload-post upload")
     p.add_argument("--video", default=None, help="Path to mp4/mov/mkv (default: same stem as audio in raw/)")
@@ -1395,13 +1282,7 @@ def process_audio(audio_path: str, args, client: OpenAI) -> None:
         print("Error: PODBEAN_CLIENT_ID and PODBEAN_CLIENT_SECRET must be set")
         sys.exit(1)
 
-    try:
-        publish_schedule = parse_publish_schedule(args.schedule_at, args.schedule_timezone)
-    except ValueError as e:
-        print(f"Error: {e}")
-        sys.exit(1)
-    if publish_schedule:
-        print(f"✓ Episode will be scheduled for: {publish_schedule.display}")
+    publish_schedule = None
 
     print("Authenticating with Podbean...")
     auth_token = get_podbean_auth_token(client_id, client_secret)
@@ -1428,15 +1309,7 @@ def process_audio(audio_path: str, args, client: OpenAI) -> None:
     else:
         print(f"✓ Next episode number (from Podbean episodes): {episode_number}")
 
-    if existing_episode and (
-        args.schedule_at is not None or args.podbean_status != "ask"
-    ):
-        print(
-            "Error: publishing options cannot be applied while reusing an existing "
-            "Podbean episode; update it in Podbean or resume without those options"
-        )
-        sys.exit(1)
-    if existing_episode and publish_schedule is None:
+    if existing_episode:
         publish_schedule = publish_schedule_from_podbean_episode(existing_episode)
         if publish_schedule:
             print(f"✓ Preserved existing Podbean schedule: {publish_schedule.display}")
@@ -1605,23 +1478,15 @@ def process_audio(audio_path: str, args, client: OpenAI) -> None:
         f.write(description)
     print("✓ Description saved")
 
-    # Scheduling is a publishing decision. Ask only after all reusable content
-    # checkpoints have been loaded so a resumed run is visibly resumed first.
-    if (
-        publish_schedule is None
-        and existing_episode is None
-        and args.schedule_at is None
-        and args.podbean_status == "ask"
-        and should_prompt_for_schedule(episode_plan.anchor_datetime)
-    ):
-        publish_schedule = prompt_schedule_after_anchor(
-            episode_plan.anchor_episode or {},
-            episode_plan.anchor_datetime,
-        )
+    # Ask only after all reusable content checkpoints have been loaded so a
+    # resumed run is visibly resumed first. Existing Podbean episodes retain
+    # their current state and do not prompt.
+    if existing_episode is None:
+        publish_schedule = prompt_publish_action(episode_plan)
         if publish_schedule:
             print(f"✓ Episode will be published on: {publish_schedule.display}")
         else:
-            print("✓ No schedule selected; choose draft or immediate publication next")
+            print("✓ Episode will be published immediately")
 
     full_title = f"#{episode_number} - {title}"
 
@@ -1635,13 +1500,7 @@ def process_audio(audio_path: str, args, client: OpenAI) -> None:
     if existing_episode:
         podbean_status = str(existing_episode.get("status") or "existing")
     else:
-        if publish_schedule and args.podbean_status == "draft":
-            print("Error: --schedule-at cannot be combined with --podbean-status draft")
-            sys.exit(1)
-        if publish_schedule:
-            podbean_status = "publish"
-        else:
-            podbean_status = resolve_podbean_episode_status(args.podbean_status)
+        podbean_status = "publish"
 
     if existing_episode:
         print(f"\n✓ Reusing existing Podbean {_episode_display_title(existing_episode)}")
@@ -1692,7 +1551,7 @@ def process_audio(audio_path: str, args, client: OpenAI) -> None:
             extended_description,
             episode_number,
             media_key=media_key,
-            status=podbean_creation_status(podbean_status, publish_schedule),
+            status=podbean_creation_status(publish_schedule),
             publish_timestamp=publish_schedule.podbean_timestamp if publish_schedule else None,
         )
         if args.verbose:

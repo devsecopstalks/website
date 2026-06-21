@@ -1,6 +1,6 @@
 ## DevSecOps Talks — podcast publish pipeline
 
-End-to-end flow: drop an MP3 in `raw/`, run `./do.sh` (or `uv run python podbean.py`), transcribe with OpenAI, generate a long-form episode article with **Claude Code** (draft + revisions) and **Codex** (adversarial review until `GOOD_TO_GO`), pick title and short teaser with **Codex**, upload audio to **Podbean**, ask whether the Podbean episode should publish now or stay in draft mode, optionally schedule it for the future, optionally upload video to **YouTube** via [upload-post.com](https://upload-post.com), and write `content/episodes/NNN-slug.md`.
+End-to-end flow: drop an MP3 in `raw/`, run `bash do.sh`, transcribe with OpenAI, generate a long-form episode article with **Claude Code** (draft + revisions) and **Codex** (adversarial review until `GOOD_TO_GO`), pick title and short teaser with **Codex**, upload audio to **Podbean**, choose between the next available Monday at 11:00 UTC or immediate publication, optionally upload video to **YouTube** via [upload-post.com](https://upload-post.com), and write `content/episodes/NNN-slug.md`.
 
 Checkpoint files live under `out/episodeNNN-*` (NNN = next Podbean episode number at run start) so you can resume after interruptions. The next number is calculated from the highest existing Podbean episode number, so future scheduled episodes are included.
 
@@ -89,16 +89,16 @@ A successful embed URL is cached in `out/episodeNNN-youtube-url.txt` for reruns.
 
 ### Scheduling
 
-Use `--schedule-at` to publish Podbean and the optional upload-post YouTube video in the future. The value must be an ISO-8601 datetime in the future:
+The supported publishing workflow is interactive through `bash do.sh`. Every new episode offers one choice:
 
-```bash
-uv run podbean.py -f raw/ep.mp3 --schedule-at 2026-07-01T09:00:00Z
-uv run podbean.py -f raw/ep.mp3 --schedule-at "2026-07-01 11:00" --schedule-timezone Europe/Madrid
-```
+- Press Enter (or enter `s`) to schedule the episode for the next available Monday at **11:00 UTC**. Scheduling is the default.
+- Enter `p` to publish immediately.
 
-For Podbean, the script sends `publish_timestamp` and uses `status=publish`. Do not combine `--schedule-at` with `--podbean-status draft`. For upload-post, the script sends `scheduled_date` and optional `timezone`; upload-post returns a scheduled `job_id`, so no YouTube embed URL exists yet. That job is cached in `out/episodeNNN-youtube-scheduled.txt` to avoid duplicate submissions on reruns. If R2 staging was used for a scheduled YouTube video, the R2 marker and object are kept until the video has actually published and an embed URL is available.
+The next available Monday is calculated after both the current time and the latest published or scheduled Podbean episode, preserving episode order. If it is Monday before 11:00 UTC, today is eligible unless another episode already occupies that Monday. Any Monday with an existing episode is skipped, regardless of that episode's publication time.
 
-When running the default `bash do.sh` flow with no scheduling flags, the script checks the latest non-draft Podbean `publish_time`, including future scheduled episodes. If that latest episode is scheduled in the future or was published less than 7 days ago, the operator is asked whether to schedule this new episode and how many days after that latest episode it should publish. The suggested spacing default is 7 days.
+Scheduled Podbean episodes are created as drafts carrying a future `publish_timestamp`. The optional upload-post YouTube video receives the same scheduled UTC datetime. upload-post returns a scheduled `job_id`, so no YouTube embed URL exists yet; that job is cached in `out/episodeNNN-youtube-scheduled.txt` to avoid duplicate submissions on reruns. If R2 staging was used, its marker and object are kept until the video has published and an embed URL is available.
+
+There are no CLI flags for overriding publication status, date, time, or timezone. Existing Podbean episodes keep their current publication state when a run resumes and do not show the publishing prompt.
 
 ### Participants (Hugo front matter)
 
@@ -122,8 +122,6 @@ Outputs are under `out/episodeNNN-*` (NNN = next Podbean episode number calculat
 uv run podbean.py -f raw/my-show.mp3 -v
 uv run python podbean.py --scan --draft-only   # stop after out/episodeNNN-article.md (NNN from Podbean)
 uv run podbean.py -f raw/ep.mp3 --skip-transcription --title "Fixed Title" --description "Short teaser"
-uv run podbean.py -f raw/ep.mp3 --podbean-status publish
-uv run podbean.py -f raw/ep.mp3 --schedule-at 2026-07-01T09:00:00Z
 uv run podbean.py -f raw/ep.mp3 --youtube-via-r2 --video raw/ep.mp4
 uv run podbean.py -f raw/ep.mp3 --episode-number 104  # resume/reuse an existing Podbean episode
 ```

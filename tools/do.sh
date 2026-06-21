@@ -11,8 +11,8 @@ fi
 
 uv sync
 
-#mv ~/Downloads/*.mp3 raw/
-#mv ~/Downloads/*.mp4 raw/
+# Staging of ~/Downloads/*.{mp3,mp4} into raw/ now happens inside podbean.py
+# (see stage_downloads_to_raw): re-run-safe and prompts when raw/ already holds files.
 
 # --no-masking: otherwise op conceals stdout/stderr substrings that match injected
 # secrets (e.g. “DevSecOps …” in title options). Alternative: export OP_RUN_NO_MASKING=1.

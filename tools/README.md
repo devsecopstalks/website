@@ -125,6 +125,7 @@ uv run podbean.py -f raw/ep.mp3 --skip-transcription --title "Fixed Title" --des
 uv run podbean.py -f raw/ep.mp3 --podbean-status publish
 uv run podbean.py -f raw/ep.mp3 --schedule-at 2026-07-01T09:00:00Z
 uv run podbean.py -f raw/ep.mp3 --youtube-via-r2 --video raw/ep.mp4
+uv run podbean.py -f raw/ep.mp3 --episode-number 104  # resume/reuse an existing Podbean episode
 ```
 
 ### YouTube description text

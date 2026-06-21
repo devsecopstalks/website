@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime
+import json
 import os
 import sys
 import tempfile
@@ -10,6 +11,7 @@ import types
 import unittest
 from contextlib import redirect_stdout
 from io import StringIO
+from pathlib import Path
 from unittest.mock import patch
 
 # Tests live under tools/tests/; package imports use tools/ on path.
@@ -141,6 +143,63 @@ class TestPodbeanTextHelpers(unittest.TestCase):
 
     def test_checkpoint_prefix(self):
         self.assertEqual(podbean.checkpoint_prefix(97), "episode097")
+
+    def test_checkpoint_source_identity_rejects_different_audio(self):
+        with tempfile.TemporaryDirectory() as directory:
+            first = Path(directory) / "first.mp3"
+            second = Path(directory) / "second.mp3"
+            first.write_bytes(b"first recording")
+            second.write_bytes(b"second recording")
+            out_base = str(Path(directory) / "episode104")
+
+            podbean.validate_or_bind_checkpoint_source(out_base, str(first), [])
+            with self.assertRaisesRegex(ValueError, "checkpoint source mismatch"):
+                podbean.validate_or_bind_checkpoint_source(out_base, str(second), [])
+
+    def test_legacy_checkpoint_source_requires_confirmation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            audio = Path(directory) / "episode.mp3"
+            checkpoint = Path(directory) / "episode104.txt"
+            audio.write_bytes(b"recording")
+            checkpoint.write_text("transcript")
+            out_base = str(Path(directory) / "episode104")
+
+            with self.assertRaisesRegex(ValueError, "reuse was not confirmed"):
+                podbean.validate_or_bind_checkpoint_source(
+                    out_base,
+                    str(audio),
+                    [checkpoint],
+                    input_func=lambda: "",
+                )
+            podbean.validate_or_bind_checkpoint_source(
+                out_base,
+                str(audio),
+                [checkpoint],
+                input_func=lambda: "y",
+            )
+            self.assertEqual(
+                json.loads(Path(f"{out_base}-source.json").read_text())["filename"],
+                "episode.mp3",
+            )
+
+    def test_infer_resume_episode_number_uses_unfinished_adjacent_checkpoint(self):
+        with tempfile.TemporaryDirectory() as out_dir, tempfile.TemporaryDirectory() as episodes_dir:
+            (Path(out_dir) / "episode104-article.md").write_text("article")
+            with (
+                patch.object(podbean, "OUT_DIR", out_dir),
+                patch.object(podbean, "EPISODES_DIR", episodes_dir),
+            ):
+                self.assertEqual(podbean.infer_resume_episode_number(105), 104)
+
+    def test_infer_resume_episode_number_ignores_completed_page(self):
+        with tempfile.TemporaryDirectory() as out_dir, tempfile.TemporaryDirectory() as episodes_dir:
+            (Path(out_dir) / "episode104-article.md").write_text("article")
+            (Path(episodes_dir) / "104-finished.md").write_text("page")
+            with (
+                patch.object(podbean, "OUT_DIR", out_dir),
+                patch.object(podbean, "EPISODES_DIR", episodes_dir),
+            ):
+                self.assertIsNone(podbean.infer_resume_episode_number(105))
 
     def test_build_youtube_description_plain_has_full_urls(self):
         text = podbean.build_youtube_description_plain(
@@ -314,6 +373,56 @@ class TestPodbeanTextHelpers(unittest.TestCase):
         self.assertEqual(podbean.resolve_podbean_episode_status("draft"), "draft")
         self.assertEqual(podbean.resolve_podbean_episode_status("publish"), "publish")
 
+    def test_scheduled_episode_is_created_as_draft(self):
+        schedule = podbean.parse_publish_schedule("2099-07-01T09:00:00Z")
+        self.assertEqual(
+            podbean.podbean_creation_status("publish", schedule),
+            "draft",
+        )
+        self.assertEqual(
+            podbean.podbean_creation_status("publish", None),
+            "publish",
+        )
+
+    def test_podbean_player_id_uses_query_parameter(self):
+        response = {
+            "episode": {
+                "player_url": (
+                    "https://www.podbean.com/media/player/abc?from=site"
+                    "&i=f9i9z-1aeab7f-pb&skin=1"
+                )
+            }
+        }
+        self.assertEqual(
+            podbean.podbean_player_id(response),
+            "f9i9z-1aeab7f-pb",
+        )
+
+    def test_podbean_player_id_falls_back_to_episode_id(self):
+        self.assertEqual(
+            podbean.podbean_player_id({"episode": {"id": "abc12-1b23456-pb"}}),
+            "abc12-1b23456-pb",
+        )
+
+    def test_podbean_player_id_reports_api_error_description(self):
+        with self.assertRaisesRegex(
+            ValueError,
+            "Podbean rejected episode creation: invalid_request: publish time is invalid",
+        ):
+            podbean.podbean_player_id(
+                {
+                    "error": "invalid_request",
+                    "error_description": "publish time is invalid",
+                }
+            )
+
+    def test_find_podbean_episode_by_numbered_title(self):
+        episode = {"id": "episode-id", "title": "#104 - Existing"}
+        self.assertIs(
+            podbean.find_podbean_episode({"episodes": [episode]}, 104),
+            episode,
+        )
+
     def test_parse_publish_schedule_aware_datetime(self):
         schedule = podbean.parse_publish_schedule("2099-07-01T09:00:00Z")
         self.assertEqual(schedule.upload_post_scheduled_date, "2099-07-01T09:00:00Z")
@@ -325,6 +434,19 @@ class TestPodbeanTextHelpers(unittest.TestCase):
         self.assertEqual(schedule.upload_post_scheduled_date, "2099-07-01T11:00:00")
         self.assertEqual(schedule.upload_post_timezone, "Europe/Madrid")
         self.assertEqual(schedule.podbean_timestamp, 4086579600)
+
+    def test_publish_schedule_from_existing_podbean_episode(self):
+        schedule = podbean.publish_schedule_from_podbean_episode(
+            {
+                "title": "#104 - Scheduled",
+                "status": "publish",
+                "publish_time": 4086579600,
+            },
+            local_tz=datetime.timezone.utc,
+        )
+        self.assertIsNotNone(schedule)
+        self.assertEqual(schedule.podbean_timestamp, 4086579600)
+        self.assertEqual(schedule.upload_post_scheduled_date, "2099-07-01T09:00:00Z")
 
     def test_create_podbean_episode_includes_publish_timestamp(self):
         with patch("podbean.requests.post") as mock_post:
@@ -363,7 +485,7 @@ class TestPodbeanTextHelpers(unittest.TestCase):
                 {
                     "title": "#200 - Draft",
                     "episode_number": 200,
-                    "publish_time": 4087184400,
+                    "publish_time": 0,
                     "status": "draft",
                 },
             ],
@@ -402,10 +524,24 @@ class TestPodbeanTextHelpers(unittest.TestCase):
             schedule = podbean.prompt_schedule_after_anchor(
                 {"title": "#104 - Scheduled", "episode_number": 104},
                 anchor,
-                input_func=iter(["y", "7"]).__next__,
+                input_func=iter(["7"]).__next__,
             )
         expected = (anchor + datetime.timedelta(days=7)).replace(microsecond=0)
         self.assertEqual(schedule.podbean_datetime, expected)
+
+    def test_prompt_schedule_accepts_days_at_first_prompt(self):
+        tz = datetime.timezone.utc
+        anchor = datetime.datetime.now(tz) + datetime.timedelta(days=2)
+        with redirect_stdout(StringIO()):
+            schedule = podbean.prompt_schedule_after_anchor(
+                {"title": "#104 - Scheduled", "episode_number": 104},
+                anchor,
+                input_func=iter(["8"]).__next__,
+            )
+        self.assertEqual(
+            schedule.podbean_datetime,
+            (anchor + datetime.timedelta(days=8)).replace(microsecond=0),
+        )
 
 
 class TestR2StagingPolicy(unittest.TestCase):

@@ -3,6 +3,8 @@
 import os
 import re
 import argparse
+import hashlib
+import json
 import requests
 import mimetypes
 import datetime
@@ -13,6 +15,7 @@ import shutil
 import math
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from openai import OpenAI
 
@@ -49,6 +52,7 @@ from youtube import (
 TOOLS_DIR = os.path.dirname(os.path.abspath(__file__))
 RAW_DIR = os.path.join(TOOLS_DIR, "raw")
 OUT_DIR = os.path.join(TOOLS_DIR, "out")
+DOWNLOADS_DIR = os.path.expanduser("~/Downloads")
 EPISODES_DIR = os.path.join(TOOLS_DIR, "..", "content", "episodes")
 
 # Default Hugo front matter when --participants is omitted (current hosts).
@@ -116,6 +120,83 @@ def checkpoint_prefix(episode_number: int) -> str:
     return f"episode{episode_number:03d}"
 
 
+def audio_source_identity(audio_path: str) -> dict:
+    """Stable identity used to prevent checkpoints crossing between recordings."""
+    digest = hashlib.sha256()
+    with open(audio_path, "rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return {
+        "filename": os.path.basename(audio_path),
+        "filesize": os.path.getsize(audio_path),
+        "sha256": digest.hexdigest(),
+    }
+
+
+def validate_or_bind_checkpoint_source(
+    out_base: str,
+    audio_path: str,
+    checkpoint_files: list[Path],
+    input_func=input,
+) -> None:
+    """Validate checkpoint ownership, prompting once for legacy checkpoint sets."""
+    source_file = f"{out_base}-source.json"
+    current = audio_source_identity(audio_path)
+
+    if os.path.isfile(source_file):
+        try:
+            with open(source_file, "r", encoding="utf-8") as f:
+                saved = json.load(f)
+        except (OSError, ValueError, TypeError) as e:
+            raise ValueError(f"cannot read checkpoint source identity: {e}") from e
+        if saved != current:
+            saved_name = str(saved.get("filename") or "unknown") if isinstance(saved, dict) else "unknown"
+            raise ValueError(
+                "checkpoint source mismatch: checkpoints belong to "
+                f"{saved_name}, selected audio is {current['filename']}"
+            )
+        print(f"✓ Checkpoint source verified: {current['filename']}")
+        return
+
+    if checkpoint_files:
+        print(
+            "\nLegacy checkpoints have no saved source identity.\n"
+            f"Reuse them with {current['filename']} ({current['filesize'] / (1024 * 1024):.1f} MB)? [y/N]"
+        )
+        print("> ", end="", flush=True)
+        try:
+            confirmed = input_func().strip().lower()
+        except EOFError:
+            confirmed = ""
+        if confirmed not in ("y", "yes"):
+            raise ValueError(
+                "checkpoint reuse was not confirmed; remove the stale episode checkpoints "
+                "or select their original audio"
+            )
+
+    with open(source_file, "w", encoding="utf-8") as f:
+        json.dump(current, f, indent=2)
+        f.write("\n")
+    print(f"✓ Checkpoint source saved: {current['filename']}")
+
+
+def infer_resume_episode_number(next_episode_number: int) -> int | None:
+    """Return the latest unfinished checkpoint set adjacent to Podbean's next number."""
+    numbers: set[int] = set()
+    if os.path.isdir(OUT_DIR):
+        for path in Path(OUT_DIR).glob("episode*"):
+            match = re.match(r"episode(\d+)(?:[.-]|$)", path.name)
+            if match:
+                numbers.add(int(match.group(1)))
+
+    for number in sorted(numbers, reverse=True):
+        # A generated page is the completion marker for the local pipeline.
+        page_exists = any(Path(EPISODES_DIR).glob(f"{number:03d}-*.md"))
+        if not page_exists and number in (next_episode_number, next_episode_number - 1):
+            return number
+    return None
+
+
 def find_companion_video(audio_path: str) -> str | None:
     """Return path to a video next to the audio with the same filename prefix (stem)."""
     p = Path(audio_path).resolve()
@@ -132,6 +213,63 @@ def find_mp3_files_in_raw() -> list[str]:
     if not os.path.isdir(RAW_DIR):
         return []
     return sorted(str(f) for f in Path(RAW_DIR).glob("*.mp3"))
+
+
+def _media_files_in(directory: str) -> list[str]:
+    """Return sorted mp3/mp4 files in ``directory`` (empty if it does not exist)."""
+    if not os.path.isdir(directory):
+        return []
+    found: list[str] = []
+    for pattern in ("*.mp3", "*.mp4"):
+        found.extend(str(f) for f in Path(directory).glob(pattern))
+    return sorted(found)
+
+
+def stage_downloads_to_raw() -> None:
+    """Move new mp3/mp4 from ~/Downloads into raw/, in a re-run-safe way.
+
+    Cases:
+    - Downloads has media, raw/ is empty: move everything in and proceed.
+    - Both Downloads and raw/ have media: refuse and ask the operator to clean
+      up raw/ first, so a re-run never mixes old and new files.
+    - Only raw/ has media (typical re-run): confirm proceeding with raw/
+      (defaults to yes).
+    - Neither has media: nothing to do; downstream resolution reports it.
+    """
+    downloads = _media_files_in(DOWNLOADS_DIR)
+    raw = _media_files_in(RAW_DIR)
+
+    if downloads and raw:
+        print(f"Found media in both ~/Downloads and {RAW_DIR}/:")
+        print("  ~/Downloads:")
+        for f in downloads:
+            print(f"    {os.path.basename(f)}")
+        print(f"  {RAW_DIR}/:")
+        for f in raw:
+            print(f"    {os.path.basename(f)}")
+        print(
+            "\nClean up raw/ before proceeding so old and new files do not mix, "
+            "then re-run."
+        )
+        sys.exit(1)
+
+    if downloads:
+        os.makedirs(RAW_DIR, exist_ok=True)
+        print(f"Moving {len(downloads)} file(s) from ~/Downloads to {RAW_DIR}/:")
+        for src in downloads:
+            dst = os.path.join(RAW_DIR, os.path.basename(src))
+            shutil.move(src, dst)
+            print(f"    {os.path.basename(src)}")
+        return
+
+    if raw:
+        print(f"No new media in ~/Downloads. Found {len(raw)} file(s) in {RAW_DIR}/:")
+        for f in raw:
+            print(f"    {os.path.basename(f)}")
+        answer = input("Proceed with files in raw/? [Y/n]: ").strip().lower()
+        if answer in ("n", "no"):
+            print("Aborting.")
+            sys.exit(0)
 
 
 def yaml_escape_double_quoted(s: str) -> str:
@@ -171,6 +309,28 @@ def publish_schedule_from_datetime(dt: datetime.datetime, source: str) -> Publis
         podbean_datetime=dt,
         display=dt.isoformat(),
         upload_post_scheduled_date=_iso_utc_z(dt),
+        upload_post_timezone=None,
+    )
+
+
+def publish_schedule_from_podbean_episode(
+    episode: dict,
+    local_tz: datetime.tzinfo | None = None,
+) -> PublishSchedule | None:
+    """Recover a future schedule from an existing Podbean episode."""
+    timestamp = _episode_publish_timestamp(episode)
+    if timestamp is None:
+        return None
+    local_tz = local_tz or _local_timezone()
+    publish_dt = datetime.datetime.fromtimestamp(timestamp, local_tz).replace(microsecond=0)
+    if publish_dt <= datetime.datetime.now(local_tz):
+        return None
+    return PublishSchedule(
+        source=f"existing Podbean {_episode_display_title(episode)}",
+        podbean_timestamp=timestamp,
+        podbean_datetime=publish_dt,
+        display=publish_dt.isoformat(),
+        upload_post_scheduled_date=_iso_utc_z(publish_dt),
         upload_post_timezone=None,
     )
 
@@ -258,12 +418,66 @@ def _episode_number_value(episode: dict) -> int | None:
     return _episode_number_from_title(str(episode.get("title") or ""))
 
 
-def _episode_publish_timestamp(episode: dict) -> int | None:
-    if str(episode.get("status") or "").strip().lower() == "draft":
+def find_podbean_episode(data: dict, episode_number: int) -> dict | None:
+    """Find an episode by its explicit number or numbered title."""
+    episodes = data.get("episodes") if isinstance(data, dict) else None
+    if not isinstance(episodes, list):
         return None
+    return next(
+        (
+            episode
+            for episode in episodes
+            if isinstance(episode, dict)
+            and _episode_number_value(episode) == episode_number
+        ),
+        None,
+    )
+
+
+def podbean_player_id(response_or_episode: dict) -> str:
+    """Extract the value accepted by the Podbean single-episode player."""
+    if not isinstance(response_or_episode, dict):
+        raise ValueError("Podbean response is not an object")
+    if response_or_episode.get("error") or response_or_episode.get("error_description"):
+        error = str(response_or_episode.get("error") or "API error").strip()
+        description = str(response_or_episode.get("error_description") or "").strip()
+        detail = ": ".join(part for part in (error, description) if part)
+        detail = " ".join(detail.split())[:500]
+        raise ValueError(f"Podbean rejected episode creation: {detail}")
+    wrapped = response_or_episode.get("episode")
+    episode = wrapped if isinstance(wrapped, dict) else response_or_episode
+
+    player_url = str(episode.get("player_url") or "").strip()
+    if player_url:
+        parsed = urlparse(player_url)
+        query_id = (parse_qs(parsed.query).get("i") or [""])[0].strip()
+        if query_id:
+            return query_id
+        path_match = re.search(r"/media/player/([^/?#]+)", parsed.path)
+        if path_match:
+            return path_match.group(1)
+
+    # Podbean's Episode object defines `id` as the unique episode identifier.
+    # Draft creation responses may omit player_url, while the identifier is
+    # still valid for the single-episode player URL used by our shortcode.
+    episode_id = str(episode.get("id") or "").strip()
+    if episode_id:
+        return episode_id
+
+    keys = ", ".join(sorted(str(key) for key in episode)) or "none"
+    raise ValueError(f"Podbean episode has no player_url or id (fields: {keys})")
+
+
+def _episode_publish_timestamp(episode: dict) -> int | None:
+    status = str(episode.get("status") or "").strip().lower()
     for key in ("publish_time", "publish_timestamp", "published_at"):
         value = _coerce_int(episode.get(key))
         if value is not None and value > 0:
+            # Podbean stores scheduled episodes as drafts carrying a future
+            # publish timestamp. Ignore ordinary drafts whose timestamp is not
+            # in the future, but retain scheduled drafts as timeline anchors.
+            if status == "draft" and value <= int(datetime.datetime.now().timestamp()):
+                return None
             return value
     return None
 
@@ -345,33 +559,37 @@ def prompt_schedule_after_anchor(
         f"Latest published/scheduled Podbean episode: {_episode_display_title(anchor_episode)} "
         f"at {anchor_datetime.isoformat()} ({relation})."
     )
-    print("Schedule this episode relative to that latest episode? [y/N]")
-    print("> ", end="", flush=True)
-    try:
-        choice = input_func().strip().lower()
-    except EOFError:
-        print("\nNo input received; not scheduling this episode.")
-        return None
-    if choice not in ("y", "yes"):
-        return None
+    default_datetime = (anchor_datetime + datetime.timedelta(days=7)).replace(
+        microsecond=0
+    )
+    print("Enter the number of days after that episode to schedule this one.")
+    print(
+        f"  Example: 7 → {default_datetime.isoformat()}\n"
+        "  Press Enter to not schedule and choose draft or immediate publication."
+    )
 
-    while True:
-        print("How many days after that episode should this one publish? [7]")
+    raw_days: str | None = None
+    while raw_days is None:
         print("> ", end="", flush=True)
         try:
-            raw_days = input_func().strip()
+            choice = input_func().strip().lower()
         except EOFError:
-            raw_days = ""
-        if not raw_days:
-            days = 7.0
-        else:
-            try:
-                days = float(raw_days)
-            except ValueError:
-                print("Please enter a number of days, for example 7.")
-                continue
+            print("\nNo input received; not scheduling this episode.")
+            return None
+        if choice in ("", "n", "no"):
+            return None
+        # Keep `y` compatible with the old prompt by treating it as the
+        # displayed seven-day default. Numeric input schedules directly.
+        raw_days = "7" if choice in ("y", "yes") else choice
+        try:
+            days = float(raw_days)
+        except ValueError:
+            print("Please enter a number of days, for example 8, or press Enter.")
+            raw_days = None
+            continue
         if days <= 0:
             print("Please enter a positive number of days.")
+            raw_days = None
             continue
         candidate = (anchor_datetime + datetime.timedelta(days=days)).replace(microsecond=0)
         if candidate <= datetime.datetime.now(candidate.tzinfo):
@@ -379,6 +597,7 @@ def prompt_schedule_after_anchor(
                 f"That would schedule at {candidate.isoformat()}, which is not in the future. "
                 "Enter a larger number of days."
             )
+            raw_days = None
             continue
         return publish_schedule_from_datetime(
             candidate,
@@ -716,11 +935,13 @@ def get_podbean_upload_link(access_token, filename, filesize, content_type="mp3"
 # curl -v -H "Content-Type: image/jpeg" -T /your/path/file.ext "PRESIGNED_URL"
 def upload_file_to_podbean(url, filepath):
     with open(filepath, "rb") as f:
-        return requests.put(
+        response = requests.put(
             url,
             headers={"Content-Type": mimetypes.guess_type(filepath)[0]},
             data=f,
         )
+    response.raise_for_status()
+    return response
 
 # convert title into url safe string
 def title_to_url_safe(title):
@@ -796,10 +1017,9 @@ def update_podbean_episode(access_token, episode_id, content, title, status="pub
 
 def prompt_podbean_episode_status(input_func=input) -> str:
     """Ask whether the new Podbean episode should publish immediately or stay draft."""
-    print("\nPodbean episode status")
-    print("Publish the Podbean episode now, or keep it in draft mode?")
-    print("  [d] draft (default)")
-    print("  [p] publish")
+    print("\nPodbean action — choose what happens when the episode is created:")
+    print("  [Enter/d] Save as draft (not publicly visible)")
+    print("  [p]       Publish immediately")
     while True:
         print("> ", end="", flush=True)
         try:
@@ -809,8 +1029,10 @@ def prompt_podbean_episode_status(input_func=input) -> str:
             return "draft"
 
         if choice in ("", "d", "draft"):
+            print("✓ Podbean action selected: save as draft")
             return "draft"
         if choice in ("p", "publish", "y", "yes"):
+            print("✓ Podbean action selected: publish immediately")
             return "publish"
         print("Please enter 'd' for draft or 'p' for publish.")
 
@@ -823,6 +1045,14 @@ def resolve_podbean_episode_status(status_arg: str) -> str:
     if status in ("draft", "publish"):
         return status
     raise ValueError(f"Unsupported Podbean status: {status_arg}")
+
+
+def podbean_creation_status(
+    requested_status: str,
+    publish_schedule: PublishSchedule | None,
+) -> str:
+    """Podbean schedules future episodes as drafts with a publish timestamp."""
+    return "draft" if publish_schedule is not None else requested_status
 
 
 def parse_args():
@@ -842,6 +1072,12 @@ def parse_args():
     p.add_argument("--description", default=None, help="Short teaser (skip Codex description picker)")
     p.add_argument("--guidance", default=None, help="Editorial angle for drafting/review")
     p.add_argument("--draft-only", action="store_true", help="Stop after article checkpoints in out/")
+    p.add_argument(
+        "--episode-number",
+        type=int,
+        default=None,
+        help="Resume an existing numbered episode instead of choosing the next Podbean number",
+    )
     p.add_argument(
         "--podbean-status",
         choices=("ask", "draft", "publish"),
@@ -1173,24 +1409,60 @@ def process_audio(audio_path: str, args, client: OpenAI) -> None:
 
     podbean_episode_data = get_podbean_episodes(auth_token)
     episode_plan = episode_plan_from_podbean_response(podbean_episode_data)
-    episode_number = episode_plan.next_episode_number
-    print(f"✓ Next episode number (from Podbean episodes): {episode_number}")
+    if args.episode_number is not None and args.episode_number < 1:
+        print("Error: --episode-number must be greater than zero")
+        sys.exit(1)
+    inferred_resume = (
+        None
+        if args.episode_number is not None or args.scan
+        else infer_resume_episode_number(episode_plan.next_episode_number)
+    )
+    episode_number = (
+        args.episode_number or inferred_resume or episode_plan.next_episode_number
+    )
+    existing_episode = find_podbean_episode(podbean_episode_data, episode_number)
+    if args.episode_number is not None:
+        print(f"✓ Resuming episode number: {episode_number}")
+    elif inferred_resume is not None:
+        print(f"✓ Automatically resuming unfinished episode #{episode_number}")
+    else:
+        print(f"✓ Next episode number (from Podbean episodes): {episode_number}")
 
-    if (
-        publish_schedule is None
-        and args.schedule_at is None
-        and args.podbean_status == "ask"
-        and should_prompt_for_schedule(episode_plan.anchor_datetime)
+    if existing_episode and (
+        args.schedule_at is not None or args.podbean_status != "ask"
     ):
-        publish_schedule = prompt_schedule_after_anchor(
-            episode_plan.anchor_episode or {},
-            episode_plan.anchor_datetime,
+        print(
+            "Error: publishing options cannot be applied while reusing an existing "
+            "Podbean episode; update it in Podbean or resume without those options"
         )
+        sys.exit(1)
+    if existing_episode and publish_schedule is None:
+        publish_schedule = publish_schedule_from_podbean_episode(existing_episode)
         if publish_schedule:
-            print(f"✓ Episode will be scheduled for: {publish_schedule.display}")
+            print(f"✓ Preserved existing Podbean schedule: {publish_schedule.display}")
 
     out_base = os.path.join(OUT_DIR, checkpoint_prefix(episode_number))
     print(f"✓ Checkpoints under: {out_base}-*.txt|.md")
+
+    checkpoint_files = sorted(Path(OUT_DIR).glob(f"{checkpoint_prefix(episode_number)}*"))
+    # The source marker itself is metadata, not evidence of reusable content.
+    reusable_checkpoint_files = [
+        path for path in checkpoint_files if path.name != f"{checkpoint_prefix(episode_number)}-source.json"
+    ]
+    try:
+        validate_or_bind_checkpoint_source(
+            out_base,
+            audio_path,
+            reusable_checkpoint_files,
+        )
+    except ValueError as e:
+        print(f"Error: {e}")
+        sys.exit(1)
+    if reusable_checkpoint_files:
+        print(
+            f"✓ Found {len(reusable_checkpoint_files)} existing checkpoint file(s); "
+            f"resuming episode #{episode_number}"
+        )
 
     transcript_file = f"{out_base}.txt"
     title_file = f"{out_base}-title.txt"
@@ -1200,6 +1472,7 @@ def process_audio(audio_path: str, args, client: OpenAI) -> None:
     youtube_url_file = f"{out_base}-youtube-url.txt"
     youtube_scheduled_file = f"{out_base}-youtube-scheduled.txt"
     youtube_staging_marker = f"{out_base}-r2-youtube-staging.txt"
+    podbean_upload_checkpoint = f"{out_base}-podbean-upload.json"
 
     # Editorial guidance
     guidance = args.guidance
@@ -1332,18 +1605,25 @@ def process_audio(audio_path: str, args, client: OpenAI) -> None:
         f.write(description)
     print("✓ Description saved")
 
-    full_title = f"#{episode_number} - {title}"
+    # Scheduling is a publishing decision. Ask only after all reusable content
+    # checkpoints have been loaded so a resumed run is visibly resumed first.
+    if (
+        publish_schedule is None
+        and existing_episode is None
+        and args.schedule_at is None
+        and args.podbean_status == "ask"
+        and should_prompt_for_schedule(episode_plan.anchor_datetime)
+    ):
+        publish_schedule = prompt_schedule_after_anchor(
+            episode_plan.anchor_episode or {},
+            episode_plan.anchor_datetime,
+        )
+        if publish_schedule:
+            print(f"✓ Episode will be published on: {publish_schedule.display}")
+        else:
+            print("✓ No schedule selected; choose draft or immediate publication next")
 
-    # Podbean upload
-    print("\nUploading audio to Podbean...")
-    file_size = os.path.getsize(audio_path)
-    episode_file_name_mp3 = f"{episode_number:03d}-{title_to_url_safe(title)}.mp3"
-    presigned_url_response = get_podbean_upload_link(auth_token, episode_file_name_mp3, file_size)
-    presigned_url = presigned_url_response["presigned_url"]
-    media_key = presigned_url_response["file_key"]
-    print(f"Uploading {episode_file_name_mp3} ({file_size / (1024*1024):.1f} MB)...")
-    upload_file_to_podbean(presigned_url, audio_path)
-    print("✓ Audio uploaded")
+    full_title = f"#{episode_number} - {title}"
 
     extended_description = (
         f"{description}<p>&nbsp;</p>"
@@ -1352,32 +1632,76 @@ def process_audio(audio_path: str, args, client: OpenAI) -> None:
         "<p><a href='https://devsecops.fm/'>DevSecOps Talks podcast website</a></p>"
         "<p><a href='https://youtube.com/channel/UCRjpE9xKxZeBkRgYiLErEjw'>DevSecOps Talks podcast YouTube channel</a></p>"
     )
-    if publish_schedule and args.podbean_status == "draft":
-        print("Error: --schedule-at cannot be combined with --podbean-status draft")
-        sys.exit(1)
-    if publish_schedule:
-        podbean_status = "publish"
+    if existing_episode:
+        podbean_status = str(existing_episode.get("status") or "existing")
     else:
-        podbean_status = resolve_podbean_episode_status(args.podbean_status)
+        if publish_schedule and args.podbean_status == "draft":
+            print("Error: --schedule-at cannot be combined with --podbean-status draft")
+            sys.exit(1)
+        if publish_schedule:
+            podbean_status = "publish"
+        else:
+            podbean_status = resolve_podbean_episode_status(args.podbean_status)
 
-    create_episode_response = create_podbean_episode(
-        auth_token,
-        full_title,
-        extended_description,
-        episode_number,
-        media_key=media_key,
-        status=podbean_status,
-        publish_timestamp=publish_schedule.podbean_timestamp if publish_schedule else None,
-    )
-    if args.verbose:
-        print(create_episode_response)
+    if existing_episode:
+        print(f"\n✓ Reusing existing Podbean {_episode_display_title(existing_episode)}")
+        podbean_id = podbean_player_id(existing_episode)
+    else:
+        if args.episode_number is not None:
+            print(f"\nNo existing Podbean episode #{episode_number}; creating it.")
+        else:
+            print("\nUploading audio to Podbean...")
+        file_size = os.path.getsize(audio_path)
+        episode_file_name_mp3 = f"{episode_number:03d}-{title_to_url_safe(title)}.mp3"
+        media_key = ""
+        if os.path.isfile(podbean_upload_checkpoint):
+            try:
+                with open(podbean_upload_checkpoint, "r", encoding="utf-8") as f:
+                    saved_upload = json.load(f)
+                if (
+                    saved_upload.get("filename") == episode_file_name_mp3
+                    and saved_upload.get("filesize") == file_size
+                ):
+                    media_key = str(saved_upload.get("media_key") or "")
+            except (OSError, ValueError, TypeError):
+                media_key = ""
+        if media_key:
+            print(f"✓ Reusing previously uploaded Podbean audio: {episode_file_name_mp3}")
+        else:
+            presigned_url_response = get_podbean_upload_link(
+                auth_token, episode_file_name_mp3, file_size
+            )
+            presigned_url = presigned_url_response["presigned_url"]
+            media_key = presigned_url_response["file_key"]
+            print(f"Uploading {episode_file_name_mp3} ({file_size / (1024*1024):.1f} MB)...")
+            upload_file_to_podbean(presigned_url, audio_path)
+            with open(podbean_upload_checkpoint, "w", encoding="utf-8") as f:
+                json.dump(
+                    {
+                        "filename": episode_file_name_mp3,
+                        "filesize": file_size,
+                        "media_key": media_key,
+                    },
+                    f,
+                )
+            print("✓ Audio uploaded and checkpointed")
 
-    podbean_id = create_episode_response["episode"]["player_url"].split("=")[-1]
-    if publish_schedule:
-        print(
-            f"✓ Podbean player id: {podbean_id} "
-            f"({podbean_status}, scheduled {publish_schedule.display})"
+        create_episode_response = create_podbean_episode(
+            auth_token,
+            full_title,
+            extended_description,
+            episode_number,
+            media_key=media_key,
+            status=podbean_creation_status(podbean_status, publish_schedule),
+            publish_timestamp=publish_schedule.podbean_timestamp if publish_schedule else None,
         )
+        if args.verbose:
+            print(create_episode_response)
+        podbean_id = podbean_player_id(create_episode_response)
+        if os.path.isfile(podbean_upload_checkpoint):
+            os.remove(podbean_upload_checkpoint)
+    if publish_schedule:
+        print(f"✓ Podbean player id: {podbean_id} (scheduled {publish_schedule.display})")
     else:
         print(f"✓ Podbean player id: {podbean_id} ({podbean_status})")
 
@@ -1573,7 +1897,14 @@ def main():
         sys.exit(1)
     client = OpenAI(api_key=api_key)
 
+    # Stage downloads into raw/ unless an explicit file path was given.
+    if not (args.filename or args.audio):
+        stage_downloads_to_raw()
+
     audio_paths = _collect_audio_paths(args)
+    if len(audio_paths) > 1 and args.episode_number is not None:
+        print("Error: --episode-number cannot be combined with multiple input files")
+        sys.exit(1)
     for ap in audio_paths:
         process_audio(ap, args, client)
 

@@ -344,7 +344,7 @@ def review_with_claude(transcript, draft, verbose=False):
         print("Skipping review — using draft as-is.")
         return draft
 
-    print("Reviewing draft with Claude (Opus 4.6)...")
+    print("Reviewing draft with Claude (Opus 5)...")
 
     # Build the prompt with both transcript and draft
     prompt = f"""{CLAUDE_REVIEW_PROMPT}
@@ -360,7 +360,7 @@ def review_with_claude(transcript, draft, verbose=False):
     cmd = [
         "claude",
         "--print",
-        "--model", "opus",
+        "--model", "claude-opus-5",
         "--allowedTools", "WebSearch", "WebFetch",
         "-p", "Process the input provided on stdin.",
     ]

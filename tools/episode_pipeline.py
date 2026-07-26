@@ -66,7 +66,7 @@ def run_claude(prompt: str, verbose=False, allow_web=False, fatal: bool = True) 
     cmd = [
         "claude",
         "--print",
-        "--model", "opus",
+        "--model", "claude-opus-5",
         "--add-dir", EPISODES_DIR,
         "--add-dir", REPO_ROOT,
     ]
@@ -121,6 +121,8 @@ def run_codex(prompt: str, stdin_text: str = "", verbose=False) -> str:
         cmd = [
             "codex",
             "exec",
+            "--model",
+            "gpt-5.6-sol",
             "-o",
             tmp_path,
             "--full-auto",

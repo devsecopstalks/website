@@ -11,7 +11,7 @@ CLI tools:
 - [uv](https://docs.astral.sh/uv/) — Python dependencies
 - [ffmpeg](https://ffmpeg.org/) + ffprobe — audio chunking for transcription
 - [claude](https://docs.anthropic.com/en/docs/claude-code) — Claude Code (draft + revise)
-- [codex](https://github.com/openai/codex) — Codex CLI (review, titles, descriptions)
+- [codex](https://github.com/openai/codex) — Codex CLI (review, titles, descriptions). Every call uses `--sandbox read-only -C <repo root>` with `gpt-6-astra` by default.
 - [op](https://developer.1password.com/docs/cli/) — optional; `do.sh` uses it when `.env` is present
 
 Environment variables (often injected via 1Password `op run --env-file=./.env`):
@@ -20,6 +20,8 @@ Environment variables (often injected via 1Password `op run --env-file=./.env`):
 |----------|---------|
 | `OPENAI_API_KEY` | Transcription |
 | `PODBEAN_CLIENT_ID` / `PODBEAN_CLIENT_SECRET` | Podbean API |
+| `CODEX_MODEL` | Optional; model for every Codex review, title, and description call (default `gpt-6-astra`) |
+| `CODEX_TIMEOUT_S` | Optional; timeout in seconds for every Codex call (default `900`). Increase for longer articles |
 | `UPLOAD_POST_API_KEY` / `UPLOAD_POST_USER` | YouTube upload via upload-post (optional) |
 | `UPLOAD_PROGRESS` | Optional; default on (`1`). Set to `0`, `false`, `no`, or `off` to silence MiB/% progress lines for R2 and upload-post multipart uploads |
 | `UPLOAD_POST_CONNECT_TIMEOUT_S` / `UPLOAD_POST_READ_TIMEOUT_MULTIPART_S` / `UPLOAD_POST_READ_TIMEOUT_DEFAULT_S` | Optional timeouts for upload-post HTTP client (connect default 120s; multipart read default 4h; default GET/JSON read 600s) |
@@ -96,9 +98,11 @@ The supported publishing workflow is interactive through `bash do.sh`. Every new
 
 The next available Monday is calculated after both the current time and the latest published or scheduled Podbean episode, preserving episode order. If it is Monday before 11:00 UTC, today is eligible unless another episode already occupies that Monday. Any Monday with an existing episode is skipped, regardless of that episode's publication time.
 
-Scheduled Podbean episodes are created as drafts carrying a future `publish_timestamp`. The optional upload-post YouTube video receives the same scheduled UTC datetime. upload-post returns a scheduled `job_id`, so no YouTube embed URL exists yet; that job is cached in `out/episodeNNN-youtube-scheduled.txt` to avoid duplicate submissions on reruns. If R2 staging was used, its marker and object are kept until the video has published and an embed URL is available.
+Scheduled Podbean episodes are created with `status=future` and a future `publish_timestamp`, as specified by the [Podbean API](https://developers.podbean.com/podbean-api-docs/#api-Episode-Publish_New_Episode). The pipeline checks that Podbean returns that status and the requested time before continuing. `status=draft` only saves a draft, even when it carries a future timestamp. The optional upload-post YouTube video receives the same scheduled UTC datetime. upload-post returns a scheduled `job_id`, so no YouTube embed URL exists yet; that job is cached in `out/episodeNNN-youtube-scheduled.txt` to avoid duplicate submissions on reruns. If R2 staging was used, its marker and object are kept until the video has published and an embed URL is available.
 
-There are no CLI flags for overriding publication status, date, time, or timezone. Existing Podbean episodes keep their current publication state when a run resumes and do not show the publishing prompt.
+There are no CLI flags for overriding publication status, date, time, or timezone. Existing Podbean episodes keep their current publication state when a run resumes and do not show the publishing prompt. A publishing run stops if the existing episode is still a draft; `--draft-only` can still regenerate its article.
+
+**Recovering episodes created by older tooling:** those drafts are not automatically scheduled by this fix. In the Podbean dashboard, open each affected episode and use **Schedule Episode** to select a future publication time, or **Publish Now** if it is overdue and ready. Then resume locally with `--episode-number N` to reuse the existing episode and checkpoints. Future-dated drafts retain their intended queue slots until repaired. If YouTube was already scheduled, check its upload-post job separately before changing the release date; a saved YouTube job is reused and is not rescheduled by a rerun.
 
 ### Participants (Hugo front matter)
 
@@ -111,6 +115,8 @@ uv run podbean.py -f raw/ep.mp3 --participants "Paulina,Mattias,Andrey,Guest Nam
 ### Resumability
 
 Outputs are under `out/episodeNNN-*` (NNN = next Podbean episode number calculated at run start, including already scheduled episodes). The draft–review loop runs up to **10** Codex review rounds (or stops early on `GOOD_TO_GO`). Re-running reuses existing transcript, draft/review checkpoints, final article, and cached title/description when those files exist. Delete a checkpoint file to force that step to run again. Older runs may have used long MP3-stem names under `out/`; new runs use the `episodeNNN` prefix only.
+
+A failed or empty Codex response stops the pipeline before publication. Timeouts report the elapsed limit without printing the prompt. Re-run to retry the failed step using the saved checkpoints; increase `CODEX_TIMEOUT_S` if needed.
 
 ### `article.py` (legacy)
 
@@ -132,7 +138,7 @@ The upload uses **plain text** with each important **URL on its own line**. The 
 
 ### Tests
 
-Pure helpers (URL/embed parsing, R2 staging markers, `youtube_status_error_message`, slug helpers, prompt `{{STYLE}}` expansion, numbered-list parsing) are covered by stdlib `unittest`:
+Stdlib `unittest` covers URL/embed parsing, R2 staging markers, slug helpers, prompt expansion, numbered-list parsing, Codex invocation/failure handling, and Podbean scheduling/resume flows. Network and subprocess calls are mocked; the tests do not publish episodes:
 
 ```bash
 cd tools && uv run python -m unittest discover -s tests -v

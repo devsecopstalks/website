@@ -329,6 +329,8 @@ def publish_schedule_from_podbean_episode(
     local_tz: datetime.tzinfo | None = None,
 ) -> PublishSchedule | None:
     """Recover a future schedule from an existing Podbean episode."""
+    if str(episode.get("status") or "").strip().lower() == "draft":
+        return None
     timestamp = _episode_publish_timestamp(episode)
     if timestamp is None:
         return None
@@ -422,9 +424,9 @@ def _episode_publish_timestamp(episode: dict) -> int | None:
     for key in ("publish_time", "publish_timestamp", "published_at"):
         value = _coerce_int(episode.get(key))
         if value is not None and value > 0:
-            # Podbean stores scheduled episodes as drafts carrying a future
-            # publish timestamp. Ignore ordinary drafts whose timestamp is not
-            # in the future, but retain scheduled drafts as timeline anchors.
+            # Older versions created drafts instead of scheduling with status
+            # 'future'. Reserve their intended future slots until the operator
+            # repairs them, but ignore drafts whose timestamp has passed.
             if status == "draft" and value <= int(datetime.datetime.now().timestamp()):
                 return None
             return value
@@ -957,8 +959,24 @@ def update_podbean_episode(access_token, episode_id, content, title, status="pub
 
 
 def podbean_creation_status(publish_schedule: PublishSchedule | None) -> str:
-    """Podbean schedules future episodes as drafts with a publish timestamp."""
-    return "draft" if publish_schedule is not None else "publish"
+    """Podbean requires status 'future' to queue a scheduled publication."""
+    return "future" if publish_schedule is not None else "publish"
+
+
+def validate_podbean_schedule(response: dict, schedule: PublishSchedule) -> None:
+    """Do not continue publishing other surfaces unless Podbean queued audio."""
+    episode = response.get("episode", response)
+    status = str(episode.get("status") or "").strip().lower()
+    if status != "future":
+        raise ValueError(
+            f"Podbean did not confirm scheduled publication (status: {status or 'missing'}; "
+            "expected: future). Check the episode in the Podbean dashboard before rerunning."
+        )
+    if _episode_publish_timestamp(episode) != schedule.podbean_timestamp:
+        raise ValueError(
+            "Podbean returned a different or missing publication time. "
+            "Check the episode schedule in the Podbean dashboard before rerunning."
+        )
 
 
 def parse_args():
@@ -1310,6 +1328,15 @@ def process_audio(audio_path: str, args, client: OpenAI) -> None:
         print(f"✓ Next episode number (from Podbean episodes): {episode_number}")
 
     if existing_episode:
+        if str(existing_episode.get("status") or "").strip().lower() == "draft" and not args.draft_only:
+            print(
+                f"Error: Podbean episode #{episode_number} is still a draft; "
+                "a future timestamp alone does not schedule publication. "
+                "Schedule it or publish it in the Podbean dashboard, then re-run "
+                f"with --episode-number {episode_number} to resume.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
         publish_schedule = publish_schedule_from_podbean_episode(existing_episode)
         if publish_schedule:
             print(f"✓ Preserved existing Podbean schedule: {publish_schedule.display}")
@@ -1557,6 +1584,8 @@ def process_audio(audio_path: str, args, client: OpenAI) -> None:
         if args.verbose:
             print(create_episode_response)
         podbean_id = podbean_player_id(create_episode_response)
+        if publish_schedule:
+            validate_podbean_schedule(create_episode_response, publish_schedule)
         if os.path.isfile(podbean_upload_checkpoint):
             os.remove(podbean_upload_checkpoint)
     if publish_schedule:

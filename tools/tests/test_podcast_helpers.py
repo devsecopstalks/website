@@ -1,15 +1,19 @@
-"""Unit tests for pure helpers (no network, no subprocess). Run from repo: cd tools && uv run python -m unittest discover -s tests -v"""
+"""Helper and publishing-flow tests with network and subprocess calls mocked.
+
+Run from repo: cd tools && uv run python -m unittest discover -s tests -v
+"""
 
 from __future__ import annotations
 
 import datetime
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import types
 import unittest
-from contextlib import redirect_stdout
+from contextlib import ExitStack, redirect_stderr, redirect_stdout
 from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
@@ -26,6 +30,7 @@ from youtube import (  # noqa: E402
     youtube_status_error_message,
 )
 import podbean  # noqa: E402
+import episode_pipeline  # noqa: E402
 from r2_staging import (  # noqa: E402
     load_r2_youtube_staging_marker,
     remove_r2_youtube_staging_marker,
@@ -411,19 +416,50 @@ class TestPodbeanTextHelpers(unittest.TestCase):
         line = f' {{{{<  podbean id "Title"  >}}}} '
         self.assertTrue(line.lstrip().startswith("{{<"))
 
-    def test_scheduled_episode_is_created_as_draft(self):
+    def test_scheduled_episode_request_queues_future_publication(self):
         schedule = podbean.publish_schedule_from_datetime(
             datetime.datetime(2099, 7, 1, 11, tzinfo=datetime.timezone.utc),
             "test",
         )
-        self.assertEqual(
-            podbean.podbean_creation_status(schedule),
-            "draft",
+        with patch("podbean.requests.post") as post:
+            podbean.create_podbean_episode(
+                "token", "title", "content", 123, media_key="audio.mp3",
+                status=podbean.podbean_creation_status(schedule),
+                publish_timestamp=schedule.podbean_timestamp,
+            )
+        data = post.call_args.kwargs["data"]
+        self.assertEqual(data["status"], "future")
+        self.assertEqual(data["publish_timestamp"], str(schedule.podbean_timestamp))
+
+    def test_immediate_episode_request_publishes_without_timestamp(self):
+        with patch("podbean.requests.post") as post:
+            podbean.create_podbean_episode(
+                "token", "title", "content", 123, media_key="audio.mp3",
+                status=podbean.podbean_creation_status(None),
+            )
+        data = post.call_args.kwargs["data"]
+        self.assertEqual(data["status"], "publish")
+        self.assertNotIn("publish_timestamp", data)
+
+    def test_validate_podbean_schedule_requires_matching_status_and_time(self):
+        schedule = podbean.publish_schedule_from_datetime(
+            datetime.datetime(2099, 7, 1, 11, tzinfo=datetime.timezone.utc), "test",
         )
-        self.assertEqual(
-            podbean.podbean_creation_status(None),
-            "publish",
-        )
+        for timestamp_key in ("publish_time", "publish_timestamp"):
+            with self.subTest(timestamp_key=timestamp_key):
+                podbean.validate_podbean_schedule(
+                    {"episode": {"status": "future", timestamp_key: schedule.podbean_timestamp}},
+                    schedule,
+                )
+        for episode in (
+            {"status": "draft", "publish_time": schedule.podbean_timestamp},
+            {"status": "publish", "publish_time": schedule.podbean_timestamp},
+            {"publish_time": schedule.podbean_timestamp},
+            {"status": "future"},
+            {"status": "future", "publish_time": schedule.podbean_timestamp + 60},
+        ):
+            with self.subTest(episode=episode), self.assertRaises(ValueError):
+                podbean.validate_podbean_schedule({"episode": episode}, schedule)
 
     def test_podbean_player_id_uses_query_parameter(self):
         response = {
@@ -468,7 +504,7 @@ class TestPodbeanTextHelpers(unittest.TestCase):
         schedule = podbean.publish_schedule_from_podbean_episode(
             {
                 "title": "#104 - Scheduled",
-                "status": "publish",
+                "status": "future",
                 "publish_time": 4086579600,
             },
             local_tz=datetime.timezone.utc,
@@ -476,6 +512,13 @@ class TestPodbeanTextHelpers(unittest.TestCase):
         self.assertIsNotNone(schedule)
         self.assertEqual(schedule.podbean_timestamp, 4086579600)
         self.assertEqual(schedule.upload_post_scheduled_date, "2099-07-01T09:00:00Z")
+
+    def test_future_dated_draft_is_not_a_confirmed_schedule(self):
+        episode = {"status": "draft", "publish_time": 4086579600, "episode_number": 104}
+        self.assertIsNone(podbean.publish_schedule_from_podbean_episode(episode))
+        # Keep the intended slot reserved while the operator repairs old drafts.
+        plan = podbean.episode_plan_from_podbean_response({"episodes": [episode]})
+        self.assertEqual(plan.anchor_episode, episode)
 
     def test_create_podbean_episode_includes_publish_timestamp(self):
         with patch("podbean.requests.post") as mock_post:
@@ -503,7 +546,7 @@ class TestPodbeanTextHelpers(unittest.TestCase):
                     "title": "#104 - Scheduled",
                     "episode_number": 104,
                     "publish_time": 4086579600,
-                    "status": "publish",
+                    "status": "future",
                 },
                 {
                     "title": "#103 - Published",
@@ -642,6 +685,186 @@ class TestR2StagingPolicy(unittest.TestCase):
             else:
                 os.environ["YOUTUBE_VIDEO_R2_THRESHOLD_MB"] = old_thr
             os.unlink(path)
+
+
+class TestCodexRunner(unittest.TestCase):
+    def setUp(self):
+        self.enterContext(patch("episode_pipeline.shutil.which", return_value="/bin/codex"))
+        self.enterContext(patch.object(episode_pipeline, "CODEX_MODEL", "test-model"))
+        self.enterContext(patch.object(episode_pipeline, "CODEX_TIMEOUT_S", 1234))
+
+    def test_read_only_invocation_preserves_both_stdin_modes_and_cleans_output(self):
+        def succeed(cmd, **kwargs):
+            Path(cmd[cmd.index("-o") + 1]).write_text(" result \n", encoding="utf-8")
+            return types.SimpleNamespace(returncode=0, stderr="")
+
+        for stdin_text in ("", "article body"):
+            with self.subTest(stdin_text=stdin_text), patch(
+                "episode_pipeline.subprocess.run", side_effect=succeed,
+            ) as run:
+                self.assertEqual(episode_pipeline.run_codex("prompt", stdin_text), "result")
+                cmd = run.call_args.args[0]
+                self.assertEqual(cmd[:2], ["codex", "exec"])
+                self.assertEqual(cmd[cmd.index("--sandbox") + 1], "read-only")
+                self.assertEqual(cmd[cmd.index("-C") + 1], episode_pipeline.REPO_ROOT)
+                self.assertEqual(cmd[cmd.index("--model") + 1], "test-model")
+                self.assertNotIn("--full-auto", cmd)
+                self.assertNotIn("--add-dir", cmd)
+                self.assertEqual(cmd[-1], "prompt" if stdin_text else "-")
+                self.assertEqual(run.call_args.kwargs["input"], stdin_text or "prompt")
+                self.assertEqual(run.call_args.kwargs["timeout"], 1234)
+                self.assertFalse(Path(cmd[cmd.index("-o") + 1]).exists())
+
+    def test_timeout_stops_without_printing_prompt_and_removes_partial_output(self):
+        private_prompt = "private editorial guidance"
+
+        def time_out(cmd, **kwargs):
+            Path(cmd[cmd.index("-o") + 1]).write_text("partial answer", encoding="utf-8")
+            raise subprocess.TimeoutExpired(cmd=cmd, timeout=kwargs["timeout"])
+
+        output = StringIO()
+        with patch("episode_pipeline.subprocess.run", side_effect=time_out) as run:
+            with redirect_stdout(output), redirect_stderr(output), self.assertRaises(SystemExit) as error:
+                episode_pipeline.run_codex(private_prompt, "article")
+        self.assertEqual(error.exception.code, 1)
+        self.assertIn("timed out after 1234s", output.getvalue())
+        self.assertIn("resume from checkpoints", output.getvalue())
+        self.assertNotIn(private_prompt, output.getvalue())
+        cmd = run.call_args.args[0]
+        self.assertFalse(Path(cmd[cmd.index("-o") + 1]).exists())
+
+    def test_failed_or_empty_response_stops_and_cleans_output(self):
+        for returncode, message in ((2, "Codex failed"), (0, "empty response")):
+            with self.subTest(returncode=returncode), patch(
+                "episode_pipeline.subprocess.run",
+                return_value=types.SimpleNamespace(returncode=returncode, stderr=""),
+            ) as run:
+                output = StringIO()
+                with redirect_stdout(output), self.assertRaises(SystemExit) as error:
+                    episode_pipeline.run_codex("prompt")
+                self.assertEqual(error.exception.code, 1)
+                self.assertIn(message, output.getvalue())
+                cmd = run.call_args.args[0]
+                self.assertFalse(Path(cmd[cmd.index("-o") + 1]).exists())
+
+    def test_previous_review_path_is_resolved_before_codex_changes_root(self):
+        relative_path = "out/episode001-review-1.md"
+        with patch("episode_pipeline.run_codex", return_value="GOOD_TO_GO") as run:
+            with redirect_stdout(StringIO()):
+                episode_pipeline.review_with_codex("article", relative_path)
+        self.assertIn(os.path.abspath(relative_path), run.call_args.args[0])
+
+
+class TestPodbeanPublishingFlow(unittest.TestCase):
+    def setUp(self):
+        self.root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        self.audio = self.root / "recording.mp3"
+        self.audio.write_bytes(b"audio")
+        self.enterContext(patch.object(podbean, "OUT_DIR", str(self.root)))
+        self.enterContext(patch.dict(os.environ, {
+            "PODBEAN_CLIENT_ID": "test-id", "PODBEAN_CLIENT_SECRET": "test-secret",
+        }))
+        self.enterContext(redirect_stdout(StringIO()))
+        self.errors = self.enterContext(redirect_stderr(StringIO()))
+        with patch.object(sys, "argv", ["podbean.py", "--episode-number", "1"]):
+            self.args = podbean.parse_args()
+        self.args.guidance = ""
+        self.args.title = "Title"
+        self.args.description = "Description"
+        self.args.skip_youtube_upload = True
+        self.schedule = podbean.publish_schedule_from_datetime(
+            datetime.datetime(2099, 7, 1, 11, tzinfo=datetime.timezone.utc), "test",
+        )
+        self.mocks = {}
+        for name, result in {
+            "get_podbean_auth_token": "token",
+            "get_podbean_episodes": {"episodes": []},
+            "validate_or_bind_checkpoint_source": None,
+            "transcribe_audio_openai": "transcript",
+            "_load_or_detect_guest_context": {"status": "no_guests", "guests": []},
+            "generate_article": "article",
+            "prompt_publish_action": self.schedule,
+            "get_podbean_upload_link": {"presigned_url": "https://example.test/audio", "file_key": "audio"},
+            "upload_file_to_podbean": None,
+            "create_podbean_episode": {"episode": {"id": "episode-id", "status": "draft"}},
+            "upload_to_youtube": None,
+            "write_episode_markdown": "episode.md",
+        }.items():
+            self.mocks[name] = self.enterContext(patch.object(podbean, name, return_value=result))
+
+    def test_unconfirmed_schedule_stops_before_youtube_and_keeps_upload_checkpoint(self):
+        with self.assertRaisesRegex(ValueError, "did not confirm scheduled publication"):
+            podbean.process_audio(str(self.audio), self.args, None)
+        create_kwargs = self.mocks["create_podbean_episode"].call_args.kwargs
+        self.assertEqual(create_kwargs["status"], "future")
+        self.assertEqual(create_kwargs["publish_timestamp"], self.schedule.podbean_timestamp)
+        self.assertTrue((self.root / "episode001-podbean-upload.json").exists())
+        self.mocks["upload_to_youtube"].assert_not_called()
+        self.mocks["write_episode_markdown"].assert_not_called()
+
+    def test_existing_draft_stops_before_publishing_or_creating_duplicate(self):
+        for timestamp in (1, self.schedule.podbean_timestamp):
+            with self.subTest(timestamp=timestamp):
+                self.mocks["get_podbean_episodes"].return_value = {"episodes": [{
+                    "id": "existing-id", "episode_number": 1,
+                    "status": "draft", "publish_time": timestamp,
+                }]}
+                with self.assertRaises(SystemExit) as error:
+                    podbean.process_audio(str(self.audio), self.args, None)
+                self.assertEqual(error.exception.code, 1)
+                self.assertIn("still a draft", self.errors.getvalue())
+                self.mocks["prompt_publish_action"].assert_not_called()
+                self.mocks["generate_article"].assert_not_called()
+                self.mocks["upload_file_to_podbean"].assert_not_called()
+                self.mocks["create_podbean_episode"].assert_not_called()
+                self.mocks["upload_to_youtube"].assert_not_called()
+                self.mocks["write_episode_markdown"].assert_not_called()
+
+    def test_confirmed_schedule_completes_and_clears_audio_upload_checkpoint(self):
+        self.mocks["create_podbean_episode"].return_value = {"episode": {
+            "id": "episode-id", "status": "future",
+            "publish_time": self.schedule.podbean_timestamp,
+        }}
+        podbean.process_audio(str(self.audio), self.args, None)
+        self.assertFalse((self.root / "episode001-podbean-upload.json").exists())
+        page_kwargs = self.mocks["write_episode_markdown"].call_args.kwargs
+        self.assertEqual(page_kwargs["publish_datetime"], self.schedule.podbean_datetime)
+
+    def test_existing_scheduled_episode_resumes_without_duplicate_or_new_prompt(self):
+        self.mocks["get_podbean_episodes"].return_value = {"episodes": [{
+            "id": "existing-id", "episode_number": 1, "status": "future",
+            "publish_time": self.schedule.podbean_timestamp,
+        }]}
+        podbean.process_audio(str(self.audio), self.args, None)
+        self.mocks["prompt_publish_action"].assert_not_called()
+        self.mocks["upload_file_to_podbean"].assert_not_called()
+        self.mocks["create_podbean_episode"].assert_not_called()
+        page_kwargs = self.mocks["write_episode_markdown"].call_args.kwargs
+        self.assertEqual(page_kwargs["publish_datetime"], self.schedule.podbean_datetime)
+
+    def test_existing_draft_allows_draft_only_work(self):
+        self.mocks["get_podbean_episodes"].return_value = {"episodes": [{
+            "id": "existing-id", "episode_number": 1, "status": "draft",
+        }]}
+        self.args.draft_only = True
+        podbean.process_audio(str(self.audio), self.args, None)
+        self.mocks["generate_article"].assert_called_once()
+        self.mocks["create_podbean_episode"].assert_not_called()
+
+    def test_codex_description_failure_stops_before_any_upload_and_preserves_title(self):
+        self.args.description = None
+        with ExitStack() as stack:
+            stack.enter_context(patch("episode_pipeline.shutil.which", return_value="/bin/codex"))
+            stack.enter_context(patch("episode_pipeline.subprocess.run", side_effect=
+                subprocess.TimeoutExpired(cmd=["codex", "private prompt"], timeout=900)))
+            with self.assertRaises(SystemExit) as error:
+                podbean.process_audio(str(self.audio), self.args, None)
+        self.assertEqual(error.exception.code, 1)
+        self.assertTrue((self.root / "episode001-title.txt").exists())
+        self.assertFalse((self.root / "episode001-description.txt").exists())
+        for name in ("prompt_publish_action", "upload_file_to_podbean", "create_podbean_episode",
+                     "upload_to_youtube", "write_episode_markdown"):
+            self.mocks[name].assert_not_called()
 
 
 class TestEpisodePipelineNumberedPick(unittest.TestCase):

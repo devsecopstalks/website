@@ -23,6 +23,8 @@ CONTEXT_FILE = os.path.join(TOOLS_DIR, "podcast-context.md")
 STYLE_FILE = os.path.join(TOOLS_DIR, "writing-style.md")
 
 MAX_REVIEW_ITERATIONS = 10
+CODEX_MODEL = os.environ.get("CODEX_MODEL", "gpt-6-astra")
+CODEX_TIMEOUT_S = int(os.environ.get("CODEX_TIMEOUT_S", "900"))
 
 with open(CONTEXT_FILE, "r", encoding="utf-8") as _f:
     _CONTENT_CONTEXT = _f.read()
@@ -121,15 +123,14 @@ def run_codex(prompt: str, stdin_text: str = "", verbose=False) -> str:
         cmd = [
             "codex",
             "exec",
+            "--sandbox",
+            "read-only",
+            "-C",
+            REPO_ROOT,
             "--model",
-            "gpt-5.6-sol",
+            CODEX_MODEL,
             "-o",
             tmp_path,
-            "--full-auto",
-            "--add-dir",
-            EPISODES_DIR,
-            "--add-dir",
-            REPO_ROOT,
         ]
         if stdin_text:
             cmd.append(prompt)
@@ -144,7 +145,7 @@ def run_codex(prompt: str, stdin_text: str = "", verbose=False) -> str:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE if not verbose else None,
             text=True,
-            timeout=900,
+            timeout=CODEX_TIMEOUT_S,
         )
 
         if result.returncode != 0:
@@ -161,6 +162,14 @@ def run_codex(prompt: str, stdin_text: str = "", verbose=False) -> str:
             sys.exit(1)
 
         return output
+    except subprocess.TimeoutExpired:
+        # TimeoutExpired includes the full argv (and prompt) when printed.
+        print(
+            f"Error: Codex timed out after {CODEX_TIMEOUT_S}s. "
+            "Re-run to resume from checkpoints; increase CODEX_TIMEOUT_S if needed.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
     finally:
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
@@ -476,7 +485,7 @@ def review_with_codex(
     prompt = REVIEW_PROMPT + "\n\nThe article to review is provided on stdin."
     if previous_review_file:
         prompt += (
-            f" Also read your previous review from {previous_review_file} — "
+            f" Also read your previous review from {os.path.abspath(previous_review_file)} — "
             "do not repeat issues that were already fixed."
         )
 

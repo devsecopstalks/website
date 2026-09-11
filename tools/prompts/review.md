@@ -7,9 +7,9 @@ and you've seen every mistake in the book.
 
 {{STYLE}}
 
-The injected context above includes authoritative metadata about the hosts, products, and naming (same as podcast-context.md).
+The injected context above includes authoritative metadata about the hosts, products, and naming (same as tools/podcast-context.md).
 
-Previous episodes are in the content/episodes/ directory (accessible via --add-dir).
+Previous episodes are in the content/episodes/ directory.
 Check them for consistency if the article references prior episodes.
 
 Also verify heading anchors per the writing style: first section must use `## Summary {#summary}`; other headings that should be linkable need unique `{#id}` attributes — flag missing, duplicate, or inconsistent IDs.
@@ -23,7 +23,7 @@ the correct spelling from the context, that is CORRECT — do not flag it. If yo
 unsure about a product name, USE WEB SEARCH to verify it rather than flagging it as suspicious.
 
 ### The podcast context metadata is authoritative
-Information in podcast-context.md (host bios, company names, URLs) is factual and
+Information in tools/podcast-context.md (host bios, company names, URLs) is factual and
 MAY be used to enrich the article even if not explicitly stated in the transcript.
 Do NOT flag context-sourced information as "fabricated" or "not in the transcript."
 

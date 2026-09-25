@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# The .env secrets live in this account; naming it skips op's account picker.
+OP_ACCOUNT="${OP_ACCOUNT:-family-beavers.1password.com}"
+export OP_ACCOUNT
+
 # Warm up 1Password auth (optional; comment out if not using op)
-op signin
+op signin --account "$OP_ACCOUNT"
 
 if ! command -v uv &>/dev/null; then
   echo "uv not found. Installing uv..."

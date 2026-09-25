@@ -79,7 +79,7 @@ cp ~/Downloads/episode.mp3 raw/
 ./do.sh
 # Manual equivalent (note --no-masking: without it, `op run` may replace title
 # text that matches a vault field with “concealed by 1Password” in stdout):
-# op run --no-masking --env-file="./.env" -- uv run python podbean.py -v
+# op run --account family-beavers.1password.com --no-masking --env-file="./.env" -- uv run python podbean.py -v
 ```
 
 If there is exactly one `raw/*.mp3`, it is chosen automatically. If there are several, pass `-f path/to/file.mp3` or use `--scan` to process all MP3s in `raw/`.

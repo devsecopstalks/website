@@ -14,7 +14,6 @@ import os
 import re
 import sys
 import glob
-import json
 import shutil
 import argparse
 import subprocess
@@ -27,6 +26,7 @@ from openai import OpenAI
 from podbean import (
     get_podbean_auth_token,
     compress_audio_for_transcription,
+    transcribe_diarized,
     update_podbean_episode,
 )
 
@@ -157,102 +157,6 @@ def split_audio(audio_path, max_duration_s=1300, verbose=False):
 
     print(f"✓ Split into {len(chunks)} chunks")
     return chunks
-
-
-def transcribe_diarized(api_key, audio_path, verbose=False):
-    """Transcribe with speaker diarization using gpt-4o-transcribe-diarize (streaming SSE)."""
-    import httpx
-
-    print("Transcribing with gpt-4o-transcribe-diarize (speaker diarization)...")
-
-    url = "https://api.openai.com/v1/audio/transcriptions"
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Accept": "text/event-stream",
-    }
-
-    chunking_strategy = json.dumps({
-        "type": "server_vad",
-        "prefix_padding_ms": 300,
-        "silence_duration_ms": 200,
-        "threshold": 0.5,
-    })
-
-    with open(audio_path, "rb") as audio_file:
-        files = [
-            ("file", (os.path.basename(audio_path), audio_file)),
-            ("model", (None, "gpt-4o-transcribe-diarize")),
-            ("language", (None, "en")),
-            ("response_format", (None, "diarized_json")),
-            ("chunking_strategy", (None, chunking_strategy)),
-            ("stream", (None, "true")),
-        ]
-
-        timeout = httpx.Timeout(600.0, read=None)
-        with httpx.Client(timeout=timeout) as http_client:
-            with http_client.stream("POST", url, headers=headers, files=files) as response:
-                try:
-                    response.raise_for_status()
-                except httpx.HTTPStatusError as exc:
-                    error_body = response.read()
-                    raise RuntimeError(
-                        f"Diarize API error {exc.response.status_code}: "
-                        f"{error_body.decode('utf-8', errors='replace')}"
-                    ) from exc
-
-                segments = []
-                full_text = ""
-                pending_data = []
-
-                for line in response.iter_lines():
-                    if not line:
-                        if pending_data:
-                            data = "\n".join(pending_data)
-                            pending_data.clear()
-                            if data == "[DONE]":
-                                break
-                            event = json.loads(data)
-                            if event["type"] == "transcript.text.segment":
-                                segments.append(event)
-                                if verbose:
-                                    speaker = event.get("speaker", "?")
-                                    print(f"  [{speaker}] {event['text'][:80]}")
-                            elif event["type"] == "transcript.text.done":
-                                full_text = event["text"]
-                        continue
-
-                    if line.startswith("data:"):
-                        pending_data.append(line[len("data:"):].strip())
-
-                if pending_data:
-                    data = "\n".join(pending_data)
-                    if data != "[DONE]":
-                        event = json.loads(data)
-                        if event["type"] == "transcript.text.done":
-                            full_text = event["text"]
-
-    # Build speaker-labeled transcript
-    if segments:
-        labeled_lines = []
-        current_speaker = None
-        for seg in segments:
-            speaker = seg.get("speaker", "Unknown")
-            text = seg.get("text", "").strip()
-            if speaker != current_speaker:
-                current_speaker = speaker
-                labeled_lines.append(f"\n[{speaker}]: {text}")
-            else:
-                labeled_lines.append(f" {text}")
-        transcript = "".join(labeled_lines).strip()
-        print(f"✓ Diarized transcription complete ({len(segments)} segments, {len(transcript)} chars)")
-        return transcript
-
-    # Fallback to plain text if no segments
-    if full_text:
-        print(f"✓ Transcription complete (no segments, {len(full_text)} chars)")
-        return full_text
-
-    raise ValueError("Empty response from diarize model")
 
 
 def transcribe(client, audio_path, verbose=False):

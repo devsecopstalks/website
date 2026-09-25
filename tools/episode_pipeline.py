@@ -317,6 +317,15 @@ def normalize_guest_context(data: dict) -> dict:
     }
 
 
+def guest_full_names(guest_context: dict | None) -> list[str]:
+    """Guests' full names in checkpoint order, skipping entries without one."""
+    return [
+        str(g.get("full_name") or "").strip()
+        for g in (guest_context or {}).get("guests") or []
+        if isinstance(g, dict) and str(g.get("full_name") or "").strip()
+    ]
+
+
 def _normalize_hosts_present(raw) -> list[str]:
     """Current hosts by full name, in SHOW_HOSTS order; unknown names are dropped, not tagged."""
     wanted = set()

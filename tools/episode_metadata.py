@@ -14,10 +14,10 @@ import os
 import re
 import sys
 
-from episode_pipeline import PROMPTS_DIR, load_prompt, run_codex
+from episode_pipeline import PROMPTS_DIR, guest_full_names, load_prompt, run_codex
 
 SITE_URL = "https://devsecops.fm/"
-LINKEDIN_URL = "https://www.linkedin.com/company/devsecops-talks/"
+COMPANY_LINKEDIN_URL = "https://www.linkedin.com/company/devsecops-talks/"
 YOUTUBE_CHANNEL_URL = "https://www.youtube.com/channel/UCRjpE9xKxZeBkRgYiLErEjw"
 METADATA_SCHEMA = os.path.join(PROMPTS_DIR, "metadata-schema.json")
 
@@ -29,7 +29,7 @@ YOUTUBE_TITLE_MAX_CHARS = 100
 YOUTUBE_HOOK_MAX_CHARS = 400
 YOUTUBE_DESC_MAX_CHARS = 5000
 YOUTUBE_DESC_TARGET_WORDS = (200, 350)
-HASHTAG_FIRST = "#DevSecOps"
+DEVSECOPS_HASHTAG = "#DevSecOps"
 HASHTAG_LAST = "#DevSecOpsTalks"
 HASHTAG_FALLBACKS = ("#DevOps", "#CloudSecurity", "#Security")
 READ_WORDS_PER_MINUTE = 220
@@ -48,11 +48,15 @@ def format_timestamp(seconds: float) -> str:
     return f"{h}:{m:02d}:{s:02d}" if h else f"{m:02d}:{s:02d}"
 
 
-def _stamp_seconds(stamp: str) -> int:
-    parts = [int(p) for p in stamp.split(":")]
-    while len(parts) < 3:
-        parts.insert(0, 0)
-    return parts[0] * 3600 + parts[1] * 60 + parts[2]
+def parse_timestamp(stamp: str) -> int | None:
+    """Seconds in ``MM:SS`` or ``H:MM:SS`` (digits only), or None."""
+    parts = str(stamp or "").strip().split(":")
+    if not 2 <= len(parts) <= 3 or not all(p.isdigit() for p in parts):
+        return None
+    seconds = 0
+    for part in parts:
+        seconds = seconds * 60 + int(part)
+    return seconds
 
 
 def parse_chapters(text: str) -> list[tuple[int, str]]:
@@ -62,7 +66,7 @@ def parse_chapters(text: str) -> list[tuple[int, str]]:
         line = raw.strip().lstrip("-*").strip()
         match = _CHAPTER_LINE.match(line)
         if match:
-            parsed.append((_stamp_seconds(match.group(1)), match.group(2).strip()))
+            parsed.append((parse_timestamp(match.group(1)), match.group(2).strip()))
     return parsed
 
 
@@ -89,15 +93,17 @@ def render_chapters(text: str) -> str:
     return "\n".join(f"{format_timestamp(s)} - {label}" for s, label in parse_chapters(text))
 
 
+def format_turn_line(turn: dict, cap: int | None = None) -> str:
+    """``[MM:SS] [A]: text`` with whitespace collapsed; ``cap`` trims at a word."""
+    text = " ".join(str(turn.get("text") or "").split())
+    if cap is not None and len(text) > cap:
+        text = text[:cap].rsplit(" ", 1)[0] + " ..."
+    return f"[{format_timestamp(float(turn.get('start') or 0))}] [{turn.get('speaker')}]: {text}"
+
+
 def turns_for_prompt(turns: list[dict], cap: int = CHAPTER_TURN_TEXT_CAP) -> str:
-    """``[MM:SS] [A]: text`` per turn, text capped so long episodes stay bounded."""
-    lines = []
-    for turn in turns:
-        text = " ".join(str(turn.get("text") or "").split())
-        if len(text) > cap:
-            text = text[:cap].rsplit(" ", 1)[0] + " ..."
-        lines.append(f"[{format_timestamp(float(turn.get('start') or 0))}] [{turn.get('speaker')}]: {text}")
-    return "\n".join(lines)
+    """One line per turn, text capped so long episodes stay bounded."""
+    return "\n".join(format_turn_line(turn, cap) for turn in turns)
 
 
 def generate_chapters(article: str, turns: list[dict], guidance: str = "", verbose: bool = False) -> str:
@@ -202,14 +208,6 @@ def readtime_for(article: str) -> str:
     return f"{max(1, round(words / READ_WORDS_PER_MINUTE))} min read"
 
 
-def _guest_full_names(guest_context: dict | None) -> list[str]:
-    return [
-        str(g.get("full_name") or "").strip()
-        for g in (guest_context or {}).get("guests") or []
-        if isinstance(g, dict) and str(g.get("full_name") or "").strip()
-    ]
-
-
 def validate_metadata(meta: dict, guest_names: list[str] = ()) -> list[str]:
     """Checks the schema cannot express; empty when the metadata is usable."""
     errors: list[str] = []
@@ -264,7 +262,7 @@ def extract_metadata(
         if not isinstance(meta, dict):
             errors = ["output was not a JSON object"]
             continue
-        errors = validate_metadata(meta, _guest_full_names(guest_context))
+        errors = validate_metadata(meta, guest_full_names(guest_context))
         if not errors:
             return meta
     print("Error: metadata packaging failed: " + "; ".join(errors), file=sys.stderr)
@@ -294,7 +292,7 @@ def load_or_generate_metadata(
             with open(metadata_file, "r", encoding="utf-8") as f:
                 saved = json.load(f)
             if saved.get("inputs_sha256") == fingerprint and not validate_metadata(
-                saved.get("metadata") or {}, _guest_full_names(guest_context)
+                saved.get("metadata") or {}, guest_full_names(guest_context)
             ):
                 print(f"✓ Loaded metadata from {metadata_file}")
                 return saved["metadata"]
@@ -329,7 +327,7 @@ def _items(meta: dict, key: str) -> list[str]:
 
 def normalize_hashtags(tags: list[str]) -> list[str]:
     """Five tags: #DevSecOps first, #DevSecOpsTalks last, gaps from house tags."""
-    fixed = {HASHTAG_FIRST.casefold(), HASHTAG_LAST.casefold()}
+    fixed = {DEVSECOPS_HASHTAG.casefold(), HASHTAG_LAST.casefold()}
     middle: list[str] = []
     seen = set(fixed)
     for raw in tags or []:
@@ -341,7 +339,7 @@ def normalize_hashtags(tags: list[str]) -> list[str]:
         if fallback.casefold() not in seen:
             middle.append(fallback)
             seen.add(fallback.casefold())
-    return [HASHTAG_FIRST] + middle[:3] + [HASHTAG_LAST]
+    return [DEVSECOPS_HASHTAG] + middle[:3] + [HASHTAG_LAST]
 
 
 def build_youtube_title(metadata: dict | None, episode_number: int, title: str) -> str:
@@ -400,7 +398,7 @@ def build_youtube_description(
         episode_short_url(episode_number),
         "",
         "Discuss the episode on LinkedIn",
-        LINKEDIN_URL,
+        COMPANY_LINKEDIN_URL,
         "",
     ])
     lines.extend(_guest_link_lines(guest_context))
@@ -451,6 +449,6 @@ def build_podbean_show_notes(metadata: dict, episode_number: int) -> str:
         parts.append("<ul>" + "".join(f"<li>{html.escape(item)}</li>" for item in learn) + "</ul>")
     url = episode_short_url(episode_number)
     parts.append(f"<p>Full article and show notes: <a href='{url}'>{url}</a></p>")
-    parts.append(f"<p><a href='{LINKEDIN_URL}'>Discuss the episode on LinkedIn</a></p>")
+    parts.append(f"<p><a href='{COMPANY_LINKEDIN_URL}'>Discuss the episode on LinkedIn</a></p>")
     parts.append(f"<p><a href='{YOUTUBE_CHANNEL_URL}'>DevSecOps Talks on YouTube</a></p>")
     return "".join(p for p in parts if p != "<p></p>")

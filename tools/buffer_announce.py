@@ -19,12 +19,13 @@ from zoneinfo import ZoneInfo
 
 import requests
 
-from episode_metadata import SITE_URL, format_timestamp
+from episode_metadata import DEVSECOPS_HASHTAG, SITE_URL, format_timestamp, format_turn_line, parse_timestamp
 from episode_pipeline import (
     AUTHOR_HOST,
     CONTEXT_FILE,
     PROMPTS_DIR,
     SHOW_HOSTS,
+    guest_full_names,
     load_prompt,
     run_codex,
     save_guest_context,
@@ -39,7 +40,6 @@ BUFFER_API_URL = "https://api.buffer.com"
 ANNOUNCEMENT_LEAD_DAYS = 2
 
 FORMATS = ("quote", "disagreement", "no_quote")
-MANDATORY_HASHTAG = "#DevSecOps"
 QUOTE_WORDS = (8, 30)
 # A quote's MM:SS may name any moment inside its turn, give or take this much.
 TS_TOLERANCE_S = 5
@@ -118,16 +118,6 @@ def normalize_for_match(text: str, fixes: list[tuple[str, str]]) -> str:
     return " ".join(re.sub(r"[^\w\s]", " ", text).split())
 
 
-def parse_timestamp(stamp: str) -> float | None:
-    parts = str(stamp or "").strip().split(":")
-    if not 2 <= len(parts) <= 3 or not all(p.isdigit() for p in parts):
-        return None
-    seconds = 0
-    for part in parts:
-        seconds = seconds * 60 + int(part)
-    return float(seconds)
-
-
 def _word_diff(quote_words: list[str], turn_words: list[str]) -> str:
     """Git-style word diff of the quote against the closest window of the turn."""
     blocks = [b for b in difflib.SequenceMatcher(None, quote_words, turn_words, autojunk=False).get_matching_blocks() if b.size]
@@ -199,16 +189,9 @@ def build_announcement_inputs(turns: list[dict] | None, guest_context: dict | No
     """What generation sees: timestamped turns (or none) and who was on the episode."""
     guest_context = guest_context or {}
     hosts = [h for h in guest_context.get("hosts_present") or [] if h]
-    guests = [
-        str(g.get("full_name") or "").strip()
-        for g in guest_context.get("guests") or []
-        if isinstance(g, dict) and str(g.get("full_name") or "").strip()
-    ]
+    guests = guest_full_names(guest_context)
     usable = [t for t in turns or [] if isinstance(t, dict) and str(t.get("text") or "").strip()]
-    lines = [
-        f"[{format_timestamp(float(t.get('start') or 0))}] [{t.get('speaker')}]: {' '.join(str(t['text']).split())}"
-        for t in usable
-    ]
+    lines = [format_turn_line(t) for t in usable]
     return {
         "has_turns": bool(usable),
         "turns": usable,
@@ -408,14 +391,14 @@ def clean_announcement(raw: dict, inputs: dict) -> dict:
     if ann["format"] != "quote":
         for key in ("quote", "source_speaker", "source_timestamp", "source_person"):
             ann[key] = ""
-    if ann["theme_hashtag"].casefold() == MANDATORY_HASHTAG.casefold():
+    if ann["theme_hashtag"].casefold() == DEVSECOPS_HASHTAG.casefold():
         ann["theme_hashtag"] = ""
     return ann
 
 
 def hashtags(ann: dict) -> list[str]:
     theme = ann.get("theme_hashtag") or ""
-    return [MANDATORY_HASHTAG] + ([theme] if _HASHTAG_RE.match(theme) else [])
+    return [DEVSECOPS_HASHTAG] + ([theme] if _HASHTAG_RE.match(theme) else [])
 
 
 def post_body(ann: dict, fixes=None) -> str:

@@ -76,6 +76,26 @@ class TestChapters(unittest.TestCase):
         self.assertLess(len(first), episode_metadata.CHAPTER_TURN_TEXT_CAP + 30)
         self.assertIn("[01:35] [B]:", text)
 
+    def test_parse_timestamp_accepts_mm_ss_and_h_mm_ss_only(self):
+        self.assertEqual(episode_metadata.parse_timestamp("12:34"), 754)
+        self.assertEqual(episode_metadata.parse_timestamp(" 1:02:03 "), 3723)
+        for bad in ("", "12", "1:2:3:4", "12:3a", "-1:00", "12:", None):
+            with self.subTest(stamp=bad):
+                self.assertIsNone(episode_metadata.parse_timestamp(bad))
+
+    def test_turn_line_is_shared_by_chapters_and_announcement(self):
+        import buffer_announce
+        turn = {"speaker": "B", "start": 95.4, "text": "  GitHub   changed\nthe claim. "}
+        self.assertEqual(episode_metadata.format_turn_line(turn), "[01:35] [B]: GitHub changed the claim.")
+        self.assertEqual(episode_metadata.format_turn_line(turn, cap=10), "[01:35] [B]: GitHub ...")
+        inputs = buffer_announce.build_announcement_inputs([turn], {})
+        self.assertEqual(inputs["turns_text"], "[01:35] [B]: GitHub changed the claim.")
+
+    def test_guest_full_names_skips_entries_without_a_name(self):
+        context = {"guests": [{"full_name": " Jane Doe "}, {"full_name": ""}, "junk", {"role": "x"}]}
+        self.assertEqual(episode_pipeline.guest_full_names(context), ["Jane Doe"])
+        self.assertEqual(episode_pipeline.guest_full_names(None), [])
+
     def test_manual_chapters_win_and_invalid_manual_stops(self):
         with tempfile.TemporaryDirectory() as tmp:
             base = os.path.join(tmp, "episode001")

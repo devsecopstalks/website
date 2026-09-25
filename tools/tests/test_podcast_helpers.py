@@ -311,7 +311,7 @@ class TestPodbeanTextHelpers(unittest.TestCase):
             )
 
         self.assertEqual(
-            podbean._guest_names(guest_context),
+            podbean.guest_full_names(guest_context),
             ["Mark Shine", "Pawel Piwosz", "Filipe Berti"],
         )
         self.assertTrue(
@@ -377,7 +377,7 @@ class TestPodbeanTextHelpers(unittest.TestCase):
             )
 
         mock_norm.assert_called_once_with(raw, {"status": "needs_operator"}, verbose=True)
-        self.assertEqual(podbean._guest_names(guest_context), ["Mark Shine", "Pawel Piwosz"])
+        self.assertEqual(podbean.guest_full_names(guest_context), ["Mark Shine", "Pawel Piwosz"])
         self.assertTrue(
             podbean._text_includes_guest_names(
                 "EU Cloud with Mark Shine and Pawel Piwosz", guest_context
@@ -397,7 +397,7 @@ class TestPodbeanTextHelpers(unittest.TestCase):
 
         repaired = podbean._repair_guest_context_names(guest_context)
 
-        self.assertEqual(podbean._guest_names(repaired), ["Mark Shine"])
+        self.assertEqual(podbean.guest_full_names(repaired), ["Mark Shine"])
         self.assertEqual(repaired["guests"][0]["full_name"], "Mark Shine")
         self.assertEqual(repaired["guests"][0]["role"], "Co-Founder & CTO")
         self.assertEqual(repaired["guests"][0]["company"], "Ankra")

@@ -38,6 +38,7 @@ Schema:
 
 {
   "status": "no_guests|verified|needs_operator",
+  "hosts_present": ["Full host name"],
   "guests": [
     {
       "full_name": "Full Name",
@@ -54,7 +55,10 @@ Schema:
       ],
       "confidence": "high|medium|low",
       "needs_operator": false,
-      "question": ""
+      "question": "",
+      "linkedin_url": "https://www.linkedin.com/in/vanity/ or empty string",
+      "linkedin_name": "name LinkedIn displays for them, or empty string",
+      "x_handle": "handle without the @, or empty string"
     }
   ],
   "notes": "Short note about uncertainty, or empty string."
@@ -62,3 +66,24 @@ Schema:
 
 When status is `needs_operator`, include the best candidate guest entries you can
 infer and put the exact clarification needed in each guest's `question` field.
+
+## hosts_present
+
+List the current hosts who actually speak in this episode, by exact full name:
+Andrey Devyatkin, Mattias Hemmingsson, Paulina Dubas. The episode announcement
+credits them and is written differently when Andrey was not there, so a host
+who did not speak must not be listed. Leave the list empty if you cannot tell.
+
+## Guest social handles
+
+These tag the guest in the episode announcement, so a wrong one tags a
+stranger. Fill them in only from a source that clearly belongs to this person:
+their own site linking the profile, a profile whose role and company match what
+you verified, or the show notes. Leave the field an empty string when you are
+not certain, and never guess a handle from the person's name.
+
+- `x_handle`: their X handle without the `@`.
+- `linkedin_url`: their profile URL.
+- `linkedin_name`: the name LinkedIn displays, which is what an `@` mention
+  resolves against. Supply it only when the profile clearly shows something
+  different from `full_name`.

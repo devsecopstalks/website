@@ -39,7 +39,8 @@ Guest names follow the verified guest context, not the transcript.
 ## Writing
 
 - Episode articles: first person plural, see `blog-tone-of-voice.md`.
-- Show notes, YouTube copy and social posts: third person, hosts and guests by
-  full name.
+- Show notes and YouTube copy: third person, hosts and guests by full name.
+- Buffer announcements are Andrey's own posts; their voice rules are in
+  `prompts/announcement.md`.
 - Use the exact name spellings listed above.
 - Do NOT invent information not present in the transcript.

@@ -21,3 +21,4 @@ out/*
 .podcast_description
 .youtube_credentials
 !prompts/*.json
+!social-handles.json

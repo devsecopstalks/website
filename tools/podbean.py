@@ -39,6 +39,7 @@ from episode_metadata import (
     readtime_for,
     youtube_description_warnings,
 )
+from buffer_announce import record_announcement_eligibility, schedule_episode_announcement
 from generate_cover import generate_cover
 from transcribe_local import format_turns, transcribe_local
 from r2_staging import (
@@ -1620,7 +1621,10 @@ def _load_or_detect_guest_context(
         )
 
     if _guest_context_needs_operator(guest_context):
+        hosts_present = guest_context.get("hosts_present") or []
         guest_context = _manual_guest_context_from_operator(guest_context, verbose=verbose)
+        if not guest_context.get("hosts_present"):
+            guest_context["hosts_present"] = hosts_present
     guest_context = _repair_guest_context_names(guest_context)
 
     save_guest_context(guest_context_file, guest_context)
@@ -1953,6 +1957,11 @@ def process_audio(audio_path: str, args, client: OpenAI | None) -> None:
         podbean_episode = create_episode_response.get("episode") or create_episode_response
         if publish_schedule:
             validate_podbean_schedule(create_episode_response, publish_schedule)
+        # Only episodes released by this pipeline are announced; regenerated old pages never are.
+        record_announcement_eligibility(
+            out_base,
+            publish_schedule.podbean_datetime if publish_schedule else datetime.datetime.now(datetime.timezone.utc),
+        )
         if os.path.isfile(podbean_upload_checkpoint):
             os.remove(podbean_upload_checkpoint)
     if publish_schedule:
@@ -2134,7 +2143,25 @@ def process_audio(audio_path: str, args, client: OpenAI | None) -> None:
     )
     print(f"✓ Episode page: {episode_path}")
 
-    # Social announcement goes here: after the page exists, so the post can link it.
+    # After the page exists, so the post can link it. Promotion only: never fails the run.
+    try:
+        schedule_episode_announcement(
+            out_base,
+            episode_number,
+            episode_path,
+            title,
+            article_md,
+            transcript,
+            load_transcript_turns(out_base, transcript),
+            guest_context,
+            audio_path,
+            verbose=args.verbose,
+        )
+    except Exception as e:  # noqa: BLE001
+        print(
+            f"⚠ Buffer announcement failed ({type(e).__name__}: {e}); "
+            f"re-run with --episode-number {episode_number} to retry."
+        )
 
     print(f"\n{'='*60}")
     print(f"Episode #{episode_number} complete.")

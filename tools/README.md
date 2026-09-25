@@ -1,6 +1,6 @@
 ## DevSecOps Talks — podcast publish pipeline
 
-End-to-end flow: drop an MP3 in `raw/`, run `bash do.sh`, transcribe locally with FluidAudio (OpenAI opt-in), generate a long-form episode article with **Claude Code** (draft + revisions) and **Codex** (adversarial review until `GOOD_TO_GO`), pick title and short teaser with **Codex**, approve generated YouTube chapters, package subtitle, YouTube copy and Podbean show notes with one structured **Codex** call, render a cover image, upload audio to **Podbean**, choose between the next available Monday at 11:00 UTC or immediate publication, optionally upload video to **YouTube** via [upload-post.com](https://upload-post.com), and write `content/episodes/NNN-slug.md`.
+End-to-end flow: drop an MP3 in `raw/`, run `bash do.sh`, transcribe locally with FluidAudio (OpenAI opt-in), generate a long-form episode article with **Claude Code** (draft + revisions) and **Codex** (adversarial review until `GOOD_TO_GO`), pick title and short teaser with **Codex**, approve generated YouTube chapters, package subtitle, YouTube copy and Podbean show notes with one structured **Codex** call, render a cover image, upload audio to **Podbean**, choose between the next available Monday at 11:00 UTC or immediate publication, optionally upload video to **YouTube** via [upload-post.com](https://upload-post.com), write `content/episodes/NNN-slug.md`, and schedule an announcement on Andrey's LinkedIn and X through **Buffer**.
 
 Checkpoint files live under `out/episodeNNN-*` (NNN = next Podbean episode number at run start) so you can resume after interruptions. The next number is calculated from the highest existing Podbean episode number, so future scheduled episodes are included.
 
@@ -34,6 +34,7 @@ Environment variables (often injected via 1Password `op run --env-file=./.env`):
 | `R2_ACCOUNT_ID` / `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` / `R2_BUCKET` / `R2_PUBLIC_URL` | Optional: stage large local MP4 on Cloudflare R2 so upload-post fetches by HTTPS URL |
 | `R2_MAX_RETRY_ATTEMPTS` / `R2_READ_TIMEOUT_S` | Optional boto client retries/read timeout for R2 uploads |
 | `R2_MULTIPART_MAX_CONCURRENCY` / `R2_MULTIPART_CHUNKSIZE_MB` | Optional multipart tuning for R2 uploads (defaults 2 concurrent parts, 32 MiB chunks, min 8 MiB) |
+| `BUFFER_API_KEY` | Optional; Buffer API key for the episode announcement. Unset skips Buffer |
 | `YOUTUBE_VIDEO_R2_THRESHOLD_MB` | Optional; default `400` — local videos at or above this size use R2 staging when R2 is configured |
 
 ### Setup
@@ -49,7 +50,7 @@ uv sync
 tools/
 ├── raw/              # put episode .mp3 here (and optional same-stem .md show notes, .mp4 video, .vtt/.txt transcript)
 ├── out/              # episodeNNN-* checkpoints (transcript, drafts, reviews, title/teaser, youtube-url)
-├── prompts/          # draft/review/revise, titles, descriptions, guests, chapters, metadata (+ metadata-schema.json)
+├── prompts/          # draft/review/revise, titles, descriptions, guests, chapters, metadata, announcement (+ *-schema.json)
 ├── podcast-context.md # injected into prompts as {{CONTEXT}} (lives next to prompts/, not inside it)
 ├── blog-tone-of-voice.md # article voice and structure, injected as {{TONE}}
 ├── youtube-description.md / podcast-description.md # house rules for the YouTube and Podbean copy
@@ -57,6 +58,8 @@ tools/
 ├── episode_pipeline.py
 ├── episode_metadata.py # chapters, metadata call, YouTube description and Podbean show notes builders
 ├── generate_cover.py # static/images/covers/NNN.png for og:image
+├── buffer_announce.py # Buffer announcement: quote check, approval, scheduling
+├── social-handles.json # who the announcement tags, filename aliases, Buffer channel ids
 ├── transcribe_local.py # FluidAudio ASR + diarization, merged into speaker turns
 ├── youtube.py
 ├── upload_progress.py # progress lines for R2 + upload-post multipart body
@@ -144,6 +147,26 @@ There are no CLI flags for overriding publication status, date, time, or timezon
 
 **Recovering episodes created by older tooling:** those drafts are not automatically scheduled by this fix. In the Podbean dashboard, open each affected episode and use **Schedule Episode** to select a future publication time, or **Publish Now** if it is overdue and ready. Then resume locally with `--episode-number N` to reuse the existing episode and checkpoints. Future-dated drafts retain their intended queue slots until repaired. If YouTube was already scheduled, check its upload-post job separately before changing the release date; a saved YouTube job is reused and is not rescheduled by a rerun.
 
+### Buffer announcement
+
+The last step, after the page is written. Skipped when `BUFFER_API_KEY` is unset. It posts only to the channel ids in `social-handles.json` (Andrey's LinkedIn and X) and stops before posting anything if one of them is missing or disconnected in Buffer.
+
+Only episodes this pipeline released are announced: creating the Podbean episode writes `out/episodeNNN-announcement-eligible.json` with the release time. Regenerating an older page (no such file, e.g. #110) skips Buffer.
+
+1. **Who was on it.** The run shows `On this episode: ... (Andrey present|absent)`, from guest detection and host names in the Riverside filename (`paulina, matte, andrey +1`). Enter confirms; typing names corrects it. The answer is saved to `-guests.json` (`hosts_present`, `andrey_present`) and decides the voice: first person when Andrey was there, third person with no I/we when he was not.
+2. **The post.** Codex writes one moment from the episode: a verbatim quote from the timestamped turns (default), a named disagreement, or, with no turns (OpenAI backend, `--transcript`), a paraphrased claim flagged `no verified quote`. The quote is checked against the turn it cites (case, punctuation and the name fixes in `podcast-context.md` ignored). A failed check shows a word diff; `o` posts it anyway and records `quote_verified: operator`.
+3. **Preview.** The LinkedIn post (text, credits with @-tags for the guest, hosts present and the DevSecOps Talks page, link on its own line, `#DevSecOps` plus at most one theme tag), the X post and its reply with the credits and link, the quote evidence (`[C] 12:34 -> Paulina Dubas`), each channel's due time and anything already scheduled. `a` schedules, `r` regenerates with guidance, `s` skips.
+
+Timing: release date + 2 days is the earliest date (Wednesday for the Monday 11:00 UTC slot); the time is the first slot in that channel's Buffer posting schedule on or after it. **Push and deploy the page before the due time**: the posts link to it.
+
+State in `out/`:
+
+- `-announcement-scheduled.txt`: one JSON line per created Buffer post (channel id, post id, due time, text), written right after each success and never rewritten. A channel listed there is never posted again; delete its line (after cancelling the post in Buffer) to post it again.
+- `-announcement.json`: the approved copy and a fingerprint of its inputs (transcript, turns, page URL, target date, hosts, guests, handles). Any change regenerates it and asks for approval again.
+- `-announcement.md`: record of what was posted.
+
+Buffer errors never fail the run. Re-run with `--episode-number N` to retry the missing channels, also after the episode is live; the original release date is kept.
+
 ### Participants (Hugo front matter)
 
 By default, new episode pages get `participants: ["Paulina", "Mattias", "Andrey"]`. Override with:
@@ -178,7 +201,7 @@ Built from `-metadata.json` and the chapters as described in `youtube-descriptio
 
 ### Tests
 
-Stdlib `unittest` covers local transcript merging and backend selection, chapter validation, metadata packaging and the YouTube/Podbean builders, page writing (new and in place), URL/embed parsing, R2 staging markers, slug helpers, prompt expansion, numbered-list parsing, Codex invocation/failure handling, and Podbean scheduling/resume flows. Network and subprocess calls are mocked; the tests do not publish episodes:
+Stdlib `unittest` covers local transcript merging and backend selection, chapter validation, metadata packaging and the YouTube/Podbean builders, page writing (new and in place), URL/embed parsing, R2 staging markers, slug helpers, prompt expansion, numbered-list parsing, Codex invocation/failure handling, and Podbean scheduling/resume flows, and the Buffer announcement (quote check, voice, tags, ledger, eligibility). Network and subprocess calls are mocked; the tests do not publish episodes:
 
 ```bash
 cd tools && uv run python -m unittest discover -s tests -v

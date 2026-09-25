@@ -333,6 +333,7 @@ class TestPackagingIntegration(unittest.TestCase):
             "upload_to_youtube": {"results": []},
             "status_to_youtube_embed_url": "https://www.youtube.com/embed/abcdefghijk",
             "write_episode_markdown": "episode.md",
+            "schedule_episode_announcement": None,
         }.items():
             mocks[name] = self.enterContext(patch.object(podbean, name, return_value=result))
         self.enterContext(patch.object(episode_metadata, "run_codex", side_effect=fake_codex))
@@ -341,6 +342,9 @@ class TestPackagingIntegration(unittest.TestCase):
         podbean.process_audio(str(audio), args, None)
 
         upload_args = mocks["upload_to_youtube"].call_args.args
+        # A newly created episode is announceable, and the announcement links the written page.
+        self.assertTrue((root / "episode001-announcement-eligible.json").exists())
+        self.assertEqual(mocks["schedule_episode_announcement"].call_args.args[:3], (str(root / "episode001"), 1, "episode.md"))
         self.assertEqual(upload_args[1], "Can a Repo Rename Get Your AWS Account Blocked? - DevSecOps Talks #1")
         description = upload_args[2]
         self.assertTrue(description.startswith(METADATA["youtube_hook"]))

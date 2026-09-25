@@ -85,5 +85,5 @@ not certain, and never guess a handle from the person's name.
 - `x_handle`: their X handle without the `@`.
 - `linkedin_url`: their profile URL.
 - `linkedin_name`: the name LinkedIn displays, which is what an `@` mention
-  resolves against. Supply it only when the profile clearly shows something
-  different from `full_name`.
+  resolves against. Fill it whenever you confirmed the profile, even when it
+  equals `full_name`: an empty value credits the guest untagged.

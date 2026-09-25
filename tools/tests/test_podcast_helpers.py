@@ -788,6 +788,27 @@ class TestPodbeanPublishingFlow(unittest.TestCase):
         }.items():
             self.mocks[name] = self.enterContext(patch.object(podbean, name, return_value=result))
 
+    def test_article_with_disallowed_html_stops_before_podbean(self):
+        self.mocks["generate_article"].return_value = "## A {#a}\n<iframe src=x></iframe>"
+        out = StringIO()
+        with redirect_stdout(out), self.assertRaises(SystemExit) as error:
+            podbean.process_audio(str(self.audio), self.args, None)
+        self.assertEqual(error.exception.code, 1)
+        self.assertIn("tag not allowed: <iframe src=x>", out.getvalue())
+        self.assertIn("episode001-article.md", out.getvalue())
+        self.mocks["upload_file_to_podbean"].assert_not_called()
+        self.mocks["write_episode_markdown"].assert_not_called()
+
+    def test_external_transcript_is_adopted_into_the_checkpoint(self):
+        external = self.root / "edited.txt"
+        external.write_text("[A]: edited", encoding="utf-8")
+        self.args.transcript = str(external)
+        self.args.draft_only = True
+        with patch.object(podbean, "adopt_external_transcript") as adopt:
+            podbean.process_audio(str(self.audio), self.args, None)
+        adopt.assert_called_once_with(str(self.root / "episode001"), "[A]: edited", str(external))
+        self.mocks["load_or_create_transcript"].assert_not_called()
+
     def test_unconfirmed_schedule_stops_before_youtube_and_keeps_upload_checkpoint(self):
         with self.assertRaisesRegex(ValueError, "did not confirm scheduled publication"):
             podbean.process_audio(str(self.audio), self.args, None)

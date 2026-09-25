@@ -131,12 +131,12 @@ class AnnouncementRun(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def guest_context(self, hosts):
-        return normalize_guest_context({"status": "verified", "guests": [GUEST], "hosts_present": hosts})
+    def guest_context(self, hosts, guests=(GUEST,)):
+        return normalize_guest_context({"status": "verified", "guests": list(guests), "hosts_present": hosts})
 
     def run_announcement(self, answers, codex_outputs, turns=TURNS, audio=NAMED_FILE, buffer=None,
                          hosts=("Andrey Devyatkin", "Paulina Dubas", "Mattias Hemmingsson"), page=PAGE,
-                         eligible=True):
+                         eligible=True, guests=(GUEST,)):
         if eligible:
             ba.record_announcement_eligibility(self.out_base, RELEASE)
         buffer = buffer or FakeBuffer()
@@ -150,7 +150,7 @@ class AnnouncementRun(unittest.TestCase):
         ):
             ba.schedule_episode_announcement(
                 self.out_base, 111, page, "Renaming a Repo Can Lock You Out of AWS with Jane Doe",
-                "## Article\n\nBody.", "transcript text", turns, self.guest_context(list(hosts)), audio,
+                "## Article\n\nBody.", "transcript text", turns, self.guest_context(list(hosts), guests), audio,
                 input_func=lambda: next(answers), api_key="test-key", handles=self.handles, now=NOW,
             )
         return out.getvalue(), buffer, codex
@@ -296,6 +296,43 @@ class AnnouncementRun(unittest.TestCase):
         self.assertEqual(self.saved()["quote_verified"], "operator")
         self.assertEqual(len(buffer.created), 2)
 
+    def test_overlong_x_reply_blocks_approval(self):
+        crowd = [GUEST] + [{"full_name": f"Guest Number {n} With A Very Long Double-Barrelled Surname"}
+                           for n in range(4)]
+        out, buffer, _ = self.run_announcement(["", "a", "o", "s"], [QUOTE_PRESENT], guests=crowd)
+        self.assertIn("error(s) block approval", out)
+        self.assertIn("Approval blocked: the X reply is", out)
+        self.assertIn("Approval is blocked by the errors above", out)
+        self.assertNotIn("'a' to approve", out)
+        self.assertEqual(buffer.created, [])
+        self.assertFalse(os.path.exists(f"{self.out_base}{ba.SAVED_SUFFIX}"))
+
+    def test_saved_announcement_with_rule_errors_is_not_scheduled(self):
+        hosts = ["Andrey Devyatkin", "Paulina Dubas", "Mattias Hemmingsson"]
+        context = self.guest_context(hosts)
+        tags = ba.tagging_context(context, self.handles)
+        inputs = ba.build_announcement_inputs(TURNS, context)
+        bad = ba.clean_announcement(dict(QUOTE_PRESENT, context="A rename — then a lockout."), inputs)
+        fingerprint = ba.announcement_fingerprint("transcript text", TURNS, PAGE_URL,
+                                                  ba.announcement_target_date(RELEASE), tags)
+        with open(f"{self.out_base}{ba.SAVED_SUFFIX}", "w", encoding="utf-8") as f:
+            json.dump({"fingerprint": fingerprint, "announcement": bad, "quote_verified": "transcript"}, f)
+
+        out, buffer, codex = self.run_announcement(["", "", "a"], [])
+        codex.assert_not_called()
+        self.assertIn("Found saved announcement", out)
+        self.assertIn("Approval blocked: em dash in the copy", out)
+        self.assertIn("Skipped the Buffer announcement.", out)
+        self.assertEqual(buffer.created, [])
+
+    def test_quote_person_must_match_the_speaker_map(self):
+        mislabelled = dict(QUOTE_PRESENT, speaker_map=[{"label": "B", "person": "Paulina Dubas"}])
+        out, buffer, _ = self.run_announcement(["", "a", "o"], [mislabelled])
+        self.assertIn("Quote evidence: [B] 00:28 -> Jane Doe (NOT VERIFIED: speaker map has [B] as Paulina Dubas)", out)
+        self.assertIn("'o' to post the quote anyway", out)
+        self.assertEqual(self.saved()["quote_verified"], "operator")
+        self.assertEqual(len(buffer.created), 2)
+
     def test_skip_schedules_nothing(self):
         _, buffer, _ = self.run_announcement(["", "s"], [QUOTE_PRESENT])
         self.assertEqual(buffer.created, [])
@@ -334,6 +371,16 @@ class QuoteEvidence(unittest.TestCase):
         result = ba.verify_quote_against_turns("the ID survives a rename, a transfer, everything", TURNS, "D", "10:00")
         self.assertFalse(result["verified"])
         self.assertIn("quote is in [D] 02:40, not [D] 10:00", result["reason"])
+
+    def test_speaker_map_mismatch_and_missing_label_fail_the_check(self):
+        inputs = ba.build_announcement_inputs(TURNS, {"guests": [GUEST]})
+        ok = ba.check_quote(QUOTE_PRESENT, inputs)
+        self.assertTrue(ok["verified"], ok)
+        cased = dict(QUOTE_PRESENT, speaker_map=[{"label": "B", "person": "jane doe"}])
+        self.assertTrue(ba.check_quote(cased, inputs)["verified"])
+        missing = ba.check_quote(dict(QUOTE_PRESENT, speaker_map=[{"label": "A", "person": "Jane Doe"}]), inputs)
+        self.assertFalse(missing["verified"])
+        self.assertEqual(missing["reason"], "[B] is not in the speaker map")
 
     def test_posted_quote_uses_corrected_spellings(self):
         ann = dict(QUOTE_PRESENT, quote="That is why Matthias pins trust to the repository ID now", source_person="Paulina Dubas")
@@ -383,7 +430,17 @@ class HostsAndGuests(unittest.TestCase):
         self.assertEqual(data["hosts_present"], ["Andrey Devyatkin", "Mattias Hemmingsson"])
         self.assertTrue(data["andrey_present"])
         guest = data["guests"][0]
-        self.assertEqual((guest["x_handle"], guest["linkedin_name"], guest["linkedin_url"]), ("janedoe", "Jane Doe", ""))
+        self.assertEqual((guest["x_handle"], guest["linkedin_name"], guest["linkedin_url"]), ("janedoe", "", ""))
+
+    def test_unconfirmed_linkedin_profile_credits_the_guest_in_plain_text(self):
+        context = normalize_guest_context({"guests": [{"full_name": "Jane Doe"}],
+                                           "hosts_present": ["Andrey Devyatkin", "Paulina Dubas"]})
+        tags = ba.tagging_context(context, self.handles)
+        self.assertIn("with Jane Doe and @Paulina Dubas.", ba.credits_line(tags, 111, "linkedin"))
+        self.assertEqual(ba.tag_set(tags, "linkedin"), ["@DevSecOps Talks", "@Paulina Dubas"])
+        warnings = ba.announcement_warnings(QUOTE_PRESENT, tags, 111, PAGE_URL)
+        self.assertIn("not tagged on LinkedIn: Jane Doe (profile not confirmed)", warnings)
+        self.assertFalse(any("plain text (no linkedin_name)" in w for w in warnings))
 
 
 class Timing(unittest.TestCase):

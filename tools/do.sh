@@ -116,7 +116,18 @@ ensure_fluidaudio() {
   echo "  Models (~685 MB) download to ~/Library/Application Support/FluidAudio/ on first run."
 }
 
-ensure_fluidaudio
+# --transcript / --skip-transcription runs never transcribe, so they need no build.
+needs_fluidaudio=1
+for arg in "$@"; do
+  case "$arg" in
+    -t|-t?*|--transcript|--transcript=*|--skip-transcription) needs_fluidaudio=0 ;;
+  esac
+done
+if [ "$needs_fluidaudio" = 1 ]; then
+  ensure_fluidaudio
+else
+  echo "Transcript given or transcription skipped — skipping FluidAudio build."
+fi
 
 # Staging of ~/Downloads/*.{mp3,mp4} into raw/ now happens inside podbean.py
 # (see stage_downloads_to_raw): re-run-safe and prompts when raw/ already holds files.

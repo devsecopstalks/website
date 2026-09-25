@@ -157,6 +157,21 @@ class TestMetadata(unittest.TestCase):
             self.assertEqual(codex.call_count, 2)
             self.assertTrue(Path(f"{base}-metadata.json").exists())
 
+    def test_checkpoint_regenerates_when_transcript_or_guests_change(self):
+        guests = {"status": "verified", "guests": [{"full_name": "Jane Doe"}], "hosts_present": ["Paulina"]}
+        meta = dict(METADATA, youtube_intro="With Jane Doe.", podcast_who_what="With Jane Doe.")
+        with tempfile.TemporaryDirectory() as tmp:
+            base = os.path.join(tmp, "episode001")
+            with patch.object(episode_metadata, "run_codex", return_value=json.dumps(meta)) as codex, \
+                    redirect_stdout(StringIO()):
+                for transcript, context in (
+                    ("t", guests), ("t", dict(guests, notes="")), ("t2", guests),
+                    ("t2", dict(guests, hosts_present=["Paulina", "Mattias"])),
+                ):
+                    episode_metadata.load_or_generate_metadata(base, "Title", "Teaser", "article", transcript,
+                                                               guest_context=context)
+            self.assertEqual(codex.call_count, 3)
+
     def test_readtime(self):
         self.assertEqual(episode_metadata.readtime_for("word " * 2640), "12 min read")
         self.assertEqual(episode_metadata.readtime_for("short"), "1 min read")
@@ -262,6 +277,27 @@ class TestArticleHelpers(unittest.TestCase):
         self.assertEqual(cmd[cmd.index("--output-schema") + 1], "/schema.json")
 
 
+class TestArticleHtml(unittest.TestCase):
+    def test_allowed_markup_code_shortcodes_and_autolinks_pass(self):
+        article = "\n".join([
+            "## A {#a}", "A <mark>key</mark> point<br>, H<sub>2</sub>O, x<sup>2</sup>.",
+            '<figure><img src="/i.png" alt="x"><figcaption>Cap</figcaption></figure>',
+            "Use `<script>` or ``<div onclick=x>`` in prose.", "```html", "<div onload=\"x\">", "```",
+            "{{< youtube abc123 >}} and <https://example.com/>.",
+        ])
+        self.assertEqual(episode_pipeline.article_html_problems(article), [])
+
+    def test_disallowed_tags_handlers_and_javascript_links_are_listed(self):
+        article = ('<div class="x">a</div> <script>alert(1)</script> <img src=x onerror="alert(1)"> '
+                   '<mark style="x" onClick=y>b</mark> [c](javascript:alert(1))')
+        problems = episode_pipeline.article_html_problems(article)
+        self.assertEqual(problems, [
+            'tag not allowed: <div class="x">', "tag not allowed: </div>", "tag not allowed: <script>",
+            "tag not allowed: </script>", 'script in tag: <img src=x onerror="alert(1)">',
+            'script in tag: <mark style="x" onClick=y>', "javascript: link: ](javascript:",
+        ])
+
+
 class TestEpisodePage(unittest.TestCase):
     def setUp(self):
         self.dir = self.enterContext(tempfile.TemporaryDirectory())
@@ -287,6 +323,22 @@ class TestEpisodePage(unittest.TestCase):
                  "podbean pb-id", "{{< youtube yt12345678a >}}", "## The problem"]
         positions = [body.index(needle) for needle in order]
         self.assertEqual(positions, sorted(positions))
+
+    def test_rewrite_keeps_audio_url_and_video_when_the_run_has_none(self):
+        self.write()
+        path = podbean.write_episode_markdown(110, "T", "Teaser", "Body.", "pb-id", "yt12345678a",
+                                              audio_url="https://mcdn.podbean.com/a.mp3")
+        path = podbean.write_episode_markdown(110, "T2", "Teaser", "Body.", "pb-id", "", audio_url="")
+        text = Path(path).read_text(encoding="utf-8")
+        self.assertIn('audio_url: "https://mcdn.podbean.com/a.mp3"', text)
+        self.assertIn('youtube_id: "yt12345678a"', text)
+        self.assertIn("{{< youtube yt12345678a >}}", text)
+        path = podbean.write_episode_markdown(110, "T3", "Teaser", "Body.", "pb-id", "newvideo123",
+                                              audio_url="https://mcdn.podbean.com/b.mp3")
+        text = Path(path).read_text(encoding="utf-8")
+        self.assertIn('audio_url: "https://mcdn.podbean.com/b.mp3"', text)
+        self.assertIn('youtube_id: "newvideo123"', text)
+        self.assertEqual(text.count("audio_url:"), 1)
 
     def test_published_page_is_updated_in_place(self):
         old = Path(self.dir) / "110-can-broken-github-actions-get-your-aws-account-blocked-.md"

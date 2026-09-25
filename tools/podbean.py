@@ -22,6 +22,7 @@ from episode_pipeline import (
     detect_guests,
     generate_article,
     guest_context_to_prompt_text,
+    guest_full_names,
     load_raw_companion_markdown,
     load_guest_context,
     normalize_operator_guest_notes,
@@ -31,6 +32,7 @@ from episode_pipeline import (
     save_guest_context,
 )
 from episode_metadata import (
+    COMPANY_LINKEDIN_URL,
     build_podbean_show_notes,
     build_youtube_description,
     build_youtube_title,
@@ -674,7 +676,7 @@ def write_episode_markdown(
         "",
         description,
         "",
-        "[Discuss the episode or ask us anything on LinkedIn](https://www.linkedin.com/company/devsecops-talks/)",
+        f"[Discuss the episode or ask us anything on LinkedIn]({COMPANY_LINKEDIN_URL})",
         "",
         "<!--more-->",
         "",
@@ -1188,10 +1190,12 @@ def load_or_create_transcript(client, audio_path: str, out_base: str, verbose=Fa
         print(f"Merging provided transcript with {backend} transcript using Codex...")
         transcript = merge_transcripts_with_codex(machine_transcript, provided_transcript, verbose=verbose)
 
-    invalidate_transcript_checkpoints(out_base)
+    # Transcript first: a crash before invalidation leaves stale checkpoints
+    # next to the new transcript, never deleted ones with no transcript.
     with open(transcript_file, "w", encoding="utf-8") as f:
         f.write(transcript)
     save_transcript_source(out_base, backend, transcript, machine_transcript, provided_path)
+    invalidate_transcript_checkpoints(out_base)
     print(f"✓ Transcript saved to {transcript_file}")
     return transcript
 
@@ -1398,17 +1402,6 @@ def _parse_participants_arg(arg: str | None) -> list[str]:
     return out if out else list(DEFAULT_PARTICIPANTS)
 
 
-def _guest_names(guest_context: dict) -> list[str]:
-    names: list[str] = []
-    for guest in guest_context.get("guests") or []:
-        if not isinstance(guest, dict):
-            continue
-        name = str(guest.get("participant_name") or guest.get("full_name") or "").strip()
-        if name:
-            names.append(name)
-    return names
-
-
 def _split_operator_guest_chunk(chunk: str) -> tuple[str, str]:
     """Split loose operator input into a likely full name and details."""
     chunk = chunk.strip()
@@ -1488,7 +1481,7 @@ def _repair_guest_context_names(guest_context: dict) -> dict:
 
 
 def _text_includes_guest_names(text: str, guest_context: dict) -> bool:
-    required = _guest_names(guest_context)
+    required = guest_full_names(guest_context)
     if not required:
         return True
     folded = text.casefold()
@@ -1501,7 +1494,7 @@ def _participants_for_episode(arg: str | None, guest_context: dict) -> list[str]
         return participants
 
     seen = {p.casefold() for p in participants}
-    for guest_name in _guest_names(guest_context):
+    for guest_name in guest_full_names(guest_context):
         key = guest_name.casefold()
         if key not in seen:
             participants.append(guest_name)
@@ -1603,7 +1596,7 @@ def _load_or_detect_guest_context(
     if os.path.exists(guest_context_file):
         try:
             saved = load_guest_context(guest_context_file)
-            names = _guest_names(saved)
+            names = guest_full_names(saved)
             summary = ", ".join(names) if names else "no guests"
             print(f'\nFound saved guest context: {summary}')
             print("Press Enter to reuse, or type 'new' to refresh guest lookup: ", end="", flush=True)
@@ -1788,7 +1781,7 @@ def process_audio(audio_path: str, args, client: OpenAI | None) -> None:
     if title and not _text_includes_guest_names(title, guest_context):
         print(
             "Error: --title must include guest full name(s): "
-            + ", ".join(_guest_names(guest_context))
+            + ", ".join(guest_full_names(guest_context))
         )
         sys.exit(1)
     if not title and os.path.exists(title_file):
@@ -1811,7 +1804,7 @@ def process_audio(audio_path: str, args, client: OpenAI | None) -> None:
             else:
                 print(
                     "Picked title is missing guest full name(s): "
-                    + ", ".join(_guest_names(guest_context))
+                    + ", ".join(guest_full_names(guest_context))
                 )
     with open(title_file, "w", encoding="utf-8") as f:
         f.write(title)
@@ -1825,7 +1818,7 @@ def process_audio(audio_path: str, args, client: OpenAI | None) -> None:
     if description and not _text_includes_guest_names(description, guest_context):
         print(
             "Error: --description must include guest full name(s): "
-            + ", ".join(_guest_names(guest_context))
+            + ", ".join(guest_full_names(guest_context))
         )
         sys.exit(1)
     if not description and os.path.exists(description_file):
@@ -1847,7 +1840,7 @@ def process_audio(audio_path: str, args, client: OpenAI | None) -> None:
             else:
                 print(
                     "Picked description is missing guest full name(s): "
-                    + ", ".join(_guest_names(guest_context))
+                    + ", ".join(guest_full_names(guest_context))
                 )
     with open(description_file, "w", encoding="utf-8") as f:
         f.write(description)
@@ -1862,7 +1855,7 @@ def process_audio(audio_path: str, args, client: OpenAI | None) -> None:
         guest_context=guest_context, guest_text=guest_prompt_text, verbose=args.verbose,
     )
     try:
-        cover_image = generate_cover(episode_number, title, _guest_names(guest_context))
+        cover_image = generate_cover(episode_number, title, guest_full_names(guest_context))
     except Exception as e:
         print(f"Error: cover generation failed ({e}); nothing was uploaded.")
         sys.exit(1)

@@ -601,6 +601,19 @@ class LoadOrCreateTranscriptTests(unittest.TestCase):
         for suffix in kept:
             self.assertTrue(Path(f"{self.out_base}{suffix}").exists(), suffix)
 
+    def test_transcript_is_saved_before_derived_checkpoints_are_removed(self):
+        Path(f"{self.out_base}-article.md").write_text("old", encoding="utf-8")
+        seen = []
+
+        def invalidate(out_base):
+            seen.append((Path(f"{out_base}.txt").exists(), Path(f"{out_base}-transcript-source.json").exists()))
+            return []
+
+        with mock.patch.object(podbean, "transcribe_local", side_effect=self._fake_local), \
+                mock.patch.object(podbean, "invalidate_transcript_checkpoints", side_effect=invalidate):
+            self._run()
+        self.assertEqual(seen, [(True, True)])
+
     def test_openai_transcript_never_uses_turns_left_by_the_local_backend(self):
         Path(f"{self.out_base}-turns.json").write_text(json.dumps(self.TURNS), encoding="utf-8")
         with mock.patch.object(podbean, "transcribe_openai", return_value=tl.format_turns(self.TURNS)):

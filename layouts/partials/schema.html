@@ -15,7 +15,7 @@
 {{- $episode := dict
   "@type" "PodcastEpisode"
   "name" .Title
-  "description" .Description
+  "description" .Params.description
   "url" .Permalink
   "datePublished" (.Date.Format "2006-01-02")
   "partOfSeries" $series
@@ -40,7 +40,7 @@
   {{- $nodes = $nodes | append (dict
     "@type" "VideoObject"
     "name" $.Title
-    "description" $.Description
+    "description" $.Params.description
     "uploadDate" ($.Date.Format "2006-01-02T15:04:05Z07:00")
     "thumbnailUrl" (printf "https://i.ytimg.com/vi/%s/maxresdefault.jpg" .)
     "embedUrl" (printf "https://www.youtube.com/embed/%s" .)
@@ -59,7 +59,10 @@
   {{- range $i, $chunk := split (replaceRE `\n####? ` "\n### " $block) "\n### " -}}
     {{- if gt $i 0 -}}
       {{- $first := index (split $chunk "\n") 0 -}}
-      {{- $question := trim (replaceRE `\s*\{#[^}]*\}\s*$` "" $first) " " -}}
+      {{- $question := replaceRE `\s*\{#[^}]*\}\s*$` "" $first -}}
+      {{- $question = replaceRE `\*\*([^*]+)\*\*` "$1" $question -}}
+      {{- $question = replaceRE `\*(\w[^*]*\w|\w)\*` "$1" $question -}}
+      {{- $question = trim (replaceRE "`" "" $question) " " -}}
       {{- $answer := strings.TrimPrefix $first $chunk -}}
       {{- $answer = replaceRE `\{\{[<%][\s\S]*?[>%]\}\}` "" $answer -}}
       {{- $answer = replaceRE `</?[a-zA-Z][^>]*>` "" $answer -}}

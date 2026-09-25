@@ -5,49 +5,65 @@ and you've seen every mistake in the book.
 
 {{CONTEXT}}
 
+## The article's required voice, framing and structure
+
+{{TONE}}
+
+## Phrasing and accuracy rules
+
 {{STYLE}}
 
-The injected context above includes authoritative metadata about the hosts, products, and naming (same as tools/podcast-context.md).
-
-Previous episodes are in the content/episodes/ directory.
-Check them for consistency if the article references prior episodes.
-
-Also verify heading anchors per the writing style: first section must use `## Summary {#summary}`; other headings that should be linkable need unique `{#id}` attributes — flag missing, duplicate, or inconsistent IDs.
+The article is on stdin, followed by the transcript and, when there is a guest,
+the verified guest context. Previous episodes are in content/episodes/; check
+them when the article links or references one.
 
 ## Critical rules for this review
 
 ### The transcript has speech-to-text errors — do NOT waste time on them
-The hosts have accents. The transcript WILL contain misspellings of names, tools,
-and products. The context file contains the correct spellings. If the article uses
-the correct spelling from the context, that is CORRECT — do not flag it. If you're
-unsure about a product name, USE WEB SEARCH to verify it rather than flagging it as suspicious.
+The transcript is machine-generated and WILL misspell names, tools and products
+("Matthias", "Andre", "devsekovs"). Speakers are labelled `[A]`, `[B]`, ... If
+the article uses the correct spelling from the context or guest context, that is
+CORRECT. Flag the article only when it copies a misspelling. If you're unsure
+about a product name, USE WEB SEARCH to verify it.
 
-### The podcast context metadata is authoritative
-Information in tools/podcast-context.md (host bios, company names, URLs) is factual and
-MAY be used to enrich the article even if not explicitly stated in the transcript.
-Do NOT flag context-sourced information as "fabricated" or "not in the transcript."
+### The podcast context and guest context are authoritative
+Host bios, company names, URLs and verified guest details MAY be used even if
+the transcript does not state them. Do NOT flag them as fabricated.
 
 ### VERIFY, don't speculate
 Codex has built-in web search — USE IT. When you see a URL, product name,
 release date, or factual claim that looks questionable — search for it and
 verify. Report whether it's real or not. Do not write "this smells hallucinated"
-or "likely fabricated" without checking. That is lazy reviewing.
+or "likely fabricated" without checking.
+
+### Research versus host experience
+Check every experience claim ("we have seen", "at a client") against the
+transcript. An external fact presented as something the hosts said, or a host
+anecdote the transcript does not contain, is a fabrication. External facts need
+an inline primary source.
 
 ### Focus on what matters
 Prioritize these (high to low):
-1. Fabricated content — claims, features, or events NOT in the transcript or context
+1. Fabricated content — claims, anecdotes, or events NOT in the transcript,
+   context, or a linked source
 2. Factual errors — wrong dates, incorrect tool descriptions, hallucinated URLs
-3. Misattributions — opinions attributed to the wrong speaker
+3. Misattributed disagreements — a named disagreement that the transcript does
+   not support, or the wrong host on a side
 4. Missing important points from the transcript
 5. Logical gaps or unclear arguments
-6. Guest handling errors — if Guest Context is present, the article must
-   introduce each guest near the start using full name and verified professional
-   context, and should include relevant guest links/projects in Resources.
+6. Voice failures — recap narration ("in this episode", "the hosts discuss"),
+   host attributions outside genuine disagreements, a guest not introduced in
+   the problem section or introduced repeatedly, misspelled names
+7. Structure failures against the tone guide: missing or extra sections, a
+   Summary or Highlights section, a `####` question not answered in the
+   sentence below it, not exactly three common questions under
+   `## Common questions, answered {#faq}`, a common question that restates a
+   `####` question, missing Related episodes or Resources
+8. Anchors — every `##` and `###` must end with a unique `{#kebab-case-id}`
+9. Em dashes anywhere, and length over the tone guide's caps
 
 Do NOT spend time on:
-- Minor attribution style ("Paulina says X" vs "X"). Both are fine.
 - Tone polishing or word choice preferences unless something is clearly wrong
-- Suggesting structural reorganization unless the structure is broken
 - Re-flagging issues that were already fixed from a previous review round
 
 ### Be concise

@@ -22,37 +22,24 @@ YouTube: https://youtube.com/channel/UCRjpE9xKxZeBkRgYiLErEjw
 - **DevSecOps Talks** — The podcast name, always spelled this way
 - **Boris** — Andrey's AI-powered DevOps product, https://www.getboris.ai/
 
-## Writing Style
+## Transcript spelling fixes
 
-- Write in third person ("The hosts discuss..." not "We discuss...")
-- Use the exact name spellings listed above — never misspell them
-- Attribute opinions to the correct speaker when possible
-- Keep a conversational but informative tone
-- Do NOT invent information not present in the transcript
+Transcripts are machine-generated and have no vocabulary list, so names come out
+wrong. Always write the correct form:
 
-## Article Structure
+- Matthias, Matias, Mathias -> **Mattias**
+- Andre, Andrei, Andrew -> **Andrey**
+- Pauline, Paula -> **Paulina**
+- devsekovs, dev sec ops talks, DevSecOps talk -> **DevSecOps Talks**
+- devsekovs.fm, devsecops dot fm -> **devsecops.fm**
+- Five XL, 5XL -> **FivexL**
 
-The generated article should follow this structure:
+Guest names follow the verified guest context, not the transcript.
 
-### ## Summary
-A 2-4 sentence overview that weaves in hooks — intriguing, controversial, or
-surprising statements from the episode that make the reader want to listen or
-keep reading. Don't just describe what was discussed; tease the most interesting
-takes. E.g. instead of "The hosts discuss S3 security" write "Andrey argues
-there is zero reason to have a public S3 bucket in 2026 — and the hosts explain
-what to do instead."
+## Writing
 
-### ## Key Topics
-Main speaking points as subsections (### headings). Summarize what was discussed
-under each point clearly and accurately.
-
-### ## Highlights
-Interesting quotes or spicy moments from the episode, with speaker attribution.
-Strong opinions, disagreements, surprising takes, or humor. Format each highlight
-as a standalone social-media-ready post (LinkedIn style): a punchy quote or
-paraphrase, brief context (1-2 sentences), and a call to listen. Each should
-work on its own without reading the full article.
-
-### ## Resources
-3-8 relevant articles, docs, or tools mentioned in or related to the topics
-discussed. Include brief descriptions. URLs must be real and working.
+- Episode articles: first person plural, see `blog-tone-of-voice.md`.
+- Show notes, YouTube copy and social posts: third person, hosts and guests by
+  full name.
+- Use the exact name spellings listed above.
+- Do NOT invent information not present in the transcript.

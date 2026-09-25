@@ -21,6 +21,7 @@ REPO_ROOT = os.path.abspath(os.path.join(TOOLS_DIR, ".."))
 PROMPTS_DIR = os.path.join(TOOLS_DIR, "prompts")
 CONTEXT_FILE = os.path.join(TOOLS_DIR, "podcast-context.md")
 STYLE_FILE = os.path.join(TOOLS_DIR, "writing-style.md")
+TONE_FILE = os.path.join(TOOLS_DIR, "blog-tone-of-voice.md")
 
 MAX_REVIEW_ITERATIONS = 10
 CODEX_MODEL = os.environ.get("CODEX_MODEL", "gpt-6-astra")
@@ -32,14 +33,19 @@ with open(CONTEXT_FILE, "r", encoding="utf-8") as _f:
 with open(STYLE_FILE, "r", encoding="utf-8") as _f:
     _WRITING_STYLE = _f.read()
 
+with open(TONE_FILE, "r", encoding="utf-8") as _f:
+    _TONE_OF_VOICE = _f.read()
+
 
 def load_prompt(name: str) -> str:
-    """Load a prompt template from prompts/ and inject context + writing style."""
+    """Load a prompt template from prompts/ and inject context, writing style and tone."""
     path = os.path.join(PROMPTS_DIR, f"{name}.md")
     with open(path, "r", encoding="utf-8") as f:
         template = f.read()
     return (
-        template.replace("{{CONTEXT}}", _CONTENT_CONTEXT).replace("{{STYLE}}", _WRITING_STYLE)
+        template.replace("{{CONTEXT}}", _CONTENT_CONTEXT)
+        .replace("{{STYLE}}", _WRITING_STYLE)
+        .replace("{{TONE}}", _TONE_OF_VOICE)
     )
 
 
@@ -107,8 +113,11 @@ def run_claude(prompt: str, verbose=False, allow_web=False, fatal: bool = True) 
     return output
 
 
-def run_codex(prompt: str, stdin_text: str = "", verbose=False) -> str:
-    """Run OpenAI Codex CLI in non-interactive mode. Returns output text."""
+def run_codex(prompt: str, stdin_text: str = "", verbose=False, output_schema: str | None = None) -> str:
+    """Run OpenAI Codex CLI in non-interactive mode. Returns output text.
+
+    ``output_schema`` is a JSON Schema file; Codex then answers with one JSON object.
+    """
     if not shutil.which("codex"):
         print("Error: 'codex' CLI not found. Install with: npm install -g @openai/codex")
         sys.exit(1)
@@ -132,6 +141,8 @@ def run_codex(prompt: str, stdin_text: str = "", verbose=False) -> str:
             "-o",
             tmp_path,
         ]
+        if output_schema:
+            cmd += ["--output-schema", output_schema]
         if stdin_text:
             cmd.append(prompt)
             input_data = stdin_text
@@ -205,13 +216,12 @@ def load_raw_companion_markdown(audio_path: str) -> tuple[str, list[str]]:
 
 
 def extract_article(text: str) -> str:
-    """Extract article content starting from ## Summary."""
-    marker = "## Summary"
-    if marker in text:
-        parts = text.split(marker)
-        article = marker + parts[-1]
+    """Drop any preamble before the article's first ``##`` heading."""
+    match = re.search(r"^## ", text, flags=re.MULTILINE)
+    if match:
+        article = text[match.start():].strip() + "\n"
     else:
-        print("⚠ Output missing '## Summary' — using as-is")
+        print("⚠ Output has no '## ' heading — using as-is")
         article = text
 
     if len(article) < 500:
@@ -323,7 +333,7 @@ def guest_context_to_prompt_text(guest_context: dict) -> str:
             "or Paulina. Repeat guests are still guests."
         ),
         "Use the verified professional details below for factual context only.",
-        "Introduce the guest(s) near the start of the article.",
+        "Introduce each guest once, by full name and credentials, in the article's problem section.",
         "When generating titles, every title option must include all guest full names.",
         "When generating podcast descriptions, mention the guest full names.",
         "Include relevant guest links, companies, projects, or profiles in Resources.",
@@ -478,6 +488,8 @@ def review_with_codex(
     draft: str,
     previous_review_file: str = "",
     verbose: bool = False,
+    transcript: str = "",
+    editorial_guidance: str = "",
 ) -> tuple[str, bool]:
     """Review draft using Codex CLI. Returns (review_text, is_good)."""
     print("Reviewing with Codex (grumpy expert mode)...")
@@ -489,7 +501,13 @@ def review_with_codex(
             "do not repeat issues that were already fixed."
         )
 
-    review = run_codex(prompt, stdin_text=draft, verbose=verbose)
+    # The transcript lets the reviewer tell host experience from outside research.
+    stdin_parts = [f"--- ARTICLE ---\n{draft}"]
+    if transcript:
+        stdin_parts.append(f"--- TRANSCRIPT ---\n{transcript}")
+    if editorial_guidance:
+        stdin_parts.append(f"--- EDITORIAL GUIDANCE AND GUEST CONTEXT ---\n{editorial_guidance}")
+    review = run_codex(prompt, stdin_text="\n\n".join(stdin_parts) + "\n", verbose=verbose)
 
     is_good = _review_ends_good_to_go(review)
     if verbose:
@@ -537,19 +555,57 @@ def revise_draft(
     return article
 
 
+LEGACY_ARTICLE_HEADINGS = re.compile(r"^## (Summary|Key Topics|Highlights)\b", re.MULTILINE)
+
+
+def is_legacy_article(text: str) -> bool:
+    """True for articles in the old Summary / Key Topics / Highlights recap format."""
+    return bool(LEGACY_ARTICLE_HEADINGS.search(text))
+
+
+def set_aside_legacy_article(out_base: str) -> list[str]:
+    """Rename old-format article, draft and review checkpoints to ``*.legacy``."""
+    moved: list[str] = []
+    patterns = ("-article.md", "-draft.md", "-draft-v*.md", "-review-*.md")
+    for pattern in patterns:
+        for path in sorted(glob.glob(f"{out_base}{pattern}")):
+            os.replace(path, path + ".legacy")
+            moved.append(os.path.basename(path))
+    return moved
+
+
 def generate_article(
     transcript: str,
     out_base: str,
     editorial_guidance: str = "",
     raw_notes: str = "",
     verbose: bool = False,
+    input_func=input,
 ) -> str:
     """Run the draft-review loop. Returns final article text."""
     article_file = f"{out_base}-article.md"
     if os.path.exists(article_file):
-        print("Loading existing final article...")
         with open(article_file, "r", encoding="utf-8") as f:
-            return f.read()
+            saved_article = f.read()
+        if not is_legacy_article(saved_article):
+            print("Loading existing final article...")
+            return saved_article
+        # A recap-format article would otherwise be published into the new layout.
+        print(
+            f"\n{os.path.basename(article_file)} uses the old Summary/Highlights format.\n"
+            "Press Enter to set it aside (*.legacy) and write a new article, "
+            "or type 'keep' to publish it as is: ",
+            end="",
+            flush=True,
+        )
+        try:
+            answer = input_func().strip().lower()
+        except EOFError:
+            answer = ""
+        if answer == "keep":
+            return saved_article
+        moved = set_aside_legacy_article(out_base)
+        print(f"✓ Set aside: {', '.join(moved)}")
 
     draft = None
     start_iteration = 1
@@ -603,7 +659,11 @@ def generate_article(
             is_good = _review_ends_good_to_go(review)
         else:
             review, is_good = review_with_codex(
-                draft, previous_review_file=prev_review_path, verbose=verbose
+                draft,
+                previous_review_file=prev_review_path,
+                verbose=verbose,
+                transcript=transcript,
+                editorial_guidance=editorial_guidance,
             )
             with open(review_file, "w", encoding="utf-8") as f:
                 f.write(review)
@@ -640,8 +700,44 @@ def generate_article(
     with open(article_file, "w", encoding="utf-8") as f:
         f.write(draft)
     print(f"✓ Final article saved to {article_file}")
+    for warning in article_style_warnings(draft):
+        print(f"⚠ Article: {warning}")
 
     return draft
+
+
+_ANCHOR_RE = re.compile(r"\{#([a-z0-9-]+)\}\s*$")
+
+
+def article_style_warnings(article: str) -> list[str]:
+    """Mechanical checks from blog-tone-of-voice.md that the review can miss."""
+    warnings: list[str] = []
+    words = len(article.split())
+    if words > 4000:
+        warnings.append(f"{words} words (cap 4,000, target 2,500-3,500)")
+    if "\u2014" in article:
+        warnings.append(f"{article.count(chr(0x2014))} em dash(es)")
+    ids: list[str] = []
+    for line in article.splitlines():
+        if re.match(r"^#{2,3} ", line):
+            match = _ANCHOR_RE.search(line)
+            if match:
+                ids.append(match.group(1))
+            else:
+                warnings.append(f"heading without {{#id}}: {line.strip()}")
+    duplicates = sorted({i for i in ids if ids.count(i) > 1})
+    if duplicates:
+        warnings.append(f"duplicate heading ids: {', '.join(duplicates)}")
+    if is_legacy_article(article):
+        warnings.append("has a Summary, Key Topics or Highlights section")
+    faq = re.search(r"\{#faq\}(.*?)(?=^## |\Z)", article, flags=re.MULTILINE | re.DOTALL)
+    if not faq:
+        warnings.append("no '## Common questions, answered {#faq}' section")
+    else:
+        questions = len(re.findall(r"^#{3,4} ", faq.group(1), flags=re.MULTILINE))
+        if questions != 3:
+            warnings.append(f"{questions} common questions (exactly 3 expected)")
+    return warnings
 
 
 def _codex_options_for_article(

@@ -30,6 +30,16 @@ from episode_pipeline import (
     run_codex,
     save_guest_context,
 )
+from episode_metadata import (
+    build_podbean_show_notes,
+    build_youtube_description,
+    build_youtube_title,
+    load_or_generate_chapters,
+    load_or_generate_metadata,
+    readtime_for,
+    youtube_description_warnings,
+)
+from generate_cover import generate_cover
 from transcribe_local import format_turns, transcribe_local
 from r2_staging import (
     load_r2_youtube_staging_marker,
@@ -58,6 +68,7 @@ EPISODES_DIR = os.path.join(TOOLS_DIR, "..", "content", "episodes")
 
 # Default Hugo front matter when --participants is omitted (current hosts).
 DEFAULT_PARTICIPANTS = ["Paulina", "Mattias", "Andrey"]
+TITLE_TARGET_CHARS = 55
 
 
 @dataclass(frozen=True)
@@ -554,47 +565,36 @@ def prompt_publish_action(
         print("Please press Enter to schedule, or enter 'p' to publish immediately.")
 
 
-def build_youtube_description_plain(teaser: str, episode_number: int, title_short: str) -> str:
-    """
-    Plain-text description for upload-post → YouTube.
-
-    Uses short labels with **URL on the following line**. Episode link uses
-    ``/episodes/NNN/`` (requires matching Hugo ``aliases`` on the episode page)
-    so paths stay short — YouTube often ellipsizes long URLs in the description UI.
-    ``title_short`` is kept for a stable call signature; the website still uses
-    the full slug in the episode filename and canonical URL.
-    """
-    _ = title_short
-    episode_url = f"https://devsecops.fm/episodes/{episode_number:03d}/"
-    lines = [
-        teaser.strip(),
-        "",
-        "We are always happy to answer any questions, hear suggestions for new episodes, or hear from you, our listeners.",
-        "",
-        "Podcast website",
-        "https://devsecops.fm/",
-        "",
-        "LinkedIn",
-        "https://linkedin.com/company/devsecops-talks/",
-        "",
-        "YouTube channel",
-        "https://www.youtube.com/channel/UCRjpE9xKxZeBkRgYiLErEjw",
-        "",
-        "This episode — audio & show notes",
-        episode_url,
-        "",
-        "Subscribe to the podcast",
-        "https://devsecops.fm/",
-        "",
-        "#DevSecOps #InfraAsCode #CloudSecurity #DevOps #Podcast #CyberSecurity #Security #SSDLC #Devsecopstalks",
-    ]
-    return "\n".join(lines)
-
-
 def _participants_yaml_line(participants: list[str]) -> str:
     """Single YAML line: participants: ["A", "B"] with minimal escaping."""
     inner = ", ".join(f'"{yaml_escape_double_quoted(p)}"' for p in participants)
     return f"participants: [{inner}]"
+
+
+def find_episode_page(episode_number: int) -> str | None:
+    """Existing ``content/episodes/NNN-*.md`` for this episode, if any."""
+    matches = sorted(Path(EPISODES_DIR).glob(f"{episode_number:03d}-*.md"))
+    return str(matches[0]) if matches else None
+
+
+def _front_matter_blocks(text: str) -> tuple[list[tuple[str, list[str]]], str]:
+    """Split a page into ordered (key, lines) front-matter blocks and the body."""
+    lines = text.split("\n")
+    if not lines or lines[0].strip() != "---":
+        raise ValueError("page has no front matter")
+    end = next(i for i in range(1, len(lines)) if lines[i].strip() == "---")
+    blocks: list[tuple[str, list[str]]] = []
+    for line in lines[1:end]:
+        match = re.match(r"^([A-Za-z_][\w-]*):", line)
+        if match or not blocks:
+            blocks.append((match.group(1) if match else "", [line]))
+        else:
+            blocks[-1][1].append(line)
+    return blocks, "\n".join(lines[end + 1:])
+
+
+def _yaml_str(key: str, value: str) -> str:
+    return f'{key}: "{yaml_escape_double_quoted(" ".join(str(value).split()))}"'
 
 
 def write_episode_markdown(
@@ -606,30 +606,69 @@ def write_episode_markdown(
     youtube_video_id: str,
     participants: list[str] | None = None,
     publish_datetime: datetime.datetime | None = None,
+    subtitle: str = "",
+    readtime: str = "",
+    image: str = "",
+    audio_url: str = "",
 ) -> str:
-    """Write Hugo episode page; mirrors published episode layout."""
+    """Write the Hugo episode page: teaser, <!--more-->, TOC, players, article.
+
+    An existing page for the episode is rewritten in place: filename, date,
+    aliases and the other front matter stay; title, lastmod and the body change.
+    """
     participants = participants if participants is not None else list(DEFAULT_PARTICIPANTS)
     full_title = f"#{episode_number} - {title_short}"
-    slug = title_to_url_safe(title_short)
-    filename = f"{episode_number:03d}-{slug}.md"
-    path = os.path.join(EPISODES_DIR, filename)
-    page_datetime = publish_datetime or datetime.datetime.now().astimezone()
-    date_iso = page_datetime.astimezone().replace(microsecond=0).isoformat()
-    title_yaml = yaml_escape_double_quoted(full_title)
+    now_iso = datetime.datetime.now().astimezone().replace(microsecond=0).isoformat()
     podbean_title = f"DEVSECOPS Talks {full_title}"
     # f-strings: {{ → literal {. Hugo needs {{< not {< — use {{{{ for {{ in output.
     podbean_line = f' {{{{<  podbean {podbean_id} "{podbean_title}"  >}}}} '
 
+    optional = [
+        _yaml_str(key, value)
+        for key, value in (
+            ("description", description),
+            ("subtitle", subtitle),
+            ("readtime", readtime),
+            ("image", image),
+            ("youtube_id", youtube_video_id),
+            ("audio_url", audio_url),
+        )
+        if str(value or "").strip()
+    ]
+
+    existing = find_episode_page(episode_number)
+    if existing:
+        path = existing
+        with open(path, "r", encoding="utf-8") as f:
+            blocks, _old_body = _front_matter_blocks(f.read())
+        replaced = {"title", "lastmod", "description", "subtitle", "readtime", "image", "youtube_id", "audio_url"}
+        front = [_yaml_str("title", full_title)]
+        for key, lines in blocks:
+            if key in replaced:
+                continue
+            front.extend(lines)
+            if key == "date":
+                front.append(f"lastmod: {now_iso}")
+        front.extend(optional)
+    else:
+        path = os.path.join(EPISODES_DIR, f"{episode_number:03d}-{title_to_url_safe(title_short)}.md")
+        page_datetime = publish_datetime or datetime.datetime.now().astimezone()
+        date_iso = page_datetime.astimezone().replace(microsecond=0).isoformat()
+        front = [
+            _yaml_str("title", full_title),
+            f"date: {date_iso}",
+            f"lastmod: {date_iso}",
+            f"episode: {episode_number}",
+            'author: "DevSecOps Talks"',
+            _participants_yaml_line(participants),
+            *optional,
+            "aliases:",
+            f'  - "/episodes/{episode_number:03d}/"',
+        ]
+
     parts = [
         "---",
-        f'title: "{title_yaml}"',
-        f"date: {date_iso}",
-        f"lastmod: {date_iso}",
-        f"episode: {episode_number}",
-        'author: "DevSecOps Talks"',
-        _participants_yaml_line(participants),
-        "aliases:",
-        f'  - "/episodes/{episode_number:03d}/"',
+        *front,
         "---",
         "",
         description,
@@ -637,6 +676,8 @@ def write_episode_markdown(
         "[Discuss the episode or ask us anything on LinkedIn](https://www.linkedin.com/company/devsecops-talks/)",
         "",
         "<!--more-->",
+        "",
+        "{{< whats-in-this-post >}}",
         "",
         "<!-- Player -->",
         "",
@@ -1771,6 +1812,9 @@ def process_audio(audio_path: str, args, client: OpenAI | None) -> None:
     with open(title_file, "w", encoding="utf-8") as f:
         f.write(title)
     print(f"✓ Title: {title}")
+    if len(title) > TITLE_TARGET_CHARS:
+        # Guest names are required, so the length target is advisory only.
+        print(f"⚠ Title is {len(title)} chars (target under {TITLE_TARGET_CHARS}); kept as picked.")
 
     # Short teaser description (Podbean + above-the-fold)
     description = (args.description or "").strip() or None
@@ -1805,6 +1849,32 @@ def process_audio(audio_path: str, args, client: OpenAI | None) -> None:
         f.write(description)
     print("✓ Description saved")
 
+    # Packaging runs before anything remote, so a failure here uploads nothing.
+    chapters = load_or_generate_chapters(
+        out_base, article_md, load_transcript_turns(out_base, transcript), verbose=args.verbose,
+    )
+    metadata = load_or_generate_metadata(
+        out_base, title, description, article_md, transcript,
+        guest_context=guest_context, guest_text=guest_prompt_text, verbose=args.verbose,
+    )
+    try:
+        cover_image = generate_cover(episode_number, title, _guest_names(guest_context))
+    except Exception as e:
+        print(f"Error: cover generation failed ({e}); nothing was uploaded.")
+        sys.exit(1)
+
+    youtube_title = build_youtube_title(metadata, episode_number, title)
+    youtube_description_text = build_youtube_description(
+        metadata, episode_number, chapters=chapters, guest_context=guest_context,
+    )
+    yt_desc_path = f"{out_base}-youtube-description.txt"
+    with open(yt_desc_path, "w", encoding="utf-8") as f:
+        f.write(youtube_description_text)
+    print(f"✓ YouTube title: {youtube_title}")
+    print(f"✓ YouTube description saved to {yt_desc_path}")
+    for warning in youtube_description_warnings(youtube_description_text, metadata, chapters):
+        print(f"⚠ YouTube description: {warning}")
+
     # Ask only after all reusable content checkpoints have been loaded so a
     # resumed run is visibly resumed first. Existing Podbean episodes retain
     # their current state and do not prompt.
@@ -1817,13 +1887,9 @@ def process_audio(audio_path: str, args, client: OpenAI | None) -> None:
 
     full_title = f"#{episode_number} - {title}"
 
-    extended_description = (
-        f"{description}<p>&nbsp;</p>"
-        "<p>We are always happy to answer any questions, hear suggestions for new episodes, or hear from you, our listeners.</p>"
-        "<p><a href='https://www.linkedin.com/company/devsecops-talks/'>DevSecOps Talks podcast LinkedIn page</a></p>"
-        "<p><a href='https://devsecops.fm/'>DevSecOps Talks podcast website</a></p>"
-        "<p><a href='https://youtube.com/channel/UCRjpE9xKxZeBkRgYiLErEjw'>DevSecOps Talks podcast YouTube channel</a></p>"
-    )
+    # Only used when creating the episode; an existing one keeps its show notes.
+    extended_description = build_podbean_show_notes(metadata, episode_number)
+    podbean_episode = existing_episode
     if existing_episode:
         podbean_status = str(existing_episode.get("status") or "existing")
     else:
@@ -1884,6 +1950,7 @@ def process_audio(audio_path: str, args, client: OpenAI | None) -> None:
         if args.verbose:
             print(create_episode_response)
         podbean_id = podbean_player_id(create_episode_response)
+        podbean_episode = create_episode_response.get("episode") or create_episode_response
         if publish_schedule:
             validate_podbean_schedule(create_episode_response, publish_schedule)
         if os.path.isfile(podbean_upload_checkpoint):
@@ -1892,14 +1959,6 @@ def process_audio(audio_path: str, args, client: OpenAI | None) -> None:
         print(f"✓ Podbean player id: {podbean_id} (scheduled {publish_schedule.display})")
     else:
         print(f"✓ Podbean player id: {podbean_id} ({podbean_status})")
-
-    # YouTube: plain text with URLs on their own lines (not HTML→text), so links are not visually cut off with …
-    youtube_description_text = build_youtube_description_plain(description, episode_number, title)
-    yt_desc_path = f"{out_base}-youtube-description.txt"
-    with open(yt_desc_path, "w", encoding="utf-8") as f:
-        f.write(youtube_description_text)
-        f.write("\n")
-    print(f"✓ YouTube description saved to {yt_desc_path}")
 
     # YouTube
     youtube_embed_url = (args.youtube or "").strip()
@@ -1991,10 +2050,9 @@ def process_audio(audio_path: str, args, client: OpenAI | None) -> None:
                         episode_number,
                     )
 
-            yt_title = f"DEVSECOPS Talks {full_title}"
             status = upload_to_youtube(
                 video_for_upload,
-                yt_title,
+                youtube_title,
                 youtube_description_text,
                 scheduled_date=publish_schedule.upload_post_scheduled_date if publish_schedule else None,
                 schedule_timezone=publish_schedule.upload_post_timezone if publish_schedule else None,
@@ -2069,8 +2127,14 @@ def process_audio(audio_path: str, args, client: OpenAI | None) -> None:
         video_id,
         participants=_participants_for_episode(getattr(args, "participants", None), guest_context),
         publish_datetime=publish_schedule.podbean_datetime if publish_schedule else None,
+        subtitle=str(metadata.get("subtitle") or ""),
+        readtime=readtime_for(article_md),
+        image=cover_image,
+        audio_url=str((podbean_episode or {}).get("media_url") or ""),
     )
     print(f"✓ Episode page: {episode_path}")
+
+    # Social announcement goes here: after the page exists, so the post can link it.
 
     print(f"\n{'='*60}")
     print(f"Episode #{episode_number} complete.")

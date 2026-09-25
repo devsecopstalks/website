@@ -294,10 +294,10 @@ def normalize_guest_context(data: dict) -> dict:
                 "confidence": str(raw_guest.get("confidence") or "").strip(),
                 "needs_operator": bool(raw_guest.get("needs_operator")),
                 "question": str(raw_guest.get("question") or "").strip(),
-                # Announcement tags; linkedin_name is what follows the "@" and
-                # defaults to the full name, which is what LinkedIn displays.
+                # Announcement tags; linkedin_name is what follows the "@". Empty
+                # means the profile was not confirmed, so the guest is credited untagged.
                 "linkedin_url": str(raw_guest.get("linkedin_url") or "").strip(),
-                "linkedin_name": str(raw_guest.get("linkedin_name") or full_name).strip(),
+                "linkedin_name": str(raw_guest.get("linkedin_name") or "").strip(),
                 "x_handle": str(raw_guest.get("x_handle") or "").strip().lstrip("@"),
             }
         )
@@ -770,6 +770,34 @@ def article_style_warnings(article: str) -> list[str]:
         if questions != 3:
             warnings.append(f"{questions} common questions (exactly 3 expected)")
     return warnings
+
+
+ALLOWED_ARTICLE_TAGS = frozenset({"mark", "figure", "figcaption", "img", "br", "sup", "sub"})
+_FENCED_CODE_RE = re.compile(r"^ {0,3}(`{3,}|~{3,}).*?(?:^ {0,3}\1[`~]*[ \t]*$|\Z)", re.MULTILINE | re.DOTALL)
+_INLINE_CODE_RE = re.compile(r"(`+).+?\1", re.DOTALL)
+_SHORTCODE_RE = re.compile(r"\{\{[<%].*?[>%]\}\}", re.DOTALL)
+_AUTOLINK_RE = re.compile(r"<(?:https?|mailto):[^>\s]*>", re.IGNORECASE)
+_HTML_TAG_RE = re.compile(r"</?([A-Za-z][A-Za-z0-9-]*)\b[^>]*>")
+_EVENT_ATTR_RE = re.compile(r"\son[a-z]+\s*=", re.IGNORECASE)
+_JS_LINK_RE = re.compile(r"\]\(\s*<?\s*javascript:", re.IGNORECASE)
+
+
+def article_html_problems(article: str) -> list[str]:
+    """Raw HTML the page must not carry: tags outside ALLOWED_ARTICLE_TAGS,
+    ``on*=`` handlers and ``javascript:`` URLs. Code, shortcodes and autolinks are skipped.
+    """
+    text = _FENCED_CODE_RE.sub("", article)
+    text = _INLINE_CODE_RE.sub("", text)
+    text = _AUTOLINK_RE.sub("", _SHORTCODE_RE.sub("", text))
+    problems: list[str] = []
+    for match in _HTML_TAG_RE.finditer(text):
+        tag = match.group(0)
+        if match.group(1).lower() not in ALLOWED_ARTICLE_TAGS:
+            problems.append(f"tag not allowed: {tag}")
+        elif _EVENT_ATTR_RE.search(tag) or "javascript:" in tag.lower():
+            problems.append(f"script in tag: {tag}")
+    problems.extend(f"javascript: link: {m.group(0)}" for m in _JS_LINK_RE.finditer(text))
+    return problems
 
 
 def _codex_options_for_article(

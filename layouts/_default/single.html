@@ -3,7 +3,7 @@
 <article class="single-view{{ with .Section }} single-view--{{ . | urlize }}{{ end }}">
 <header>
 <h1 class="title{{ if $.Param "submitted" | default false }} mb--xxs{{ end }}">
-{{ .Title }}{{ if $.Param "episode" | default false }} - ep.#{{ $.Param "episode" }}{{ end }}</h1>
+{{ .Title }}{{ partial "episode-title-suffix.html" . }}</h1>
 {{ if $.Param "submitted" | default false }}{{ partial "submitted.html" . }}{{ end -}}
 {{ if .Params.tags }}{{ partial "tags.html" . }}{{ end -}}
 </header>

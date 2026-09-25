@@ -14,7 +14,7 @@ import os
 import re
 import sys
 
-from episode_pipeline import PROMPTS_DIR, guest_full_names, load_prompt, run_codex
+from episode_pipeline import PROMPTS_DIR, guest_full_names, load_prompt, normalize_guest_context, run_codex
 
 SITE_URL = "https://devsecops.fm/"
 COMPANY_LINKEDIN_URL = "https://www.linkedin.com/company/devsecops-talks/"
@@ -270,8 +270,11 @@ def extract_metadata(
     sys.exit(1)
 
 
-def _inputs_fingerprint(title: str, teaser: str, article: str) -> str:
-    return hashlib.sha256("\0".join((title, teaser, article)).encode("utf-8")).hexdigest()
+def _inputs_fingerprint(title: str, teaser: str, article: str, transcript: str, guest_context: dict | None) -> str:
+    """Hash of every input the metadata call sees; guests normalized so key order does not matter."""
+    guests = json.dumps(normalize_guest_context(guest_context or {}), sort_keys=True, ensure_ascii=False)
+    transcript_sha = hashlib.sha256(transcript.encode("utf-8")).hexdigest()
+    return hashlib.sha256("\0".join((title, teaser, article, transcript_sha, guests)).encode("utf-8")).hexdigest()
 
 
 def load_or_generate_metadata(
@@ -284,9 +287,9 @@ def load_or_generate_metadata(
     guest_text: str = "",
     verbose: bool = False,
 ) -> dict:
-    """``-metadata.json``, regenerated when the title, teaser or article changed."""
+    """``-metadata.json``, regenerated when the title, teaser, article, transcript or guests changed."""
     metadata_file = f"{out_base}-metadata.json"
-    fingerprint = _inputs_fingerprint(title, teaser, article)
+    fingerprint = _inputs_fingerprint(title, teaser, article, transcript, guest_context)
     if os.path.isfile(metadata_file):
         try:
             with open(metadata_file, "r", encoding="utf-8") as f:
@@ -296,7 +299,7 @@ def load_or_generate_metadata(
             ):
                 print(f"✓ Loaded metadata from {metadata_file}")
                 return saved["metadata"]
-            print("Title, teaser or article changed since the saved metadata; regenerating.")
+            print("Title, teaser, article, transcript or guests changed since the saved metadata; regenerating.")
         except (OSError, ValueError, AttributeError) as e:
             print(f"⚠ Could not read {metadata_file} ({e}); regenerating")
 

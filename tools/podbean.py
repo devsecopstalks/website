@@ -19,6 +19,8 @@ from urllib.parse import parse_qs, urlparse
 from openai import OpenAI
 
 from episode_pipeline import (
+    ALLOWED_ARTICLE_TAGS,
+    article_html_problems,
     detect_guests,
     generate_article,
     guest_context_to_prompt_text,
@@ -600,6 +602,14 @@ def _yaml_str(key: str, value: str) -> str:
     return f'{key}: "{yaml_escape_double_quoted(" ".join(str(value).split()))}"'
 
 
+def _front_matter_scalar(lines: list[str]) -> str:
+    """Value of a one-line ``key: "value"`` block as written by ``_yaml_str``."""
+    value = lines[0].split(":", 1)[1].strip() if lines and ":" in lines[0] else ""
+    if len(value) >= 2 and value[0] == value[-1] == '"':
+        value = re.sub(r'\\(.)', r"\1", value[1:-1])
+    return value
+
+
 def write_episode_markdown(
     episode_number: int,
     title_short: str,
@@ -618,8 +628,18 @@ def write_episode_markdown(
 
     An existing page for the episode is rewritten in place: filename, date,
     aliases and the other front matter stay; title, lastmod and the body change.
+    An empty ``audio_url`` or ``youtube_video_id`` keeps the page's current value.
     """
     participants = participants if participants is not None else list(DEFAULT_PARTICIPANTS)
+    existing = find_episode_page(episode_number)
+    blocks: list[tuple[str, list[str]]] = []
+    if existing:
+        with open(existing, "r", encoding="utf-8") as f:
+            blocks, _old_body = _front_matter_blocks(f.read())
+        # A resume may lack these (no media_url from Podbean, video only scheduled).
+        previous = {key: _front_matter_scalar(lines) for key, lines in blocks}
+        audio_url = audio_url or previous.get("audio_url", "")
+        youtube_video_id = youtube_video_id or previous.get("youtube_id", "")
     full_title = f"#{episode_number} - {title_short}"
     now_iso = datetime.datetime.now().astimezone().replace(microsecond=0).isoformat()
     podbean_title = f"DEVSECOPS Talks {full_title}"
@@ -639,11 +659,8 @@ def write_episode_markdown(
         if str(value or "").strip()
     ]
 
-    existing = find_episode_page(episode_number)
     if existing:
         path = existing
-        with open(path, "r", encoding="utf-8") as f:
-            blocks, _old_body = _front_matter_blocks(f.read())
         replaced = {"title", "lastmod", "description", "subtitle", "readtime", "image", "youtube_id", "audio_url"}
         front = [_yaml_str("title", full_title)]
         for key, lines in blocks:
@@ -1137,6 +1154,27 @@ def load_transcript_turns(out_base: str, transcript: str) -> list[dict] | None:
         return json.loads(raw)
     except (OSError, ValueError, TypeError, AttributeError):
         return None
+
+
+def adopt_external_transcript(out_base: str, transcript: str, source_path: str) -> bool:
+    """Save a ``--transcript`` file as out/episodeNNN.txt; True when that changed it.
+
+    A change clears the derived checkpoints like a new machine transcript, and
+    the ``external`` backend binds no turns.
+    """
+    transcript_file = f"{out_base}.txt"
+    try:
+        with open(transcript_file, "r", encoding="utf-8") as f:
+            if f.read() == transcript:
+                return False
+    except OSError:
+        pass
+    with open(transcript_file, "w", encoding="utf-8") as f:
+        f.write(transcript)
+    save_transcript_source(out_base, "external", transcript, transcript, source_path)
+    invalidate_transcript_checkpoints(out_base)
+    print(f"✓ Transcript saved to {transcript_file}")
+    return True
 
 
 def load_or_create_transcript(client, audio_path: str, out_base: str, verbose=False, input_func=input) -> str:
@@ -1744,6 +1782,7 @@ def process_audio(audio_path: str, args, client: OpenAI | None) -> None:
         with open(args.transcript, "r", encoding="utf-8") as f:
             transcript = f.read()
         print(f"✓ Loaded transcript from {args.transcript}")
+        adopt_external_transcript(out_base, transcript, args.transcript)
     elif os.path.exists(transcript_file):
         with open(transcript_file, "r", encoding="utf-8") as f:
             transcript = f.read()
@@ -1771,6 +1810,14 @@ def process_audio(audio_path: str, args, client: OpenAI | None) -> None:
         raw_notes=raw_notes,
         verbose=args.verbose,
     )
+    html_problems = article_html_problems(article_md)
+    if html_problems:
+        print(f"Error: the article carries HTML the episode page does not allow "
+              f"({', '.join(sorted(ALLOWED_ARTICLE_TAGS))} only):")
+        for problem in html_problems:
+            print(f"  - {problem}")
+        print(f"Fix {out_base}-article.md, then re-run. Nothing was uploaded.")
+        sys.exit(1)
 
     if args.draft_only:
         print(f"\nDraft-only: done. Article: {out_base}-article.md")

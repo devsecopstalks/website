@@ -614,6 +614,21 @@ class LoadOrCreateTranscriptTests(unittest.TestCase):
             self._run()
         self.assertEqual(seen, [(True, True)])
 
+    def test_external_transcript_change_invalidates_and_binds_no_turns(self):
+        with mock.patch.object(podbean, "transcribe_local", side_effect=self._fake_local):
+            machine = self._run()
+        Path(f"{self.out_base}-article.md").write_text("old", encoding="utf-8")
+        self.assertFalse(podbean.adopt_external_transcript(self.out_base, machine, "same.txt"))
+        self.assertTrue(Path(f"{self.out_base}-article.md").exists())
+        self.assertEqual(podbean.load_transcript_turns(self.out_base, machine), self.TURNS)
+
+        self.assertTrue(podbean.adopt_external_transcript(self.out_base, "[A]: edited", "/x/edited.txt"))
+        self.assertFalse(Path(f"{self.out_base}-article.md").exists())
+        self.assertEqual(Path(f"{self.out_base}.txt").read_text(), "[A]: edited")
+        source = json.loads(Path(f"{self.out_base}-transcript-source.json").read_text())
+        self.assertEqual((source["backend"], source["provided_transcript"]), ("external", "edited.txt"))
+        self.assertIsNone(podbean.load_transcript_turns(self.out_base, "[A]: edited"))
+
     def test_openai_transcript_never_uses_turns_left_by_the_local_backend(self):
         Path(f"{self.out_base}-turns.json").write_text(json.dumps(self.TURNS), encoding="utf-8")
         with mock.patch.object(podbean, "transcribe_openai", return_value=tl.format_turns(self.TURNS)):

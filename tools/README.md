@@ -10,7 +10,7 @@ CLI tools:
 
 - [uv](https://docs.astral.sh/uv/) — Python dependencies
 - [ffmpeg](https://ffmpeg.org/) + ffprobe — audio conversion and chunking for transcription
-- Swift 6+ (Xcode or the Swift toolchain) — `do.sh` builds the pinned FluidAudio CLI for local transcription; its models (~685 MB) download on first run
+- Swift 6+ (Xcode or the Swift toolchain) — `do.sh` builds the pinned FluidAudio CLI for local transcription; its models (~685 MB) download on first run. Runs with `--transcript`/`-t` or `--skip-transcription` skip the build
 - [claude](https://docs.anthropic.com/en/docs/claude-code) — Claude Code (draft + revise)
 - [codex](https://github.com/openai/codex) — Codex CLI (review, titles, descriptions). Every call uses `--sandbox read-only -C <repo root>` with `gpt-6-astra` by default.
 - [op](https://developer.1password.com/docs/cli/) — optional; `do.sh` uses it when `.env` is present
@@ -106,19 +106,21 @@ Checkpoints:
 
 Saving a new `out/episodeNNN.txt` deletes the checkpoints built from the old one: guests, drafts, reviews, article, metadata, generated chapters and the generated announcement. Title, teaser, hand-written chapters, upload markers and the Buffer post ledger stay. To retranscribe, delete `out/episodeNNN.txt` and answer `new` (or delete the backend file).
 
+`--transcript FILE` is saved as `out/episodeNNN.txt` when its content differs, with the same invalidation; its backend is recorded as `external`, so it has no timestamped turns. An identical file changes nothing.
+
 ### Article and packaging
 
-The article follows `blog-tone-of-voice.md`: first person plural, no Summary or Highlights, exactly three common questions under `{#faq}` (the page turns them into FAQPage JSON-LD). A saved `-article.md` in the old Summary/Highlights format is not reused silently: the run offers to rename it and its drafts and reviews to `*.legacy` and write a new one.
+The article follows `blog-tone-of-voice.md`: first person plural, no Summary or Highlights, exactly three common questions under `{#faq}` (the page turns them into FAQPage JSON-LD). Raw HTML is limited to `mark`, `figure`, `figcaption`, `img`, `br`, `sup` and `sub`, with no `on*=` handlers or `javascript:` URLs (code spans and fenced blocks are ignored); anything else stops the run before upload, listing each tag to fix in `out/episodeNNN-article.md`. A saved `-article.md` in the old Summary/Highlights format is not reused silently: the run offers to rename it and its drafts and reviews to `*.legacy` and write a new one.
 
 After the title and teaser picks, and before anything is uploaded:
 
 1. **Chapters.** A hand-written `out/episodeNNN-chapters.txt` (`MM:SS - Label` lines) wins and must pass YouTube's rules (at least 3, first `00:00`, ascending, 10 s apart) or the run stops. Otherwise Codex proposes 5-8 chapters from `-turns.json` for approval; the approved (or skipped) result is `-chapters-generated.txt`. With no timestamped turns (OpenAI backend, `--transcript`) chapters are omitted with a notice.
-2. **Metadata.** One Codex call with `prompts/metadata-schema.json` writes `-metadata.json`: subtitle, YouTube title/hook/bullets/substance/comment prompt/hashtags, and Podbean show notes. It is regenerated when the title, teaser or article changes. The picked title and teaser are never rewritten.
+2. **Metadata.** One Codex call with `prompts/metadata-schema.json` writes `-metadata.json`: subtitle, YouTube title/hook/bullets/substance/comment prompt/hashtags, and Podbean show notes. It is regenerated when the title, teaser, article, transcript or guest context (including hosts present) changes. The picked title and teaser are never rewritten.
 3. **Cover.** `static/images/covers/NNN.png`, kept if it already exists, becomes the page `image`.
 
 A failure in any of these stops the run before Podbean or YouTube.
 
-The page gets `description` (the teaser), `subtitle`, `readtime`, `image`, `youtube_id` and, when Podbean returns one, `audio_url`. Resuming an episode whose page already exists rewrites that file in place: filename, URL, `date`, aliases and participants stay; `title`, `lastmod` and the body change. Existing Podbean episodes keep their show notes, and an already uploaded or scheduled video is not touched.
+The page gets `description` (the teaser), `subtitle`, `readtime`, `image`, `youtube_id` and, when Podbean returns one, `audio_url`. Resuming an episode whose page already exists rewrites that file in place: filename, URL, `date`, aliases and participants stay; `title`, `lastmod` and the body change. A rewrite with no new `audio_url` or video keeps the ones already on the page. Existing Podbean episodes keep their show notes, and an already uploaded or scheduled video is not touched.
 
 ### YouTube and large MP4s
 
@@ -154,8 +156,10 @@ The last step, after the page is written. Skipped when `BUFFER_API_KEY` is unset
 Only episodes this pipeline released are announced: creating the Podbean episode writes `out/episodeNNN-announcement-eligible.json` with the release time. Regenerating an older page (no such file, e.g. #110) skips Buffer.
 
 1. **Who was on it.** The run shows `On this episode: ... (Andrey present|absent)`, from guest detection and host names in the Riverside filename (`paulina, matte, andrey +1`). Enter confirms; typing names corrects it. The answer is saved to `-guests.json` (`hosts_present`, `andrey_present`) and decides the voice: first person when Andrey was there, third person with no I/we when he was not.
-2. **The post.** Codex writes one moment from the episode: a verbatim quote from the timestamped turns (default), a named disagreement, or, with no turns (OpenAI backend, `--transcript`), a paraphrased claim flagged `no verified quote`. The quote is checked against the turn it cites (case, punctuation and the name fixes in `podcast-context.md` ignored). A failed check shows a word diff; `o` posts it anyway and records `quote_verified: operator`.
-3. **Preview.** The LinkedIn post (text, credits with @-tags for the guest, hosts present and the DevSecOps Talks page, link on its own line, `#DevSecOps` plus at most one theme tag), the X post and its reply with the credits and link, the quote evidence (`[C] 12:34 -> Paulina Dubas`), each channel's due time and anything already scheduled. `a` schedules, `r` regenerates with guidance, `s` skips.
+2. **The post.** Codex writes one moment from the episode: a verbatim quote from the timestamped turns (default), a named disagreement, or, with no turns (OpenAI backend, `--transcript`), a paraphrased claim flagged `no verified quote`. The quote is checked against the turn it cites (case, punctuation and the name fixes in `podcast-context.md` ignored). The quoted person must also be who the speaker map names for that label. A failed check shows a word diff or the mismatch; `o` posts it anyway and records `quote_verified: operator`.
+3. **Preview.** The LinkedIn post (text, credits with @-tags for the guest, hosts present and the DevSecOps Talks page, link on its own line, `#DevSecOps` plus at most one theme tag), the X post and its reply with the credits and link, the quote evidence (`[C] 12:34 -> Paulina Dubas`), each channel's due time and anything already scheduled. `a` schedules, `r` regenerates with guidance, `s` skips. A rule violation, or an X post or reply over 280 characters, blocks approval (also for a saved announcement): only `r` and `s` are offered.
+
+A guest is @-tagged on LinkedIn only when guest detection confirmed their profile (`linkedin_name` in `-guests.json`); otherwise they are credited in plain text and the preview warns `not tagged on LinkedIn: <name>`.
 
 Timing: release date + 2 days is the earliest date (Wednesday for the Monday 11:00 UTC slot); the time is the first slot in that channel's Buffer posting schedule on or after it. **Push and deploy the page before the due time**: the posts link to it.
 

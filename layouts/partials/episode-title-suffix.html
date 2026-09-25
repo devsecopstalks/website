@@ -1,0 +1,4 @@
+{{- /* " - ep.#N" after an episode title, unless the title already starts with "#N". */ -}}
+{{- with .Param "episode" -}}
+  {{- if not (findRE (printf `^#%v(\D|$)` .) $.Title 1) }} - ep.#{{ . }}{{ end -}}
+{{- end -}}

@@ -328,7 +328,8 @@ def credited_people(tags: dict) -> list[dict]:
     for guest in tags["guest_context"].get("guests") or []:
         name = str((guest or {}).get("full_name") or "").strip() if isinstance(guest, dict) else ""
         if name:
-            people.append(_entity(name, guest.get("linkedin_name") or name, guest.get("linkedin_url"),
+            # No full-name fallback: an @-tag on an unconfirmed profile can tag a stranger.
+            people.append(_entity(name, guest.get("linkedin_name"), guest.get("linkedin_url"),
                                   guest.get("x_handle"), "person"))
     by_name = {str(h.get("name") or ""): h for h in handles.get("hosts") or [] if isinstance(h, dict)}
     for name in tags["hosts_present"]:
@@ -472,14 +473,27 @@ def validate_announcement(ann: dict, inputs: dict) -> list[str]:
     return errors
 
 
+def approval_errors(ann: dict, errors: list[str], tags: dict, episode_number: int, page_url: str) -> list[str]:
+    """What blocks approval: rule violations plus an X reply over the limit.
+
+    The main post's length is already a rule; the reply's depends on the credits.
+    """
+    blocking = list(errors)
+    reply = render_x_posts(ann, tags, episode_number, page_url)[1]
+    if x_post_length(reply) > X_POST_LIMIT:
+        blocking.append(f"the X reply is {x_post_length(reply)} chars (limit {X_POST_LIMIT})")
+    return blocking
+
+
 def announcement_warnings(ann: dict, tags: dict, episode_number: int, page_url: str) -> list[str]:
     warnings: list[str] = []
-    for i, post in enumerate(render_x_posts(ann, tags, episode_number, page_url), 1):
-        if x_post_length(post) > X_POST_LIMIT:
-            warnings.append(f"X post {i} is {x_post_length(post)} chars (limit {X_POST_LIMIT})")
+    guest_names = set(guest_full_names(tags["guest_context"]))
     company = company_entity(tags.get("handles") or {})
     entities = ([company] if company else []) + credited_people(tags)
-    untagged_li = [e["name"] for e in entities if not e["linkedin_name"]]
+    for e in entities:
+        if e["name"] in guest_names and not e["linkedin_name"]:
+            warnings.append(f"not tagged on LinkedIn: {e['name']} (profile not confirmed)")
+    untagged_li = [e["name"] for e in entities if not e["linkedin_name"] and e["name"] not in guest_names]
     if untagged_li:
         warnings.append(f"credited on LinkedIn in plain text (no linkedin_name): {', '.join(untagged_li)}")
     untagged_x = [e["name"] for e in entities if not e["x_handle"]]
@@ -543,10 +557,26 @@ def generate_announcement(title: str, article: str, inputs: dict, guidance: str 
     return ann, errors
 
 
+def speaker_map_mismatch(ann: dict) -> str:
+    """Why ``source_person`` is not who the speaker map says spoke; "" when it is."""
+    label = ann.get("source_speaker") or ""
+    mapped = {m.get("label"): m.get("person") or "" for m in ann.get("speaker_map") or []}
+    if label not in mapped:
+        return f"[{label}] is not in the speaker map"
+    if mapped[label].casefold() != (ann.get("source_person") or "").casefold():
+        return f"speaker map has [{label}] as {mapped[label] or 'nobody'}"
+    return ""
+
+
 def check_quote(ann: dict, inputs: dict) -> dict:
     if ann.get("format") != "quote":
         return {"verified": False, "reason": "no verified quote", "diff": "", "turn": None}
-    return verify_quote_against_turns(ann["quote"], inputs["turns"], ann["source_speaker"], ann["source_timestamp"])
+    result = verify_quote_against_turns(ann["quote"], inputs["turns"], ann["source_speaker"], ann["source_timestamp"])
+    mismatch = speaker_map_mismatch(ann)
+    if mismatch:
+        reason = "; ".join(r for r in (result["reason"], mismatch) if r)
+        result = dict(result, verified=False, reason=reason)
+    return result
 
 
 # --- schedule, eligibility, ledger ------------------------------------------
@@ -823,17 +853,50 @@ def preview_announcement(ann, verification, errors, tags, inputs, episode_number
     if earliest:
         print(f"⚠ The posts link {page_url}: push and deploy the page before {earliest:%a %d %b %H:%M} UTC.")
 
-    problems = [f"rule: {e}" for e in errors] + announcement_warnings(ann, tags, episode_number, page_url)
-    if problems:
-        print(f"\n⚠ {len(problems)} warning(s):")
-        for p in problems:
-            print(f"  - {p}")
+    if errors:
+        print(f"\n✗ {len(errors)} error(s) block approval:")
+        for e in errors:
+            print(f"  - {e}")
+    warnings = announcement_warnings(ann, tags, episode_number, page_url)
+    if warnings:
+        print(f"\n⚠ {len(warnings)} warning(s):")
+        for w in warnings:
+            print(f"  - {w}")
+
+
+def approve_key_for(ann: dict, verification: dict, blocking: list[str]) -> str | None:
+    """'a', or 'o' for a quote that failed its check; None while errors block approval."""
+    if blocking:
+        return None
+    return "o" if ann["format"] == "quote" and not verification["verified"] else "a"
+
+
+def print_approval_prompt(approve_key: str | None, blocking: list[str]) -> None:
+    if approve_key is None:
+        print("\nApproval blocked: " + "; ".join(blocking))
+        print("'r' to regenerate with guidance,")
+    elif approve_key == "o":
+        print("\n'o' to post the quote anyway (logged as operator-verified), 'r' to regenerate with guidance,")
+    else:
+        print("\n'a' to approve and schedule, 'r' to regenerate with guidance,")
+    print("or 's' to skip Buffer for this episode: ", end="", flush=True)
+
+
+def quote_verified_value(ann: dict, verification: dict) -> str:
+    if ann["format"] != "quote":
+        return "none"
+    return "transcript" if verification["verified"] else "operator"
+
+
+def ask_guidance(input_func=input) -> str:
+    print("Guidance (e.g. 'use the guest's line about SHA pinning'): ", end="", flush=True)
+    return input_func().strip()
 
 
 def approve_announcement(title, article, inputs, tags, episode_number, page_url, channels, done,
-                         release_at, target, input_func=input, verbose=False, now=None) -> dict | None:
+                         release_at, target, input_func=input, verbose=False, now=None,
+                         guidance: str = "") -> dict | None:
     """Generate, preview, then approve / regenerate with guidance / skip. Returns the saved record."""
-    guidance = ""
     while True:
         ann, errors = generate_announcement(title, article, inputs, guidance=guidance, verbose=verbose)
         if ann is None:
@@ -842,29 +905,25 @@ def approve_announcement(title, article, inputs, tags, episode_number, page_url,
                 return None
             continue
         verification = check_quote(ann, inputs)
-        preview_announcement(ann, verification, errors, tags, inputs, episode_number, page_url, channels,
+        blocking = approval_errors(ann, errors, tags, episode_number, page_url)
+        preview_announcement(ann, verification, blocking, tags, inputs, episode_number, page_url, channels,
                              done, release_at, target, now=now)
-        failed_quote = ann["format"] == "quote" and not verification["verified"]
-        approve_key = "o" if failed_quote else "a"
-        if failed_quote:
-            print("\n'o' to post the quote anyway (logged as operator-verified), 'r' to regenerate with guidance,")
-        else:
-            print("\n'a' to approve and schedule, 'r' to regenerate with guidance,")
-        print("or 's' to skip Buffer for this episode: ", end="", flush=True)
-        choice = input_func().strip().lower()
-        if choice == approve_key:
-            if ann["format"] != "quote":
-                quote_verified = "none"
+        approve_key = approve_key_for(ann, verification, blocking)
+        # Ask again on a bad key; only 'r' spends another Codex call.
+        while True:
+            print_approval_prompt(approve_key, blocking)
+            choice = input_func().strip().lower()
+            if approve_key and choice == approve_key:
+                return {"announcement": ann, "quote_verified": quote_verified_value(ann, verification)}
+            if choice == "s":
+                return None
+            if choice == "r":
+                guidance = ask_guidance(input_func)
+                break
+            if choice in ("a", "o") and approve_key is None:
+                print("Approval is blocked by the errors above; 'r' or 's'.")
             else:
-                quote_verified = "transcript" if verification["verified"] else "operator"
-            return {"announcement": ann, "quote_verified": quote_verified}
-        if choice == "s":
-            return None
-        if choice == "r":
-            print("Guidance (e.g. 'use the guest's line about SHA pinning'): ", end="", flush=True)
-            guidance = input_func().strip()
-        else:
-            print("Invalid choice, try again.")
+                print("Invalid choice, try again.")
 
 
 def load_saved_announcement(path: str, fingerprint: str, input_func=input) -> dict | None:
@@ -972,17 +1031,27 @@ def schedule_episode_announcement(
     saved_path = f"{out_base}{SAVED_SUFFIX}"
 
     record = load_saved_announcement(saved_path, fingerprint, input_func=input_func)
+    guidance = ""
     if record:
         ann = record["announcement"]
-        preview_announcement(ann, check_quote(ann, inputs), validate_announcement(ann, inputs), tags, inputs,
+        verification = check_quote(ann, inputs)
+        blocking = approval_errors(ann, validate_announcement(ann, inputs), tags, episode_number, page_url)
+        preview_announcement(ann, verification, blocking, tags, inputs,
                              episode_number, page_url, channels, done, release_at, target, now=now)
-        print("\n'a' to schedule, anything else to skip: ", end="", flush=True)
-        if input_func().strip().lower() != "a":
+        approve_key = approve_key_for(ann, verification, blocking)
+        print_approval_prompt(approve_key, blocking)
+        choice = input_func().strip().lower()
+        if approve_key and choice == approve_key:
+            record = dict(record, quote_verified=quote_verified_value(ann, verification))
+        elif choice == "r":
+            guidance, record = ask_guidance(input_func), None
+        else:
             print("Skipped the Buffer announcement.")
             return
-    else:
+    if not record:
         record = approve_announcement(title, article, inputs, tags, episode_number, page_url, channels, done,
-                                      release_at, target, input_func=input_func, verbose=verbose, now=now)
+                                      release_at, target, input_func=input_func, verbose=verbose, now=now,
+                                      guidance=guidance)
         if not record:
             print("Skipped the Buffer announcement.")
             return

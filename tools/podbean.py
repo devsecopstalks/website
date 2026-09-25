@@ -215,6 +215,37 @@ def infer_resume_episode_number(next_episode_number: int) -> int | None:
     return None
 
 
+def episode_number_for_audio(audio_path: str) -> int | None:
+    """Latest episode whose checkpoint source is this exact recording, e.g. a re-run for social posts."""
+    current = audio_source_identity(audio_path)
+    matches = []
+    for path in Path(OUT_DIR).glob("episode*-source.json"):
+        match = re.fullmatch(r"episode(\d+)-source\.json", path.name)
+        if not match:
+            continue
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                if json.load(f) == current:
+                    matches.append(int(match.group(1)))
+        except (OSError, ValueError):
+            continue
+    return max(matches) if matches else None
+
+
+def confirm_resume_for_audio(audio_path: str, next_episode_number: int, input_func=input) -> int | None:
+    """Offer to resume the episode this recording already belongs to instead of starting a new one."""
+    number = episode_number_for_audio(audio_path)
+    if number is None or number == next_episode_number:
+        return None
+    print(f"\nThis recording already has checkpoints as episode #{number}.")
+    print(f"Resume #{number} (Enter), or type 'new' to start it as #{next_episode_number}: ", end="", flush=True)
+    try:
+        answer = input_func().strip().lower()
+    except EOFError:
+        answer = ""
+    return None if answer == "new" else number
+
+
 def find_companion_video(audio_path: str) -> str | None:
     """Return path to a video next to the audio with the same filename prefix (stem)."""
     p = Path(audio_path).resolve()
@@ -1691,16 +1722,21 @@ def process_audio(audio_path: str, args, client: OpenAI | None) -> None:
     if args.episode_number is not None and args.episode_number < 1:
         print("Error: --episode-number must be greater than zero")
         sys.exit(1)
-    inferred_resume = (
+    audio_resume = (
         None
         if args.episode_number is not None or args.scan
+        else confirm_resume_for_audio(audio_path, episode_plan.next_episode_number)
+    )
+    inferred_resume = (
+        None
+        if args.episode_number is not None or args.scan or audio_resume is not None
         else infer_resume_episode_number(episode_plan.next_episode_number)
     )
     episode_number = (
-        args.episode_number or inferred_resume or episode_plan.next_episode_number
+        args.episode_number or audio_resume or inferred_resume or episode_plan.next_episode_number
     )
     existing_episode = find_podbean_episode(podbean_episode_data, episode_number)
-    if args.episode_number is not None:
+    if args.episode_number is not None or audio_resume is not None:
         print(f"✓ Resuming episode number: {episode_number}")
     elif inferred_resume is not None:
         print(f"✓ Automatically resuming unfinished episode #{episode_number}")

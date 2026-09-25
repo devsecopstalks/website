@@ -26,6 +26,8 @@ TONE_FILE = os.path.join(TOOLS_DIR, "blog-tone-of-voice.md")
 MAX_REVIEW_ITERATIONS = 10
 CODEX_MODEL = os.environ.get("CODEX_MODEL", "gpt-6-astra")
 CODEX_TIMEOUT_S = int(os.environ.get("CODEX_TIMEOUT_S", "900"))
+# Drafting a long episode with web research ran past 15 minutes.
+CLAUDE_TIMEOUT_S = int(os.environ.get("CLAUDE_TIMEOUT_S", "2400"))
 
 with open(CONTEXT_FILE, "r", encoding="utf-8") as _f:
     _CONTENT_CONTEXT = _f.read()
@@ -91,7 +93,7 @@ def run_claude(prompt: str, verbose=False, allow_web=False, fatal: bool = True) 
         stdout=subprocess.PIPE,
         stderr=None,
         text=True,
-        timeout=900,
+        timeout=CLAUDE_TIMEOUT_S,
     )
 
     if result.returncode != 0:

@@ -58,6 +58,7 @@ _QUOTE_CHARS = "\"“”"
 ELIGIBILITY_SUFFIX = "-announcement-eligible.json"
 LEDGER_SUFFIX = "-announcement-scheduled.txt"
 SAVED_SUFFIX = "-announcement.json"
+REJECTED_SUFFIX = "-announcement-rejected.jsonl"
 RECORD_SUFFIX = "-announcement.md"
 
 CREATE_POST_MUTATION = """mutation ($input: CreatePostInput!) {
@@ -525,11 +526,44 @@ def _generation_inputs(title: str, article: str, inputs: dict) -> str:
     )
 
 
+def rejected_drafts_prompt(rejected: list[dict]) -> str:
+    """Earlier drafts and the guidance each drew, so a regeneration moves on instead of looping."""
+    if not rejected:
+        return ""
+    lines = ["\n## Drafts the operator already rejected\n",
+             "Do not reuse their angle, hook or quote. Every guidance line below still applies; "
+             "when two conflict, the later one wins.\n"]
+    for i, item in enumerate(rejected, 1):
+        lines.append(f"\n### Rejected draft {i}\n\n{item.get('post', '')}\n")
+        if item.get("guidance"):
+            lines.append(f"\nOperator guidance after it: {item['guidance']}\n")
+    return "".join(lines)
+
+
+def load_rejected(path: str, fingerprint: str) -> list[dict]:
+    """Rejections from earlier runs built from the same inputs."""
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            rows = [json.loads(line) for line in f if line.strip()]
+    except (OSError, ValueError):
+        return []
+    return [r for r in rows if isinstance(r, dict) and r.get("fingerprint") == fingerprint]
+
+
+def append_rejected(path: str | None, fingerprint: str, ann: dict, guidance: str) -> dict:
+    item = {"fingerprint": fingerprint, "post": post_body(ann), "guidance": guidance}
+    if path:
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(item, ensure_ascii=False) + "\n")
+    return item
+
+
 def generate_announcement(title: str, article: str, inputs: dict, guidance: str = "",
-                          verbose: bool = False) -> tuple[dict | None, list[str]]:
+                          verbose: bool = False, rejected: list[dict] | None = None) -> tuple[dict | None, list[str]]:
     """One structured Codex call, one retry on rule violations; (None, errors) if Codex fails."""
     print("Writing the announcement with Codex...")
     prompt = load_prompt("announcement") + f"\n\n## This episode\n\n{voice_directive(inputs)}\n"
+    prompt += rejected_drafts_prompt(rejected or [])
     if guidance:
         prompt += f"\nGuidance from the operator: {guidance}\n"
     stdin_text = _generation_inputs(title, article, inputs)
@@ -895,10 +929,13 @@ def ask_guidance(input_func=input) -> str:
 
 def approve_announcement(title, article, inputs, tags, episode_number, page_url, channels, done,
                          release_at, target, input_func=input, verbose=False, now=None,
-                         guidance: str = "") -> dict | None:
+                         guidance: str = "", rejected: list[dict] | None = None,
+                         rejected_path: str | None = None, fingerprint: str = "") -> dict | None:
     """Generate, preview, then approve / regenerate with guidance / skip. Returns the saved record."""
+    rejected = list(rejected or [])
     while True:
-        ann, errors = generate_announcement(title, article, inputs, guidance=guidance, verbose=verbose)
+        ann, errors = generate_announcement(title, article, inputs, guidance=guidance, verbose=verbose,
+                                            rejected=rejected)
         if ann is None:
             print("Generation failed. 'r' to retry, or Enter to skip Buffer: ", end="", flush=True)
             if input_func().strip().lower() != "r":
@@ -919,6 +956,8 @@ def approve_announcement(title, article, inputs, tags, episode_number, page_url,
                 return None
             if choice == "r":
                 guidance = ask_guidance(input_func)
+                rejected.append(append_rejected(rejected_path, fingerprint, ann, guidance))
+                guidance = ""
                 break
             if choice in ("a", "o") and approve_key is None:
                 print("Approval is blocked by the errors above; 'r' or 's'.")
@@ -1029,6 +1068,10 @@ def schedule_episode_announcement(
     inputs = build_announcement_inputs(turns, guest_context)
     fingerprint = announcement_fingerprint(transcript, turns, page_url, target, tags)
     saved_path = f"{out_base}{SAVED_SUFFIX}"
+    rejected_path = f"{out_base}{REJECTED_SUFFIX}"
+    rejected = load_rejected(rejected_path, fingerprint)
+    if rejected:
+        print(f"✓ {len(rejected)} rejected draft(s) from earlier runs will be shown to Codex")
 
     record = load_saved_announcement(saved_path, fingerprint, input_func=input_func)
     guidance = ""
@@ -1044,14 +1087,16 @@ def schedule_episode_announcement(
         if approve_key and choice == approve_key:
             record = dict(record, quote_verified=quote_verified_value(ann, verification))
         elif choice == "r":
-            guidance, record = ask_guidance(input_func), None
+            rejected.append(append_rejected(rejected_path, fingerprint, ann, ask_guidance(input_func)))
+            record = None
         else:
             print("Skipped the Buffer announcement.")
             return
     if not record:
         record = approve_announcement(title, article, inputs, tags, episode_number, page_url, channels, done,
                                       release_at, target, input_func=input_func, verbose=verbose, now=now,
-                                      guidance=guidance)
+                                      guidance=guidance, rejected=rejected, rejected_path=rejected_path,
+                                      fingerprint=fingerprint)
         if not record:
             print("Skipped the Buffer announcement.")
             return

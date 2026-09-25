@@ -1,6 +1,6 @@
 ## DevSecOps Talks — podcast publish pipeline
 
-End-to-end flow: drop an MP3 in `raw/`, run `bash do.sh`, transcribe with OpenAI, generate a long-form episode article with **Claude Code** (draft + revisions) and **Codex** (adversarial review until `GOOD_TO_GO`), pick title and short teaser with **Codex**, upload audio to **Podbean**, choose between the next available Monday at 11:00 UTC or immediate publication, optionally upload video to **YouTube** via [upload-post.com](https://upload-post.com), and write `content/episodes/NNN-slug.md`.
+End-to-end flow: drop an MP3 in `raw/`, run `bash do.sh`, transcribe locally with FluidAudio (OpenAI opt-in), generate a long-form episode article with **Claude Code** (draft + revisions) and **Codex** (adversarial review until `GOOD_TO_GO`), pick title and short teaser with **Codex**, upload audio to **Podbean**, choose between the next available Monday at 11:00 UTC or immediate publication, optionally upload video to **YouTube** via [upload-post.com](https://upload-post.com), and write `content/episodes/NNN-slug.md`.
 
 Checkpoint files live under `out/episodeNNN-*` (NNN = next Podbean episode number at run start) so you can resume after interruptions. The next number is calculated from the highest existing Podbean episode number, so future scheduled episodes are included.
 
@@ -9,7 +9,8 @@ Checkpoint files live under `out/episodeNNN-*` (NNN = next Podbean episode numbe
 CLI tools:
 
 - [uv](https://docs.astral.sh/uv/) — Python dependencies
-- [ffmpeg](https://ffmpeg.org/) + ffprobe — audio chunking for transcription
+- [ffmpeg](https://ffmpeg.org/) + ffprobe — audio conversion and chunking for transcription
+- Swift 6+ (Xcode or the Swift toolchain) — `do.sh` builds the pinned FluidAudio CLI for local transcription; its models (~685 MB) download on first run
 - [claude](https://docs.anthropic.com/en/docs/claude-code) — Claude Code (draft + revise)
 - [codex](https://github.com/openai/codex) — Codex CLI (review, titles, descriptions). Every call uses `--sandbox read-only -C <repo root>` with `gpt-6-astra` by default.
 - [op](https://developer.1password.com/docs/cli/) — optional; `do.sh` uses it when `.env` is present
@@ -18,7 +19,10 @@ Environment variables (often injected via 1Password `op run --env-file=./.env`):
 
 | Variable | Purpose |
 |----------|---------|
-| `OPENAI_API_KEY` | Transcription |
+| `TRANSCRIBE_BACKEND` | Optional; `local` (default, FluidAudio on Apple Silicon) or `openai` (`gpt-4o-transcribe-diarize`) |
+| `OPENAI_API_KEY` | Only for `TRANSCRIBE_BACKEND=openai` |
+| `EPISODE_SPEAKERS` | Optional; number of voices (or `auto`) to skip the speaker-count prompt |
+| `FLUIDAUDIO_DIR` / `FLUIDAUDIO_CLI` | Optional; FluidAudio build dir (default `~/.cache/fluidaudio/devsecopstalks`) or an already-built `fluidaudiocli` |
 | `PODBEAN_CLIENT_ID` / `PODBEAN_CLIENT_SECRET` | Podbean API |
 | `CODEX_MODEL` | Optional; model for every Codex review, title, and description call (default `gpt-6-astra`) |
 | `CODEX_TIMEOUT_S` | Optional; timeout in seconds for every Codex call (default `900`). Increase for longer articles |
@@ -43,12 +47,13 @@ uv sync
 
 ```
 tools/
-├── raw/              # put episode .mp3 here (and optional same-stem .md show notes, .mp4 video)
+├── raw/              # put episode .mp3 here (and optional same-stem .md show notes, .mp4 video, .vtt/.txt transcript)
 ├── out/              # episodeNNN-* checkpoints (transcript, drafts, reviews, title/teaser, youtube-url)
 ├── prompts/          # draft.md, review.md, revise.md, titles.md, descriptions.md
 ├── podcast-context.md # injected into prompts as {{CONTEXT}} (lives next to prompts/, not inside it)
 ├── podbean.py        # main entrypoint
 ├── episode_pipeline.py
+├── transcribe_local.py # FluidAudio ASR + diarization, merged into speaker turns
 ├── youtube.py
 ├── upload_progress.py # progress lines for R2 + upload-post multipart body
 ├── r2_staging.py
@@ -76,6 +81,23 @@ If there is exactly one `raw/*.mp3`, it is chosen automatically. If there are se
 
 - **Show notes:** any `{same-stem}*.md` next to the MP3 is passed into draft/revise prompts as SHOW NOTES.
 - **Video:** `{same-stem}*.mp4` (or `.mov`/`.mkv`) is used for YouTube when **`UPLOAD_POST_API_KEY`** and **`UPLOAD_POST_USER`** are set. If a companion video exists but those env vars are missing, the pipeline **warns and skips** YouTube while still publishing Podbean audio and the episode page (embed empty unless you pass `--youtube` with an embed URL).
+
+- **Transcript:** a `{same-stem}*.vtt` or `{same-stem}*.txt` (for example a Riverside export) is merged with the machine transcript by Codex. Staging from `~/Downloads` moves only transcripts named after a downloaded MP3.
+
+### Transcription
+
+`TRANSCRIBE_BACKEND=local` (default) runs FluidAudio's Parakeet v2 ASR and VBx diarization over the whole file in seconds. `openai` sends 1300 s chunks to `gpt-4o-transcribe-diarize`; its speaker labels restart per chunk and it returns no word timings. Speakers are labelled `[A]`, `[B]`, ...; names are inferred downstream.
+
+The local backend asks how many voices the episode has each time it transcribes. Enter means auto-detect. There is no default: pinning too low merges two people into one label, which nothing downstream can undo, while auto-detect fails visibly with an extra speaker.
+
+Checkpoints:
+
+- `out/episodeNNN-local.txt` / `-openai.txt` — machine transcript per backend, reused next run unless you type `new`.
+- `out/episodeNNN.txt` — final transcript (machine, or merged with the sidecar).
+- `out/episodeNNN-asr.json`, `-diarization.json`, `-turns.json` — local backend only; `-turns.json` holds timestamped speaker turns.
+- `out/episodeNNN-transcript-source.json` — which backend produced the final transcript. Turns are used only when bound here to the current transcript, so a `-turns.json` left by another backend or run is ignored.
+
+Saving a new `out/episodeNNN.txt` deletes the checkpoints built from the old one: guests, drafts, reviews, article, metadata, generated chapters and the generated announcement. Title, teaser, hand-written chapters, upload markers and the Buffer post ledger stay. To retranscribe, delete `out/episodeNNN.txt` and answer `new` (or delete the backend file).
 
 ### YouTube and large MP4s
 
@@ -114,7 +136,7 @@ uv run podbean.py -f raw/ep.mp3 --participants "Paulina,Mattias,Andrey,Guest Nam
 
 ### Resumability
 
-Outputs are under `out/episodeNNN-*` (NNN = next Podbean episode number calculated at run start, including already scheduled episodes). The draft–review loop runs up to **10** Codex review rounds (or stops early on `GOOD_TO_GO`). Re-running reuses existing transcript, draft/review checkpoints, final article, and cached title/description when those files exist. Delete a checkpoint file to force that step to run again. Older runs may have used long MP3-stem names under `out/`; new runs use the `episodeNNN` prefix only.
+Outputs are under `out/episodeNNN-*` (NNN = next Podbean episode number calculated at run start, including already scheduled episodes). The draft–review loop runs up to **10** Codex review rounds (or stops early on `GOOD_TO_GO`). Re-running reuses existing transcript, draft/review checkpoints, final article, and cached title/description when those files exist. Delete a checkpoint file to force that step to run again; a new transcript also clears the checkpoints derived from it (see Transcription). Older runs may have used long MP3-stem names under `out/`; new runs use the `episodeNNN` prefix only.
 
 A failed or empty Codex response stops the pipeline before publication. Timeouts report the elapsed limit without printing the prompt. Re-run to retry the failed step using the saved checkpoints; increase `CODEX_TIMEOUT_S` if needed.
 
@@ -138,7 +160,7 @@ The upload uses **plain text** with each important **URL on its own line**. The 
 
 ### Tests
 
-Stdlib `unittest` covers URL/embed parsing, R2 staging markers, slug helpers, prompt expansion, numbered-list parsing, Codex invocation/failure handling, and Podbean scheduling/resume flows. Network and subprocess calls are mocked; the tests do not publish episodes:
+Stdlib `unittest` covers local transcript merging and backend selection, URL/embed parsing, R2 staging markers, slug helpers, prompt expansion, numbered-list parsing, Codex invocation/failure handling, and Podbean scheduling/resume flows. Network and subprocess calls are mocked; the tests do not publish episodes:
 
 ```bash
 cd tools && uv run python -m unittest discover -s tests -v

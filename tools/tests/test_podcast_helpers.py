@@ -780,7 +780,7 @@ class TestPodbeanPublishingFlow(unittest.TestCase):
             "get_podbean_auth_token": "token",
             "get_podbean_episodes": {"episodes": []},
             "validate_or_bind_checkpoint_source": None,
-            "transcribe_audio_openai": "transcript",
+            "load_or_create_transcript": "transcript",
             "_load_or_detect_guest_context": {"status": "no_guests", "guests": []},
             "generate_article": "article",
             "prompt_publish_action": self.schedule,

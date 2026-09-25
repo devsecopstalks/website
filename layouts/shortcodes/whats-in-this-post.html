@@ -1,0 +1,17 @@
+{{- /* Built from the page's own "## " headings: .Page.Fragments is empty inside a shortcode. */ -}}
+<nav class="post-toc" aria-label="What's in this post">
+<p class="post-toc__label">What's in this post</p>
+<ol class="post-toc__list">
+{{- range findRE `(?m)^## .+$` .Page.RawContent }}
+{{- $line := strings.TrimPrefix "## " . }}
+{{- $title := $line }}
+{{- $id := $line | anchorize }}
+{{- if strings.Contains $line "{#" }}
+{{- $parts := split $line "{#" }}
+{{- $title = trim (index $parts 0) " " }}
+{{- $id = replace (index $parts 1) "}" "" }}
+{{- end }}
+<li><a href="#{{ $id }}">{{ $title | markdownify }}</a></li>
+{{- end }}
+</ol>
+</nav>

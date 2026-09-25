@@ -1,0 +1,85 @@
+{{- /*
+  PodcastEpisode / VideoObject / FAQPage JSON-LD for pipeline-built episode pages,
+  added next to the theme's generic WebPage block. Gated on front-matter
+  `description` so older episodes render unchanged; fields we lack are omitted.
+*/ -}}
+{{- if and .IsPage (eq .Section "episodes") .Params.description -}}
+{{- $podcast := site.Params.podcast -}}
+{{- $publisher := dict "@type" "Organization" "name" "DevSecOps Talks" "url" site.BaseURL -}}
+{{- with site.Params.icon -}}
+  {{- $publisher = merge $publisher (dict "logo" (. | absURL)) -}}
+{{- end -}}
+{{- $series := dict "@type" "PodcastSeries" "name" "DevSecOps Talks" "url" site.BaseURL -}}
+{{- with $podcast.feed }}{{ $series = merge $series (dict "webFeed" .) }}{{ end -}}
+
+{{- $episode := dict
+  "@type" "PodcastEpisode"
+  "name" .Title
+  "description" .Description
+  "url" .Permalink
+  "datePublished" (.Date.Format "2006-01-02")
+  "partOfSeries" $series
+  "publisher" $publisher
+-}}
+{{- with .Params.episode }}{{ $episode = merge $episode (dict "episodeNumber" .) }}{{ end -}}
+{{- with .Params.image }}{{ $episode = merge $episode (dict "image" (. | absURL)) }}{{ end -}}
+{{- with .Params.audio_url -}}
+  {{- $episode = merge $episode (dict "associatedMedia" (dict "@type" "AudioObject" "contentUrl" . "encodingFormat" "audio/mpeg")) -}}
+{{- end -}}
+{{- $nodes := slice $episode -}}
+
+{{- /* Video id: front matter `youtube_id`, else the page's own youtube shortcode. */ -}}
+{{- $yt := .Params.youtube_id -}}
+{{- if not $yt -}}
+  {{- with findRESubmatch `\{\{<\s*youtube\s+([A-Za-z0-9_-]+)` .RawContent 1 -}}
+    {{- $yt = index (index . 0) 1 -}}
+  {{- end -}}
+{{- end -}}
+{{- with $yt -}}
+  {{- $watch := printf "https://www.youtube.com/watch?v=%s" . -}}
+  {{- $nodes = $nodes | append (dict
+    "@type" "VideoObject"
+    "name" $.Title
+    "description" $.Description
+    "uploadDate" ($.Date.Format "2006-01-02T15:04:05Z07:00")
+    "thumbnailUrl" (printf "https://i.ytimg.com/vi/%s/maxresdefault.jpg" .)
+    "embedUrl" (printf "https://www.youtube.com/embed/%s" .)
+    "contentUrl" $watch
+    "url" $watch
+    "publisher" $publisher
+  ) -}}
+{{- end -}}
+
+{{- /* FAQ: parsed from the article's `{#faq}` h2 up to the next h2 (the anchor is
+       matched, not the heading text). Entries are `###`/`####` question headings. */ -}}
+{{- $faq := slice -}}
+{{- $raw := .RawContent -}}
+{{- if strings.Contains $raw "{#faq}" -}}
+  {{- $block := index (split (index (split $raw "{#faq}") 1) "\n## ") 0 -}}
+  {{- range $i, $chunk := split (replaceRE `\n####? ` "\n### " $block) "\n### " -}}
+    {{- if gt $i 0 -}}
+      {{- $first := index (split $chunk "\n") 0 -}}
+      {{- $question := trim (replaceRE `\s*\{#[^}]*\}\s*$` "" $first) " " -}}
+      {{- $answer := strings.TrimPrefix $first $chunk -}}
+      {{- $answer = replaceRE `\{\{[<%][\s\S]*?[>%]\}\}` "" $answer -}}
+      {{- $answer = replaceRE `</?[a-zA-Z][^>]*>` "" $answer -}}
+      {{- $answer = replaceRE `\[([^\]]+)\]\([^)]+\)` "$1" $answer -}}
+      {{- /* Emphasis only around words, so globs like `*:*` in code survive. */ -}}
+      {{- $answer = replaceRE `\*\*([^*]+)\*\*` "$1" $answer -}}
+      {{- $answer = replaceRE `\*(\w[^*]*\w|\w)\*` "$1" $answer -}}
+      {{- $answer = replaceRE "`" "" $answer -}}
+      {{- $answer = trim (replaceRE `\s+` " " $answer) " " -}}
+      {{- if and $question $answer -}}
+        {{- $faq = $faq | append (dict "@type" "Question" "name" $question "acceptedAnswer" (dict "@type" "Answer" "text" $answer)) -}}
+      {{- end -}}
+    {{- end -}}
+  {{- end -}}
+{{- end -}}
+{{- with $faq -}}
+  {{- $nodes = $nodes | append (dict "@type" "FAQPage" "url" $.Permalink "mainEntity" .) -}}
+{{- end -}}
+
+<script type="application/ld+json">
+{{ dict "@context" "https://schema.org" "@graph" $nodes | jsonify | safeJS }}
+</script>
+{{- end -}}

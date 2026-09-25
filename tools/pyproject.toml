@@ -10,4 +10,5 @@ dependencies = [
     "httpx",
     "markdown",
     "boto3",
+    "pillow",
 ]

@@ -1,0 +1,196 @@
+/* Site custom styles and colours. This file loads last and replaces the theme's empty _custom.css. */
+
+/* Brand palette, sampled from static/images/pod_cover.png (the podcast cover and logo). */
+:root {
+  --dst-teal-deep: #004445;
+  --dst-teal: #2c7973;
+  --dst-green: #6eb98e;
+  --dst-yellow: #ffd800;
+  --dst-teal-tint: rgb(44 121 115 / 0.08);
+  --dst-green-tint: rgb(110 185 142 / 0.14);
+}
+
+/* Episode article styling applies only to pipeline-built pages (class set when
+   front matter has `description`), so older episodes keep the plain theme look. */
+.episode-subtitle {
+  margin: 0 0 0.5rem;
+  color: var(--dst-teal);
+  font-size: 1.15rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.episode-readtime {
+  margin: 0.25rem 0 0;
+  color: var(--color-text-meta);
+  font-size: 0.875rem;
+}
+
+.episode-standfirst {
+  margin: 1.5rem 0;
+  font-size: 1.15rem;
+  line-height: 1.55;
+}
+
+.episode-standfirst p:first-child {
+  color: var(--dst-teal-deep);
+  font-weight: 500;
+}
+
+.episode-article h2 {
+  color: var(--dst-teal-deep);
+  scroll-margin-top: 1rem;
+}
+
+.episode-article h3 {
+  scroll-margin-top: 1rem;
+}
+
+/* Question sub-headings under each topic section. */
+.episode-article h4 {
+  margin: 1.75rem 0 0.5rem;
+  color: var(--dst-teal-deep);
+  font-size: 1.05rem;
+  font-weight: 700;
+  line-height: 1.45;
+  scroll-margin-top: 1rem;
+}
+
+/* Inline code is a literal string to type or grep for; paths must wrap, not widen the page. */
+.episode-article :not(pre) > code {
+  padding: 0.1em 0.35em;
+  border: 1px solid rgb(0 68 69 / 0.12);
+  border-radius: 4px;
+  background: var(--dst-teal-tint);
+  color: var(--dst-teal-deep);
+  font-size: 0.875em;
+  overflow-wrap: break-word;
+}
+
+.episode-article pre {
+  margin: 1.75rem 0;
+  padding: 1rem 1.25rem;
+  border-left: 3px solid var(--dst-green);
+  border-radius: 8px;
+  background: var(--dst-teal-deep);
+  overflow-x: auto;
+}
+
+.episode-article pre code {
+  display: block;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #f2f7f5;
+  font-size: 0.8125rem;
+  line-height: 1.65;
+  white-space: pre;
+}
+
+.episode-article mark {
+  padding: 1px 3px;
+  border-radius: 3px;
+  background: rgb(255 216 0 / 0.35);
+  color: inherit;
+}
+
+.episode-article blockquote {
+  margin: 1.5rem 0;
+  padding: 0.75rem 1.5rem;
+  border-left: 3px solid var(--dst-green);
+  color: var(--color-grey-700);
+  font-style: italic;
+}
+
+.episode-article figure {
+  margin: 2.5rem 0;
+}
+
+.episode-article figure img,
+.episode-article figure svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.episode-article figcaption {
+  margin-top: 0.75rem;
+  color: var(--color-text-meta);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.episode-article table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0 0 1.5rem;
+}
+
+.episode-article th,
+.episode-article td {
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid rgb(0 68 69 / 0.12);
+  text-align: left;
+  vertical-align: top;
+}
+
+/* Callouts: {{< key-point >}} and {{< whats-in-this-post >}}. */
+.key-point {
+  margin: 2rem 0;
+  padding: 1.25rem 1.75rem;
+  border-left: 4px solid var(--dst-yellow);
+  border-radius: 0 10px 10px 0;
+  background: var(--dst-teal-tint);
+  color: var(--dst-teal-deep);
+  font-size: 1.15rem;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+/* markdownify drops the <p> for a single paragraph, so text styles sit on the aside. */
+.key-point p {
+  margin: 0;
+}
+
+.key-point p + p {
+  margin-top: 0.75rem;
+}
+
+.post-toc {
+  margin: 2rem 0;
+  padding: 1.25rem 1.75rem;
+  border-left: 4px solid var(--dst-green);
+  border-radius: 0 10px 10px 0;
+  background: var(--dst-green-tint);
+}
+
+.post-toc__label {
+  margin: 0 0 0.75rem;
+  color: var(--dst-teal-deep);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.post-toc__list {
+  margin: 0;
+  padding-left: 1.25rem;
+}
+
+.post-toc__list li {
+  margin-bottom: 0.4rem;
+  line-height: 1.5;
+}
+
+.post-toc__list a,
+.post-toc__list a:visited {
+  color: var(--dst-teal-deep);
+  text-decoration: none;
+  border-bottom: 1px solid rgb(44 121 115 / 0.45);
+}
+
+.post-toc__list a:hover {
+  color: var(--dst-teal);
+  border-bottom-color: var(--dst-teal);
+}

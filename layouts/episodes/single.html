@@ -1,0 +1,27 @@
+{{ define "main" -}}
+<main class="main layout__main">
+<article class="single-view{{ with .Section }} single-view--{{ . | urlize }}{{ end }}{{ if .Params.description }} episode-article{{ end }}">
+<header>
+<h1 class="title{{ if $.Param "submitted" | default false }} mb--xxs{{ end }}">
+{{ .Title }}{{ if $.Param "episode" | default false }} - ep.#{{ $.Param "episode" }}{{ end }}</h1>
+{{ with .Params.subtitle }}<p class="episode-subtitle">{{ . }}</p>{{ end }}
+{{ if $.Param "submitted" | default false }}{{ partial "submitted.html" . }}{{ end -}}
+{{ with .Params.readtime }}<p class="episode-readtime">{{ . }}</p>{{ end }}
+{{ if .Params.tags }}{{ partial "tags.html" . }}{{ end -}}
+</header>
+
+{{/* Pipeline pages set `description`: the teaser before <!--more--> becomes the
+     standfirst, rendered once. Older episodes have no description and render as before. */}}
+{{ if and .Params.description .Truncated -}}
+<div class="episode-standfirst">{{ .Summary }}</div>
+{{ .ContentWithoutSummary }}
+{{- else -}}
+{{ .Content }}
+{{- end }}
+
+{{ if ne .Lastmod .Date }}{{ partial "dates.html" . }}{{ end -}}
+{{ if site.Params.repository | default false }}{{ partial "repository-links.html" . }}{{ end -}}
+{{ if $.Param "relatedposts" | default false }}{{ partial "relatedposts.html" . }}{{ end -}}
+</article>
+</main>
+{{ end -}}

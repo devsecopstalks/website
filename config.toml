@@ -7,6 +7,10 @@ buildFuture = true
 defaultContentLanguage = "en"
 pluralizelisttitles = false
 removePathAccents = true
+# Raw HTML in episode articles (<mark>, <figure>) must pass through.
+[markup.goldmark.renderer]
+unsafe = true
+
 [pagination]
 pagerSize = 10
 path = "page"
@@ -64,3 +68,4 @@ realfavicongenerator = true
 apple = "https://podcasts.apple.com/se/podcast/the-devsecops-talks-podcast/id1503645730"
 spotify = "https://open.spotify.com/show/4tGYslKaJU9d8Fg3Qf9gaO"
 google = "https://podcasts.google.com/feed/aHR0cHM6Ly9mZWVkLnBvZGJlYW4uY29tL2RldnNlY29wcy9mZWVkLnhtbA=="
+feed = "https://feed.podbean.com/devsecops/feed.xml"

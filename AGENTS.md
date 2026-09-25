@@ -6,7 +6,8 @@ There is no separate demo documentation tree in this repository. Authoritative d
 
 - **`tools/podbean.py`** — Main entry: `raw/` → `out/episodeNNN-*` checkpoints (NNN from Podbean) → Podbean → optional YouTube → `content/episodes/`.
 - **`tools/transcribe_local.py`** — Default transcription backend (FluidAudio, built by `do.sh` at a pinned commit); `TRANSCRIBE_BACKEND=openai` selects the hosted fallback in `podbean.py`.
-- **`tools/episode_pipeline.py`** — Claude + Codex review loop and interactive Codex title/description picks.
+- **`tools/episode_pipeline.py`** — Claude + Codex review loop and interactive Codex title/description picks. Article voice and structure: `tools/blog-tone-of-voice.md`.
+- **`tools/episode_metadata.py`** — YouTube chapters from timestamped turns, the structured metadata call, and the YouTube description / Podbean show notes builders.
 - **`tools/article.py`** — Legacy post-publish article helper; prefer `podbean.py` for new work.
 
 ## Expectations for changes

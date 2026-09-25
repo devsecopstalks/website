@@ -256,14 +256,6 @@ class TestPodbeanTextHelpers(unittest.TestCase):
             ):
                 self.assertIsNone(podbean.infer_resume_episode_number(105))
 
-    def test_build_youtube_description_plain_has_full_urls(self):
-        text = podbean.build_youtube_description_plain(
-            "Teaser line.", 97, "Shift Left Example"
-        )
-        self.assertIn("https://linkedin.com/company/devsecops-talks/", text)
-        self.assertIn("https://devsecops.fm/episodes/097/", text)
-        self.assertNotIn("…", text)
-
     def test_participants_yaml_line(self):
         self.assertEqual(
             podbean._participants_yaml_line(["Paulina", "Mattias", "Andrey"]),
@@ -783,6 +775,9 @@ class TestPodbeanPublishingFlow(unittest.TestCase):
             "load_or_create_transcript": "transcript",
             "_load_or_detect_guest_context": {"status": "no_guests", "guests": []},
             "generate_article": "article",
+            "load_or_generate_chapters": "",
+            "load_or_generate_metadata": {"subtitle": "Subtitle", "youtube_title": "Hook"},
+            "generate_cover": "/images/covers/001.png",
             "prompt_publish_action": self.schedule,
             "get_podbean_upload_link": {"presigned_url": "https://example.test/audio", "file_key": "audio"},
             "upload_file_to_podbean": None,
@@ -862,9 +857,39 @@ class TestPodbeanPublishingFlow(unittest.TestCase):
         self.assertEqual(error.exception.code, 1)
         self.assertTrue((self.root / "episode001-title.txt").exists())
         self.assertFalse((self.root / "episode001-description.txt").exists())
-        for name in ("prompt_publish_action", "upload_file_to_podbean", "create_podbean_episode",
-                     "upload_to_youtube", "write_episode_markdown"):
+        for name in ("load_or_generate_metadata", "prompt_publish_action", "upload_file_to_podbean",
+                     "create_podbean_episode", "upload_to_youtube", "write_episode_markdown"):
             self.mocks[name].assert_not_called()
+
+    def test_metadata_failure_stops_before_anything_remote(self):
+        self.mocks["load_or_generate_metadata"].side_effect = SystemExit(1)
+        with self.assertRaises(SystemExit):
+            podbean.process_audio(str(self.audio), self.args, None)
+        for name in ("generate_cover", "prompt_publish_action", "upload_file_to_podbean",
+                     "create_podbean_episode", "upload_to_youtube", "write_episode_markdown"):
+            self.mocks[name].assert_not_called()
+
+    def test_cover_failure_stops_before_anything_remote(self):
+        self.mocks["generate_cover"].side_effect = OSError("disk full")
+        with self.assertRaises(SystemExit):
+            podbean.process_audio(str(self.audio), self.args, None)
+        for name in ("prompt_publish_action", "upload_file_to_podbean", "create_podbean_episode",
+                     "write_episode_markdown"):
+            self.mocks[name].assert_not_called()
+
+    def test_page_gets_metadata_cover_and_show_notes(self):
+        self.mocks["create_podbean_episode"].return_value = {"episode": {
+            "id": "episode-id", "status": "future", "media_url": "https://example.test/ep.mp3",
+            "publish_time": self.schedule.podbean_timestamp,
+        }}
+        podbean.process_audio(str(self.audio), self.args, None)
+        page_kwargs = self.mocks["write_episode_markdown"].call_args.kwargs
+        self.assertEqual(page_kwargs["subtitle"], "Subtitle")
+        self.assertEqual(page_kwargs["image"], "/images/covers/001.png")
+        self.assertEqual(page_kwargs["audio_url"], "https://example.test/ep.mp3")
+        self.assertEqual(page_kwargs["readtime"], "1 min read")
+        content = self.mocks["create_podbean_episode"].call_args.args[2]
+        self.assertIn("https://devsecops.fm/episodes/001/", content)
 
 
 class TestEpisodePipelineNumberedPick(unittest.TestCase):

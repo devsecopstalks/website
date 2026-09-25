@@ -1,0 +1,72 @@
+{
+  "type": "object",
+  "properties": {
+    "subtitle": {
+      "type": "string",
+      "description": "One sentence shown under the page title, under 120 characters. Concrete, hook-first, different from the title and from the teaser's first sentence. Not a category label."
+    },
+    "youtube_title": {
+      "type": "string",
+      "description": "The hook part of the YouTube title: a question, or a claim that answers one, with the payoff attached. 40-70 characters, no episode number, no show name (the pipeline appends ' - DevSecOps Talks #NN'), recognizable keyword early, written for a scrolling viewer. Reuse the episode title only if it is genuinely the strongest hook."
+    },
+    "youtube_hook": {
+      "type": "string",
+      "description": "Opening paragraph of the YouTube description, two or three sentences, 150-400 characters. The problem in the viewer's own words, then what the episode does about it. The first sentence lands the problem within about 110 characters. Must not start with the show name, a keyword label, or 'In this episode'."
+    },
+    "youtube_intro": {
+      "type": "string",
+      "description": "One sentence naming who is in the episode and the framing, third person. Pattern: 'Andrey Devyatkin, Paulina Dubas and Mattias Hemmingsson get into why ...'. Include every guest by full name and what they bring. Only hosts who speak in the transcript."
+    },
+    "youtube_learn": {
+      "type": "array",
+      "description": "Three or four specific takeaways from THIS episode, 6-14 words each, no leading dash, no generic filler such as 'best practices for security'.",
+      "items": {"type": "string"},
+      "minItems": 3,
+      "maxItems": 4
+    },
+    "youtube_substance": {
+      "type": "string",
+      "description": "One paragraph, two to four sentences, explaining the episode's central idea for a viewer who reads before playing, in the episode's real vocabulary (the tools, services and terms actually named). Prose, no keyword lists, no repeat of the hook."
+    },
+    "youtube_comment_prompt": {
+      "type": "string",
+      "description": "One short question, specific to this episode, answerable from the viewer's own experience and tied to a real choice or disagreement in the episode. Empty string if there is no genuine question; never 'let us know what you think'."
+    },
+    "youtube_hashtags": {
+      "type": "array",
+      "description": "Exactly five hashtags in slot order: #DevSecOps, #DevOps, the episode's strongest concept tag, the named tool or service with real airtime, #DevSecOpsTalks. Each starts with #, no spaces, no duplicates, only terms said on air.",
+      "items": {"type": "string"},
+      "minItems": 5,
+      "maxItems": 5
+    },
+    "podcast_hook": {
+      "type": "string",
+      "description": "Show notes opening, one or two sentences: the problem in the listener's terms. Plain text, no episode number, under 45 words."
+    },
+    "podcast_who_what": {
+      "type": "string",
+      "description": "One sentence naming the hosts who speak in the transcript and every guest by full name, and the topics covered. Third person, under 45 words."
+    },
+    "podcast_learn": {
+      "type": "array",
+      "description": "Three to five things a listener will learn, one line each, 6-14 words, specific to this episode.",
+      "items": {"type": "string"},
+      "minItems": 3,
+      "maxItems": 5
+    }
+  },
+  "required": [
+    "subtitle",
+    "youtube_title",
+    "youtube_hook",
+    "youtube_intro",
+    "youtube_learn",
+    "youtube_substance",
+    "youtube_comment_prompt",
+    "youtube_hashtags",
+    "podcast_hook",
+    "podcast_who_what",
+    "podcast_learn"
+  ],
+  "additionalProperties": false
+}

@@ -1,6 +1,6 @@
 ## DevSecOps Talks — podcast publish pipeline
 
-End-to-end flow: drop an MP3 in `raw/`, run `bash do.sh`, transcribe locally with FluidAudio (OpenAI opt-in), generate a long-form episode article with **Claude Code** (draft + revisions) and **Codex** (adversarial review until `GOOD_TO_GO`), pick title and short teaser with **Codex**, upload audio to **Podbean**, choose between the next available Monday at 11:00 UTC or immediate publication, optionally upload video to **YouTube** via [upload-post.com](https://upload-post.com), and write `content/episodes/NNN-slug.md`.
+End-to-end flow: drop an MP3 in `raw/`, run `bash do.sh`, transcribe locally with FluidAudio (OpenAI opt-in), generate a long-form episode article with **Claude Code** (draft + revisions) and **Codex** (adversarial review until `GOOD_TO_GO`), pick title and short teaser with **Codex**, approve generated YouTube chapters, package subtitle, YouTube copy and Podbean show notes with one structured **Codex** call, render a cover image, upload audio to **Podbean**, choose between the next available Monday at 11:00 UTC or immediate publication, optionally upload video to **YouTube** via [upload-post.com](https://upload-post.com), and write `content/episodes/NNN-slug.md`.
 
 Checkpoint files live under `out/episodeNNN-*` (NNN = next Podbean episode number at run start) so you can resume after interruptions. The next number is calculated from the highest existing Podbean episode number, so future scheduled episodes are included.
 
@@ -49,10 +49,14 @@ uv sync
 tools/
 ├── raw/              # put episode .mp3 here (and optional same-stem .md show notes, .mp4 video, .vtt/.txt transcript)
 ├── out/              # episodeNNN-* checkpoints (transcript, drafts, reviews, title/teaser, youtube-url)
-├── prompts/          # draft.md, review.md, revise.md, titles.md, descriptions.md
+├── prompts/          # draft/review/revise, titles, descriptions, guests, chapters, metadata (+ metadata-schema.json)
 ├── podcast-context.md # injected into prompts as {{CONTEXT}} (lives next to prompts/, not inside it)
+├── blog-tone-of-voice.md # article voice and structure, injected as {{TONE}}
+├── youtube-description.md / podcast-description.md # house rules for the YouTube and Podbean copy
 ├── podbean.py        # main entrypoint
 ├── episode_pipeline.py
+├── episode_metadata.py # chapters, metadata call, YouTube description and Podbean show notes builders
+├── generate_cover.py # static/images/covers/NNN.png for og:image
 ├── transcribe_local.py # FluidAudio ASR + diarization, merged into speaker turns
 ├── youtube.py
 ├── upload_progress.py # progress lines for R2 + upload-post multipart body
@@ -98,6 +102,20 @@ Checkpoints:
 - `out/episodeNNN-transcript-source.json` — which backend produced the final transcript. Turns are used only when bound here to the current transcript, so a `-turns.json` left by another backend or run is ignored.
 
 Saving a new `out/episodeNNN.txt` deletes the checkpoints built from the old one: guests, drafts, reviews, article, metadata, generated chapters and the generated announcement. Title, teaser, hand-written chapters, upload markers and the Buffer post ledger stay. To retranscribe, delete `out/episodeNNN.txt` and answer `new` (or delete the backend file).
+
+### Article and packaging
+
+The article follows `blog-tone-of-voice.md`: first person plural, no Summary or Highlights, exactly three common questions under `{#faq}` (the page turns them into FAQPage JSON-LD). A saved `-article.md` in the old Summary/Highlights format is not reused silently: the run offers to rename it and its drafts and reviews to `*.legacy` and write a new one.
+
+After the title and teaser picks, and before anything is uploaded:
+
+1. **Chapters.** A hand-written `out/episodeNNN-chapters.txt` (`MM:SS - Label` lines) wins and must pass YouTube's rules (at least 3, first `00:00`, ascending, 10 s apart) or the run stops. Otherwise Codex proposes 5-8 chapters from `-turns.json` for approval; the approved (or skipped) result is `-chapters-generated.txt`. With no timestamped turns (OpenAI backend, `--transcript`) chapters are omitted with a notice.
+2. **Metadata.** One Codex call with `prompts/metadata-schema.json` writes `-metadata.json`: subtitle, YouTube title/hook/bullets/substance/comment prompt/hashtags, and Podbean show notes. It is regenerated when the title, teaser or article changes. The picked title and teaser are never rewritten.
+3. **Cover.** `static/images/covers/NNN.png`, kept if it already exists, becomes the page `image`.
+
+A failure in any of these stops the run before Podbean or YouTube.
+
+The page gets `description` (the teaser), `subtitle`, `readtime`, `image`, `youtube_id` and, when Podbean returns one, `audio_url`. Resuming an episode whose page already exists rewrites that file in place: filename, URL, `date`, aliases and participants stay; `title`, `lastmod` and the body change. Existing Podbean episodes keep their show notes, and an already uploaded or scheduled video is not touched.
 
 ### YouTube and large MP4s
 
@@ -156,11 +174,11 @@ uv run podbean.py -f raw/ep.mp3 --episode-number 104  # resume/reuse an existing
 
 ### YouTube description text
 
-The upload uses **plain text** with each important **URL on its own line**. The **episode** link is intentionally short (`https://devsecops.fm/episodes/NNN/`), with a matching Hugo **`aliases`** entry on the episode page so that URL redirects to the full slug page. (YouTube may still ellipsize very long URLs in the UI; shorter paths reduce that. Tap or “Copy” often reveals the full href.) The exact text sent to upload-post is also written to `out/episodeNNN-youtube-description.txt` for review.
+Built from `-metadata.json` and the chapters as described in `youtube-description.md`: hook, what you will learn, who and framing, substance, comment prompt, chapters, links, five hashtags. The upload title is `<youtube_title> - DevSecOps Talks #NN`. Each **URL sits on its own line**, and the **episode** link is intentionally short (`https://devsecops.fm/episodes/NNN/`), matching the page's Hugo **`aliases`** entry, so YouTube does not ellipsize it. The exact text sent to upload-post is also written to `out/episodeNNN-youtube-description.txt`, and house-style misses (hook length, chapter count, word count) are printed as warnings.
 
 ### Tests
 
-Stdlib `unittest` covers local transcript merging and backend selection, URL/embed parsing, R2 staging markers, slug helpers, prompt expansion, numbered-list parsing, Codex invocation/failure handling, and Podbean scheduling/resume flows. Network and subprocess calls are mocked; the tests do not publish episodes:
+Stdlib `unittest` covers local transcript merging and backend selection, chapter validation, metadata packaging and the YouTube/Podbean builders, page writing (new and in place), URL/embed parsing, R2 staging markers, slug helpers, prompt expansion, numbered-list parsing, Codex invocation/failure handling, and Podbean scheduling/resume flows. Network and subprocess calls are mocked; the tests do not publish episodes:
 
 ```bash
 cd tools && uv run python -m unittest discover -s tests -v

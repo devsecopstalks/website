@@ -784,6 +784,7 @@ class TestPodbeanPublishingFlow(unittest.TestCase):
             "create_podbean_episode": {"episode": {"id": "episode-id", "status": "draft"}},
             "upload_to_youtube": None,
             "write_episode_markdown": "episode.md",
+            "schedule_episode_announcement": None,
         }.items():
             self.mocks[name] = self.enterContext(patch.object(podbean, name, return_value=result))
 

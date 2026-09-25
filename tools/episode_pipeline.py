@@ -250,6 +250,10 @@ def _extract_json_object(text: str) -> dict:
     return data
 
 
+SHOW_HOSTS = ("Andrey Devyatkin", "Paulina Dubas", "Mattias Hemmingsson")
+AUTHOR_HOST = "Andrey Devyatkin"
+
+
 def normalize_guest_context(data: dict) -> dict:
     """Normalize guest lookup data to the stable checkpoint schema."""
     status = str(data.get("status") or "").strip().lower()
@@ -290,6 +294,11 @@ def normalize_guest_context(data: dict) -> dict:
                 "confidence": str(raw_guest.get("confidence") or "").strip(),
                 "needs_operator": bool(raw_guest.get("needs_operator")),
                 "question": str(raw_guest.get("question") or "").strip(),
+                # Announcement tags; linkedin_name is what follows the "@" and
+                # defaults to the full name, which is what LinkedIn displays.
+                "linkedin_url": str(raw_guest.get("linkedin_url") or "").strip(),
+                "linkedin_name": str(raw_guest.get("linkedin_name") or full_name).strip(),
+                "x_handle": str(raw_guest.get("x_handle") or "").strip().lstrip("@"),
             }
         )
 
@@ -298,11 +307,25 @@ def normalize_guest_context(data: dict) -> dict:
     elif status == "no_guests":
         status = "verified"
 
+    hosts_present = _normalize_hosts_present(data.get("hosts_present"))
     return {
         "status": status,
         "guests": guests,
+        "hosts_present": hosts_present,
+        "andrey_present": AUTHOR_HOST in hosts_present,
         "notes": str(data.get("notes") or "").strip(),
     }
+
+
+def _normalize_hosts_present(raw) -> list[str]:
+    """Current hosts by full name, in SHOW_HOSTS order; unknown names are dropped, not tagged."""
+    wanted = set()
+    for name in raw if isinstance(raw, list) else []:
+        key = str(name).strip().casefold()
+        for host in SHOW_HOSTS:
+            if key in (host.casefold(), host.split()[0].casefold()):
+                wanted.add(host)
+    return [host for host in SHOW_HOSTS if host in wanted]
 
 
 def load_guest_context(path: str) -> dict:

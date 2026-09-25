@@ -1,0 +1,43 @@
+{
+  "_about": [
+    "Who the Buffer announcement credits, and where it posts.",
+    "Both networks take a plain '@...' in the post text and Buffer resolves it at",
+    "publish time: linkedin_name is the display name LinkedIn shows, x_handle is",
+    "the X handle without the '@'. A null handle credits that party in plain text.",
+    "LinkedIn only resolves a profile mention for one of the author's connections.",
+    "The author is never tagged: Buffer cannot tag the profile that owns the channel.",
+    "buffer_channels are Buffer channel ids; the pipeline posts to exactly these.",
+    "filename_aliases map names in Riverside export filenames to hosts."
+  ],
+  "author": "Andrey Devyatkin",
+  "company": {
+    "name": "DevSecOps Talks",
+    "linkedin_name": "DevSecOps Talks",
+    "linkedin_url": "https://www.linkedin.com/company/devsecops-talks",
+    "x_handle": null
+  },
+  "hosts": [
+    {
+      "name": "Paulina Dubas",
+      "linkedin_name": "Paulina Dubas",
+      "linkedin_url": "https://www.linkedin.com/in/paulinadubas/",
+      "x_handle": "pauladubas"
+    },
+    {
+      "name": "Mattias Hemmingsson",
+      "linkedin_name": "Mattias Hemmingsson",
+      "linkedin_url": "https://www.linkedin.com/in/matte-hemmingsson/",
+      "x_handle": null
+    }
+  ],
+  "filename_aliases": {
+    "andrey": "Andrey Devyatkin",
+    "matte": "Mattias Hemmingsson",
+    "mattias": "Mattias Hemmingsson",
+    "paulina": "Paulina Dubas"
+  },
+  "buffer_channels": [
+    {"id": "68ca90a4139f4ffdd6e8d02a", "service": "linkedin", "name": "andreydevyatkin"},
+    {"id": "56d21b912b19ce1e74c4ced1", "service": "twitter", "name": "Andrey9kin"}
+  ]
+}

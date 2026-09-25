@@ -1,0 +1,58 @@
+{
+  "type": "object",
+  "properties": {
+    "format": {
+      "type": "string",
+      "enum": ["quote", "disagreement", "no_quote"],
+      "description": "quote by default; disagreement only for a real disagreement; no_quote only when there are no timestamped turns"
+    },
+    "quote": {
+      "type": "string",
+      "description": "Verbatim contiguous span of one turn, 8-30 words, no surrounding quotation marks; empty unless format is quote"
+    },
+    "source_speaker": {
+      "type": "string",
+      "description": "Label of the quoted turn without brackets, e.g. C; empty unless format is quote"
+    },
+    "source_timestamp": {
+      "type": "string",
+      "description": "MM:SS (or H:MM:SS) printed on the quoted turn; empty unless format is quote"
+    },
+    "source_person": {
+      "type": "string",
+      "description": "Full name of whoever said the quote; empty unless format is quote"
+    },
+    "context": {
+      "type": "string",
+      "description": "One context sentence for quote; the whole post text for disagreement and no_quote. No URL, hashtags or @-mentions"
+    },
+    "theme_hashtag": {
+      "type": "string",
+      "description": "At most one theme hashtag including the #, never #DevSecOps; empty string for none"
+    },
+    "speaker_map": {
+      "type": "array",
+      "description": "Every speaker label you could place, with the person's full name",
+      "items": {
+        "type": "object",
+        "properties": {
+          "label": { "type": "string" },
+          "person": { "type": "string" }
+        },
+        "required": ["label", "person"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "format",
+    "quote",
+    "source_speaker",
+    "source_timestamp",
+    "source_person",
+    "context",
+    "theme_hashtag",
+    "speaker_map"
+  ],
+  "additionalProperties": false
+}

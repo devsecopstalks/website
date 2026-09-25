@@ -27,8 +27,10 @@ from episode_pipeline import (
     normalize_operator_guest_notes,
     pick_description,
     pick_title,
+    run_codex,
     save_guest_context,
 )
+from transcribe_local import format_turns, transcribe_local
 from r2_staging import (
     load_r2_youtube_staging_marker,
     remove_r2_youtube_staging_marker,
@@ -226,7 +228,7 @@ def _media_files_in(directory: str) -> list[str]:
 
 
 def stage_downloads_to_raw() -> None:
-    """Move new mp3/mp4 from ~/Downloads into raw/, in a re-run-safe way.
+    """Move new mp3/mp4 (and their sidecar transcripts) from ~/Downloads into raw/, re-run-safe.
 
     Cases:
     - Downloads has media, raw/ is empty: move everything in and proceed.
@@ -265,6 +267,10 @@ def stage_downloads_to_raw() -> None:
         print(f"Cleared {RAW_DIR}/.")
 
     if downloads:
+        # Sidecar transcripts ride along only when named after a downloaded MP3,
+        # so unrelated .txt files in ~/Downloads stay put.
+        mp3_stems = [Path(f).stem for f in downloads if f.lower().endswith(".mp3")]
+        downloads += _sidecar_transcripts_in(DOWNLOADS_DIR, mp3_stems)
         os.makedirs(RAW_DIR, exist_ok=True)
         print(f"Moving {len(downloads)} file(s) from ~/Downloads to {RAW_DIR}/:")
         for src in downloads:
@@ -700,17 +706,27 @@ def compress_audio_for_transcription(audio_file_path, bitrate='32k', verbose=Fal
         raise
 
 
-# gpt-4o-transcribe accepts at most 1400s per request; stay below with chunk size.
-_TRANSCRIPTION_MODEL = "gpt-4o-transcribe"
-_MAX_TRANSCRIPTION_SECONDS = 1400
-_CHUNK_SECONDS = 1200
+TRANSCRIBE_BACKENDS = ("local", "openai")
 
-_TRANSCRIPTION_PROMPT = (
-    "DevSecOps Talks podcast. Hosts: Andrey Devyatkin, Mattias Hemmingsson, Paulina Dubas. "
-    "Former host: Julien Bisconti. Companies: FivexL, Dubas Consulting, Sirob Technologies, "
-    "Boris, Hacking Robots and Beer. Topics: AWS, Kubernetes, Terraform, HashiCorp Vault, "
-    "CI/CD, Jenkins, GitOps, Argo CD, CloudFormation, IAM, SSO Elevator, Control Tower, "
-    "GuardDuty, CloudTrail, ECS, EKS, SOC2, HIPAA, PCI DSS."
+# gpt-4o-transcribe-diarize takes at most 1400s of audio per request. Chunks are
+# re-encoded to mono 32 kbps, which also keeps them far below the 25 MB cap.
+_DIARIZE_MODEL = "gpt-4o-transcribe-diarize"
+_DIARIZE_CHUNK_SECONDS = 1300
+
+TRANSCRIPT_SIDECAR_EXTENSIONS = (".vtt", ".txt")
+
+# Checkpoints built from the transcript; a newly saved transcript removes them.
+# Hand-written chapters and the Buffer post ledger are operator/remote state and stay.
+TRANSCRIPT_DERIVED_CHECKPOINTS = (
+    "-guests.json",
+    "-draft.md",
+    "-draft-v*.md",
+    "-review-*.md",
+    "-article.md",
+    "-metadata.json",
+    "-chapters-generated.txt",
+    "-announcement.json",
+    "-announcement.md",
 )
 
 
@@ -760,94 +776,382 @@ def extract_audio_segment(
     subprocess.run(cmd, check=True, capture_output=not verbose)
 
 
-def transcribe_audio_openai(client, audio_file_path, verbose=False):
+def transcribe_diarized(api_key, audio_path, verbose=False):
+    """Transcribe one chunk with gpt-4o-transcribe-diarize (streaming SSE)."""
+    import httpx
+
+    url = "https://api.openai.com/v1/audio/transcriptions"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Accept": "text/event-stream",
+    }
+
+    chunking_strategy = json.dumps({
+        "type": "server_vad",
+        "prefix_padding_ms": 300,
+        "silence_duration_ms": 200,
+        "threshold": 0.5,
+    })
+
+    with open(audio_path, "rb") as audio_file:
+        files = [
+            ("file", (os.path.basename(audio_path), audio_file)),
+            ("model", (None, _DIARIZE_MODEL)),
+            ("language", (None, "en")),
+            ("response_format", (None, "diarized_json")),
+            ("chunking_strategy", (None, chunking_strategy)),
+            ("stream", (None, "true")),
+        ]
+
+        timeout = httpx.Timeout(600.0, read=None)
+        with httpx.Client(timeout=timeout) as http_client:
+            with http_client.stream("POST", url, headers=headers, files=files) as response:
+                try:
+                    response.raise_for_status()
+                except httpx.HTTPStatusError as exc:
+                    error_body = response.read()
+                    raise RuntimeError(
+                        f"Diarize API error {exc.response.status_code}: "
+                        f"{error_body.decode('utf-8', errors='replace')}"
+                    ) from exc
+
+                segments = []
+                full_text = ""
+                pending_data = []
+
+                for line in response.iter_lines():
+                    if not line:
+                        if pending_data:
+                            data = "\n".join(pending_data)
+                            pending_data.clear()
+                            if data == "[DONE]":
+                                break
+                            event = json.loads(data)
+                            if event["type"] == "transcript.text.segment":
+                                segments.append(event)
+                                if verbose:
+                                    speaker = event.get("speaker", "?")
+                                    print(f"  [{speaker}] {event['text'][:80]}")
+                            elif event["type"] == "transcript.text.done":
+                                full_text = event["text"]
+                        continue
+
+                    if line.startswith("data:"):
+                        pending_data.append(line[len("data:"):].strip())
+
+                if pending_data:
+                    data = "\n".join(pending_data)
+                    if data != "[DONE]":
+                        event = json.loads(data)
+                        if event["type"] == "transcript.text.done":
+                            full_text = event["text"]
+
+    if segments:
+        labeled_lines = []
+        current_speaker = None
+        for seg in segments:
+            speaker = seg.get("speaker", "Unknown")
+            text = seg.get("text", "").strip()
+            if speaker != current_speaker:
+                current_speaker = speaker
+                labeled_lines.append(f"\n[{speaker}]: {text}")
+            else:
+                labeled_lines.append(f" {text}")
+        transcript = "".join(labeled_lines).strip()
+        print(f"✓ Diarized chunk ({len(segments)} segments, {len(transcript)} chars)")
+        return transcript
+
+    if full_text:
+        print(f"✓ Transcribed chunk (no segments, {len(full_text)} chars)")
+        return full_text
+
+    raise ValueError("Empty response from diarize model")
+
+
+def transcribe_openai(client, audio_path, verbose=False):
+    """Transcribe with gpt-4o-transcribe-diarize, chunked under the per-request limit.
+
+    Speaker labels restart in every chunk, and no word timings come back, so
+    this backend writes no ``-turns.json``.
     """
-    Transcribe an audio file using OpenAI audio transcriptions API (see _TRANSCRIPTION_MODEL).
-    Automatically compresses large files if needed.
-    Long audio is split into segments under the API duration limit, then merged.
-    
-    Args:
-        client: OpenAI client instance
-        audio_file_path: Path to the audio file to transcribe
-        verbose: Whether to print verbose output
-    
-    Returns:
-        Transcription text
+    duration_sec = get_audio_duration_seconds(audio_path)
+    n_chunks = max(1, math.ceil(duration_sec / _DIARIZE_CHUNK_SECONDS))
+    chunk_len = duration_sec / n_chunks
+    print(f"Transcribing with {_DIARIZE_MODEL} ({duration_sec:.0f}s in {n_chunks} chunk(s))...")
+
+    parts = []
+    tmpdir = tempfile.mkdtemp(prefix="podbean_transcribe_")
+    try:
+        for i in range(n_chunks):
+            chunk_path = os.path.join(tmpdir, f"chunk_{i:04d}.mp3")
+            extract_audio_segment(audio_path, i * chunk_len, chunk_len, chunk_path, verbose=verbose)
+            if n_chunks > 1:
+                print(f"  Chunk {i + 1}/{n_chunks}...")
+            parts.append(transcribe_diarized(client.api_key, chunk_path, verbose=verbose))
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+    transcript = "\n\n".join(parts)
+    print(f"✓ OpenAI transcript: {len(transcript)} chars")
+    return transcript
+
+
+def transcribe_backend() -> str:
+    """Which transcription backend to use: 'local' (default) or 'openai'."""
+    backend = os.environ.get("TRANSCRIBE_BACKEND", "local").strip().lower() or "local"
+    if backend not in TRANSCRIBE_BACKENDS:
+        print(f"Error: TRANSCRIBE_BACKEND must be 'local' or 'openai', got {backend!r}")
+        sys.exit(1)
+    return backend
+
+
+def prompt_speaker_count(input_func=input) -> int | None:
+    """Ask how many distinct voices are in the episode, to pin diarization.
+
+    Pinning stops the diarizer inventing a phantom speaker from crosstalk, but
+    pinning too low merges two real people irrecoverably. So there is no numeric
+    default: Enter (and EOF) means auto-detect, whose failure mode is a visible
+    extra speaker. ``EPISODE_SPEAKERS`` (a positive number, or ``auto``) skips the prompt.
+    """
+    env = os.environ.get("EPISODE_SPEAKERS", "").strip()
+    if env:
+        if env.lower() == "auto":
+            return None
+        if env.isdigit() and int(env) > 0:
+            return int(env)
+        print(f"⚠ Ignoring EPISODE_SPEAKERS={env!r}; expected a positive number or 'auto'.")
+
+    while True:
+        print("\nHow many distinct voices are in this episode?")
+        print("Count everyone actually audible — hosts, guests, and any intro or clip voice.")
+        print("Type a number to pin it, or press Enter to let the diarizer decide: ", end="", flush=True)
+        try:
+            raw = input_func().strip()
+        except EOFError:
+            print("\n(no input available — using auto-detect)")
+            return None
+        if not raw or raw.lower() == "auto":
+            return None
+        if raw.isdigit() and int(raw) > 0:
+            return int(raw)
+        print(f"⚠ '{raw}' is not a valid speaker count.")
+
+
+def transcribe(client, audio_path, out_base, backend, num_speakers=None, verbose=False) -> str:
+    """Transcribe and diarize with the given backend.
+
+    The backend is passed in rather than re-read, so a transcript can never be
+    named for one backend and filled by the other.
+    """
+    if backend == "local":
+        return transcribe_local(audio_path, out_base, num_speakers=num_speakers, verbose=verbose)
+    if client is None:
+        raise RuntimeError("TRANSCRIBE_BACKEND=openai needs an OpenAI client (set OPENAI_API_KEY)")
+    return transcribe_openai(client, audio_path, verbose=verbose)
+
+
+def parse_vtt(vtt_path: str) -> str:
+    """Parse a WebVTT file into a plain text transcript."""
+    lines = []
+    with open(vtt_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line == "WEBVTT" or "-->" in line or line.isdigit():
+                continue
+            line = re.sub(r"<[\d:.]+>", "", line).strip()
+            if line:
+                lines.append(line)
+    return "\n".join(lines)
+
+
+def _sidecar_transcripts_in(directory: str, stems: list[str]) -> list[str]:
+    """Return ``{stem}*.vtt|txt`` files in ``directory`` for any of ``stems``."""
+    if not os.path.isdir(directory):
+        return []
+    return sorted(
+        str(entry)
+        for entry in Path(directory).iterdir()
+        if entry.is_file()
+        and entry.suffix.lower() in TRANSCRIPT_SIDECAR_EXTENSIONS
+        and any(entry.name.startswith(stem) for stem in stems)
+    )
+
+
+def select_provided_transcript(audio_path: str, input_func=input) -> str | None:
+    """Pick the sidecar transcript next to the MP3, asking when there are several."""
+    p = Path(audio_path).resolve()
+    candidates = _sidecar_transcripts_in(str(p.parent), [p.stem])
+    if len(candidates) <= 1:
+        return candidates[0] if candidates else None
+
+    print("\nMultiple provided transcripts found:")
+    for idx, path in enumerate(candidates, 1):
+        print(f"  {idx}. {os.path.basename(path)}")
+    while True:
+        print(f"Choose one [1-{len(candidates)}]: ", end="", flush=True)
+        try:
+            choice = input_func().strip()
+        except EOFError:
+            choice = ""
+        if choice.isdigit() and 1 <= int(choice) <= len(candidates):
+            return candidates[int(choice) - 1]
+        print("Invalid choice, try again.")
+
+
+def read_provided_transcript(path: str) -> str:
+    """Read a VTT or text transcript into plain text."""
+    if path.lower().endswith(".vtt"):
+        return parse_vtt(path)
+    with open(path, "r", encoding="utf-8") as f:
+        return f.read()
+
+
+def merge_transcripts_with_codex(machine_transcript: str, provided_transcript: str, verbose=False) -> str:
+    """Merge the machine and provided transcripts using Codex, with no web access."""
+    prompt = """Merge two transcripts of the same podcast episode into the best possible final transcript.
+
+Work only from the provided transcript and the machine transcript. Do not use web search.
+Preserve speaker labels and timestamps where present. Clean up mistranscriptions,
+obvious misspeaks, dropped words, and formatting inconsistencies. Prefer the provided
+transcript for structure when it is cleaner, but use the machine transcript to recover
+missing or mistranscribed content.
+
+Output the merged transcript only. Do not add commentary, headings, markdown fences,
+or notes.
+"""
+    stdin_text = (
+        "--- PROVIDED TRANSCRIPT ---\n"
+        f"{provided_transcript}\n\n"
+        "--- MACHINE TRANSCRIPT ---\n"
+        f"{machine_transcript}\n"
+    )
+    return run_codex(prompt, stdin_text=stdin_text, verbose=verbose)
+
+
+def invalidate_transcript_checkpoints(out_base: str) -> list[str]:
+    """Delete checkpoints derived from an earlier transcript; returns what was removed."""
+    removed: list[str] = []
+    parent, prefix = os.path.split(out_base)
+    for suffix in TRANSCRIPT_DERIVED_CHECKPOINTS:
+        for path in sorted(Path(parent or ".").glob(f"{prefix}{suffix}")):
+            path.unlink()
+            removed.append(path.name)
+    if removed:
+        print(f"New transcript: removed stale checkpoint(s): {', '.join(removed)}")
+    return removed
+
+
+def _sha256_text(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def save_transcript_source(out_base: str, backend: str, transcript: str,
+                           machine_transcript: str, provided_path: str | None) -> None:
+    """Record which backend produced out/episodeNNN.txt, binding ``-turns.json`` to it.
+
+    Turns are bound only when they render exactly to the local machine
+    transcript, so a turns file left over from another run or backend never is.
+    """
+    turns_sha = None
+    turns_file = f"{out_base}-turns.json"
+    if backend == "local" and os.path.isfile(turns_file):
+        with open(turns_file, "rb") as f:
+            raw = f.read()
+        try:
+            turns = json.loads(raw)
+            if format_turns(turns) == machine_transcript:
+                turns_sha = hashlib.sha256(raw).hexdigest()
+        except (ValueError, TypeError, KeyError):
+            pass
+        if turns_sha is None:
+            print(f"⚠ {os.path.basename(turns_file)} does not match the local transcript; not using its timings.")
+    with open(f"{out_base}-transcript-source.json", "w", encoding="utf-8") as f:
+        json.dump({
+            "backend": backend,
+            "transcript_sha256": _sha256_text(transcript),
+            "turns_sha256": turns_sha,
+            "provided_transcript": os.path.basename(provided_path) if provided_path else None,
+        }, f, indent=2)
+        f.write("\n")
+
+
+def load_transcript_turns(out_base: str, transcript: str) -> list[dict] | None:
+    """Timestamped turns for ``transcript``, or None when none are bound to it.
+
+    None for the openai backend, ``--transcript``, legacy transcripts, and any
+    turns file that changed since the transcript was saved.
     """
     try:
-        print(f"Transcribing audio file: {audio_file_path}")
-        
-        # Check file size and compress if needed
-        file_size_mb = os.path.getsize(audio_file_path) / (1024 * 1024)
-        max_size_mb = 24  # Stay under 25MB limit
-        
-        file_to_transcribe = audio_file_path
-        cleanup_file = None
-        
-        if file_size_mb > max_size_mb:
-            print(f"File size ({file_size_mb:.2f} MB) exceeds {max_size_mb} MB limit")
-            file_to_transcribe = compress_audio_for_transcription(audio_file_path, verbose=verbose)
-            cleanup_file = file_to_transcribe
-        
-        duration_sec = get_audio_duration_seconds(file_to_transcribe)
-        if verbose:
-            print(f"Audio duration: {duration_sec:.1f}s ({duration_sec / 60:.1f} min)")
+        with open(f"{out_base}-transcript-source.json", "r", encoding="utf-8") as f:
+            source = json.load(f)
+        if source.get("transcript_sha256") != _sha256_text(transcript) or not source.get("turns_sha256"):
+            return None
+        with open(f"{out_base}-turns.json", "rb") as f:
+            raw = f.read()
+        if hashlib.sha256(raw).hexdigest() != source["turns_sha256"]:
+            return None
+        return json.loads(raw)
+    except (OSError, ValueError, TypeError, AttributeError):
+        return None
 
-        def transcribe_one(path):
-            with open(path, "rb") as audio_file:
-                return client.audio.transcriptions.create(
-                    model=_TRANSCRIPTION_MODEL,
-                    file=audio_file,
-                    response_format="text",
-                    language="en",
-                    prompt=_TRANSCRIPTION_PROMPT,
-                )
 
-        print(_TRANSCRIPTION_MODEL)
+def load_or_create_transcript(client, audio_path: str, out_base: str, verbose=False, input_func=input) -> str:
+    """Build out/episodeNNN.txt: machine transcript, merged with a sidecar when one exists."""
+    backend = transcribe_backend()
+    transcript_file = f"{out_base}.txt"
+    # Backend-specific so an A/B run keeps both raw transcripts side by side.
+    machine_file = f"{out_base}-{backend}.txt"
 
-        if duration_sec <= _MAX_TRANSCRIPTION_SECONDS:
-            transcript = transcribe_one(file_to_transcribe)
-        else:
-            n_chunks = math.ceil(duration_sec / _CHUNK_SECONDS)
+    machine_transcript = None
+    if os.path.exists(machine_file):
+        print(
+            f"\nFound saved {backend} transcript {os.path.basename(machine_file)}. "
+            "Press Enter to reuse, or type 'new' to transcribe again: ",
+            end="",
+            flush=True,
+        )
+        try:
+            answer = input_func().strip().lower()
+        except EOFError:
+            answer = ""
+        if answer != "new":
+            with open(machine_file, "r", encoding="utf-8") as f:
+                machine_transcript = f.read()
+            print(f"✓ Loaded {backend} transcript from {machine_file}")
+
+    if machine_transcript is None:
+        other = "openai" if backend == "local" else "local"
+        other_file = f"{out_base}-{other}.txt"
+        if os.path.exists(other_file):
             print(
-                f"Audio exceeds {_MAX_TRANSCRIPTION_SECONDS}s model limit; "
-                f"transcribing in {n_chunks} segment(s) (≤{_CHUNK_SECONDS}s each)..."
+                f"Note: {os.path.basename(other_file)} exists but was produced by the "
+                f"{other} backend; transcribing again with {backend}."
             )
-            parts = []
-            tmpdir = tempfile.mkdtemp(prefix="podbean_transcribe_")
-            try:
-                for i in range(n_chunks):
-                    start = i * _CHUNK_SECONDS
-                    seg_len = min(_CHUNK_SECONDS, duration_sec - start)
-                    chunk_path = os.path.join(tmpdir, f"chunk_{i:04d}.mp3")
-                    extract_audio_segment(
-                        file_to_transcribe,
-                        start,
-                        seg_len,
-                        chunk_path,
-                        verbose=verbose,
-                    )
-                    if verbose:
-                        print(f"Transcribing segment {i + 1}/{n_chunks} ({seg_len:.0f}s)...")
-                    parts.append(transcribe_one(chunk_path))
-                transcript = "\n\n".join(parts)
-            finally:
-                shutil.rmtree(tmpdir, ignore_errors=True)
+        num_speakers = prompt_speaker_count(input_func=input_func) if backend == "local" else None
+        machine_transcript = transcribe(
+            client, audio_path, out_base, backend, num_speakers=num_speakers, verbose=verbose
+        )
+        with open(machine_file, "w", encoding="utf-8") as f:
+            f.write(machine_transcript)
+        print(f"✓ {backend.capitalize()} transcript saved to {machine_file}")
 
-        # Clean up compressed file if created
-        if cleanup_file and os.path.exists(cleanup_file):
-            os.remove(cleanup_file)
-            if verbose:
-                print(f"Removed temporary file: {cleanup_file}")
-        
-        if verbose:
-            print(f"Transcription completed. Length: {len(transcript)} characters")
-        
-        return transcript
-    
-    except Exception as e:
-        print(f'An error occurred during transcription: {str(e)}')
-        raise
+    transcript = machine_transcript
+    provided_path = select_provided_transcript(audio_path, input_func=input_func)
+    if provided_path:
+        provided_transcript = read_provided_transcript(provided_path)
+        provided_file = f"{out_base}-provided-transcript.txt"
+        with open(provided_file, "w", encoding="utf-8") as f:
+            f.write(provided_transcript)
+        print(f"✓ Provided transcript captured from {provided_path} -> {provided_file}")
+        print(f"Merging provided transcript with {backend} transcript using Codex...")
+        transcript = merge_transcripts_with_codex(machine_transcript, provided_transcript, verbose=verbose)
+
+    invalidate_transcript_checkpoints(out_base)
+    with open(transcript_file, "w", encoding="utf-8") as f:
+        f.write(transcript)
+    save_transcript_source(out_base, backend, transcript, machine_transcript, provided_path)
+    print(f"✓ Transcript saved to {transcript_file}")
+    return transcript
 
 
 # get podbean auth token
@@ -1283,7 +1587,7 @@ def _load_or_detect_guest_context(
     return guest_context
 
 
-def process_audio(audio_path: str, args, client: OpenAI) -> None:
+def process_audio(audio_path: str, args, client: OpenAI | None) -> None:
     """Run full pipeline for one mp3."""
     audio_path = os.path.abspath(audio_path)
     stem = Path(audio_path).stem
@@ -1410,11 +1714,7 @@ def process_audio(audio_path: str, args, client: OpenAI) -> None:
         print(f"Error: --skip-transcription but no transcript at {transcript_file} (use -t)")
         sys.exit(1)
     else:
-        print("Transcribing...")
-        transcript = transcribe_audio_openai(client, audio_path, verbose=args.verbose)
-        with open(transcript_file, "w", encoding="utf-8") as f:
-            f.write(transcript)
-        print(f"✓ Transcript saved to {transcript_file}")
+        transcript = load_or_create_transcript(client, audio_path, out_base, verbose=args.verbose)
 
     guest_context = _load_or_detect_guest_context(
         guest_context_file,
@@ -1779,11 +2079,13 @@ def process_audio(audio_path: str, args, client: OpenAI) -> None:
 
 def main():
     args = parse_args()
-    api_key = os.environ.get("OPENAI_API_KEY")
-    if not api_key:
-        print("Error: OPENAI_API_KEY not set")
-        sys.exit(1)
-    client = OpenAI(api_key=api_key)
+    client = None
+    if transcribe_backend() == "openai":
+        api_key = os.environ.get("OPENAI_API_KEY")
+        if not api_key:
+            print("Error: OPENAI_API_KEY not set (required for TRANSCRIBE_BACKEND=openai)")
+            sys.exit(1)
+        client = OpenAI(api_key=api_key)
 
     # Stage downloads into raw/ unless an explicit file path was given.
     if not (args.filename or args.audio):

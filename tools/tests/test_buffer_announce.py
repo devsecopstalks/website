@@ -31,6 +31,7 @@ NOW = dt.datetime(2026, 9, 28, 12, 0, tzinfo=UTC)
 NAMED_FILE = "raw/riverside_edit_02 - paulina, matte, andrey +1_devsecops.mp3"
 UNNAMED_FILE = "raw/riverside_magic_episode 01_devsecops.mp3"
 PAGE = "content/episodes/111-renaming-a-repo-can-lock-you-out-of-aws-with-jane-doe.md"
+COMPANY_PAGE = "https://www.linkedin.com/company/devsecops-talks"
 PAGE_URL = "https://devsecops.fm/episodes/111-renaming-a-repo-can-lock-you-out-of-aws-with-jane-doe/"
 
 TURNS = [
@@ -172,6 +173,7 @@ class AnnouncementRun(unittest.TestCase):
         )
         self.assertIn("Voice: first person (Andrey present)", out)
         self.assertIn("Quote evidence: [B] 00:28 -> Jane Doe (verified)", out)
+        self.assertIn(f"Linked on LinkedIn: {COMPANY_PAGE}", out)
         self.assertIn("first person, in his own voice", codex.call_args.args[0])
 
         linkedin = next(p for p in buffer.created if p["channelId"] == LINKEDIN_ID)
@@ -179,7 +181,7 @@ class AnnouncementRun(unittest.TestCase):
         self.assertTrue(text.startswith('"Renaming a repository changes the OIDC sub claim'))
         self.assertIn("\n\nI had not connected a repo rename", text)
         self.assertIn(
-            "Episode 111 of @DevSecOps Talks, with @Jane Doe, @Paulina Dubas and @Mattias Hemmingsson.", text
+            f"Episode 111 of {COMPANY_PAGE}, with @Jane Doe, @Paulina Dubas and @Mattias Hemmingsson.", text
         )
         self.assertIn(f"\n\n{PAGE_URL}\n\n", text)
         self.assertTrue(text.endswith("#DevSecOps #GitHubActions"))
@@ -221,7 +223,7 @@ class AnnouncementRun(unittest.TestCase):
         self.assertEqual(
             ba.tag_set(ba.tagging_context(self.guest_context(["Paulina Dubas", "Mattias Hemmingsson"]), self.handles),
                        "linkedin"),
-            ["@DevSecOps Talks", "@Jane Doe", "@Paulina Dubas", "@Mattias Hemmingsson"],
+            ["@Jane Doe", "@Paulina Dubas", "@Mattias Hemmingsson"],
         )
         with open(f"{self.out_base}-guests.json", encoding="utf-8") as f:
             guests = json.load(f)
@@ -437,10 +439,49 @@ class HostsAndGuests(unittest.TestCase):
                                            "hosts_present": ["Andrey Devyatkin", "Paulina Dubas"]})
         tags = ba.tagging_context(context, self.handles)
         self.assertIn("with Jane Doe and @Paulina Dubas.", ba.credits_line(tags, 111, "linkedin"))
-        self.assertEqual(ba.tag_set(tags, "linkedin"), ["@DevSecOps Talks", "@Paulina Dubas"])
+        self.assertEqual(ba.tag_set(tags, "linkedin"), ["@Paulina Dubas"])
         warnings = ba.announcement_warnings(QUOTE_PRESENT, tags, 111, PAGE_URL)
         self.assertIn("not tagged on LinkedIn: Jane Doe (profile not confirmed)", warnings)
         self.assertFalse(any("plain text (no linkedin_name)" in w for w in warnings))
+
+
+class CompanyCredit(unittest.TestCase):
+    """Buffer does not resolve a LinkedIn Page @-mention, so the company is credited with its Page URL."""
+
+    def setUp(self):
+        self.handles = ba.load_social_handles()
+        self.context = normalize_guest_context({"guests": [GUEST], "hosts_present": ["Paulina Dubas"]})
+
+    def without_link(self):
+        handles = json.loads(json.dumps(self.handles))
+        del handles["company"]["linkedin_credit"]
+        return handles
+
+    def test_linkedin_credits_line_links_the_company_page(self):
+        tags = ba.tagging_context(self.context, self.handles)
+        self.assertEqual(ba.credits_line(tags, 111, "linkedin"),
+                         f"Episode 111 of {COMPANY_PAGE}, with @Jane Doe and @Paulina Dubas.")
+        self.assertNotIn("@DevSecOps Talks", ba.render_linkedin_post(QUOTE_PRESENT, tags, 111, PAGE_URL))
+
+    def test_company_link_is_never_an_at_tag(self):
+        tags = ba.tagging_context(self.context, self.handles)
+        self.assertEqual(ba.tag_set(tags, "linkedin"), ["@Jane Doe", "@Paulina Dubas"])
+
+    def test_x_still_names_the_company(self):
+        tags = ba.tagging_context(self.context, self.handles)
+        line = ba.credits_line(tags, 111, "x")
+        self.assertIn("Episode 111 of DevSecOps Talks,", line)
+        self.assertNotIn(COMPANY_PAGE, line)
+
+    def test_linked_company_without_linkedin_name_is_not_warned_about(self):
+        handles = json.loads(json.dumps(self.handles))
+        handles["company"]["linkedin_name"] = None
+        warnings = ba.announcement_warnings(QUOTE_PRESENT, ba.tagging_context(self.context, handles), 111, PAGE_URL)
+        self.assertFalse(any("DevSecOps Talks" in w and "LinkedIn" in w for w in warnings))
+
+    def test_without_linkedin_credit_the_company_falls_back_to_its_mention(self):
+        tags = ba.tagging_context(self.context, self.without_link())
+        self.assertTrue(ba.credits_line(tags, 111, "linkedin").startswith("Episode 111 of @DevSecOps Talks,"))
 
 
 class Timing(unittest.TestCase):

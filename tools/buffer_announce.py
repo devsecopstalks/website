@@ -345,11 +345,16 @@ def company_entity(handles: dict) -> dict | None:
     company = (handles or {}).get("company")
     if not isinstance(company, dict) or not company.get("name"):
         return None
-    return _entity(company["name"], company.get("linkedin_name"), company.get("linkedin_url"),
-                   company.get("x_handle"), "organization")
+    entity = _entity(company["name"], company.get("linkedin_name"), company.get("linkedin_url"),
+                     company.get("x_handle"), "organization")
+    # Literal LinkedIn text used in place of the @mention: Buffer does not resolve Page mentions.
+    entity["linkedin_credit"] = str(company.get("linkedin_credit") or "").strip()
+    return entity
 
 
 def _credit(entity: dict, channel: str) -> str:
+    if channel == "linkedin" and entity.get("linkedin_credit"):
+        return entity["linkedin_credit"]
     handle = entity["x_handle"] if channel == "x" else entity["linkedin_name"]
     return f"@{handle}" if handle else entity["name"]
 
@@ -494,7 +499,8 @@ def announcement_warnings(ann: dict, tags: dict, episode_number: int, page_url: 
     for e in entities:
         if e["name"] in guest_names and not e["linkedin_name"]:
             warnings.append(f"not tagged on LinkedIn: {e['name']} (profile not confirmed)")
-    untagged_li = [e["name"] for e in entities if not e["linkedin_name"] and e["name"] not in guest_names]
+    untagged_li = [e["name"] for e in entities
+                   if not e["linkedin_name"] and not e.get("linkedin_credit") and e["name"] not in guest_names]
     if untagged_li:
         warnings.append(f"credited on LinkedIn in plain text (no linkedin_name): {', '.join(untagged_li)}")
     untagged_x = [e["name"] for e in entities if not e["x_handle"]]
@@ -868,6 +874,9 @@ def preview_announcement(ann, verification, errors, tags, inputs, episode_number
     for i, post in enumerate(render_x_posts(ann, tags, episode_number, page_url)):
         print(f"\n-- X {'post' if i == 0 else 'reply'} ({x_post_length(post)}/{X_POST_LIMIT}) --\n{post}")
     print(f"\nTagged on LinkedIn: {', '.join(tag_set(tags, 'linkedin')) or 'nobody'}")
+    company = company_entity(tags.get("handles") or {})
+    if company and company["linkedin_credit"]:
+        print(f"Linked on LinkedIn: {company['linkedin_credit']}")
     print(f"Tagged on X:        {', '.join(tag_set(tags, 'x')) or 'nobody'}")
 
     print(f"\n-- Schedule (release {release_at.astimezone(_UTC):%a %d %b %H:%M} UTC + "

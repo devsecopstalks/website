@@ -7,13 +7,17 @@
     "LinkedIn only resolves a profile mention for one of the author's connections.",
     "The author is never tagged: Buffer cannot tag the profile that owns the channel.",
     "buffer_channels are Buffer channel ids; the pipeline posts to exactly these.",
-    "filename_aliases map names in Riverside export filenames to hosts."
+    "filename_aliases map names in Riverside export filenames to hosts.",
+    "linkedin_credit, when set, is the literal LinkedIn text used instead of the",
+    "@mention. The company sets it to its Page URL: Buffer does not resolve an",
+    "@mention of a LinkedIn company Page, which would publish as literal text."
   ],
   "author": "Andrey Devyatkin",
   "company": {
     "name": "DevSecOps Talks",
     "linkedin_name": "DevSecOps Talks",
     "linkedin_url": "https://www.linkedin.com/company/devsecops-talks",
+    "linkedin_credit": "https://www.linkedin.com/company/devsecops-talks",
     "x_handle": null
   },
   "hosts": [

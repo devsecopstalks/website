@@ -8,7 +8,7 @@ participants: ["Paulina", "Mattias", "Andrey"]
 description: "Your AI agent has your credentials, but does it understand your limits? This episode examines accidental deployments, exposed data and why written guardrails need access controls behind them."
 subtitle: "A repository wired to Argo CD turned a build request into a cluster deployment."
 readtime: "18 min read"
-image: "/images/covers/111.png"
+image: "https://pub-44b46df59567461a91e93c803fe57df3.r2.dev/covers/111-cf0eaf95ffd5.png"
 audio_url: "https://mcdn.podbean.com/mf/web/bp7can7cb1yggyfd/111-ai-agents-when-helpful-becomes-harmful.mp3"
 aliases:
   - "/episodes/111/"

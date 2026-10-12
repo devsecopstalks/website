@@ -10,7 +10,7 @@ aliases:
 description: "Could your broken pipeline look like suspicious activity to AWS? This episode examines an account block following repeated access denials, separates the observed outcome from the suspected cause, and explains how to respond to an abuse notice."
 subtitle: "A repo rename can break OIDC trust, while an unread AWS abuse notice can let the incident escalate."
 readtime: "17 min read"
-image: "/images/covers/110.png"
+image: "https://pub-44b46df59567461a91e93c803fe57df3.r2.dev/covers/110-b5ee51717949.png"
 audio_url: "https://mcdn.podbean.com/mf/web/zoc8fs2tyv3f2n95/110-can-broken-github-actions-get-your-aws-account-blocked-.mp3"
 ---
 

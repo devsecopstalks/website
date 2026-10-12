@@ -373,7 +373,7 @@ class Preflight(AnnouncementCase):
             with self.assertRaises(ba.AnnouncementStop) as stop:
                 ba.preflight_buffer("key", self.handles)
         self.assertIn("disconnected or locked", str(stop.exception))
-        self.assertIn(f"Threads ({THREADS_ID}) is not in this Buffer account", str(stop.exception))
+        self.assertIn(f"Threads andrey9kin ({THREADS_ID}) is not in this Buffer account", str(stop.exception))
 
     def test_no_api_key_stops(self):
         with patch.dict(os.environ, {}, clear=True), patch("buffer_announce.requests.post") as post:

@@ -42,6 +42,6 @@
   "buffer_channels": [
     {"id": "68ca90a4139f4ffdd6e8d02a", "service": "linkedin", "name": "andreydevyatkin"},
     {"id": "56d21b912b19ce1e74c4ced1", "service": "twitter", "name": "Andrey9kin"},
-    {"id": null, "service": "threads", "name": null}
+    {"id": "6abcee95ea19ca0bde31cd9d", "service": "threads", "name": "andrey9kin"}
   ]
 }

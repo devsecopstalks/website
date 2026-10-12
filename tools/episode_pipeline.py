@@ -398,86 +398,49 @@ def guest_context_to_prompt_text(guest_context: dict) -> str:
     return "\n".join(lines)
 
 
-def normalize_operator_guest_notes(
-    operator_notes: str,
-    previous_guest_context: dict | None = None,
-    verbose: bool = False,
-) -> dict:
-    """Normalize free-form operator guest notes into the guest checkpoint schema."""
-    print("Normalizing operator guest context with Claude Code...")
-    previous_json = json.dumps(
-        normalize_guest_context(previous_guest_context or {}),
-        ensure_ascii=False,
-        indent=2,
-    )
-    prompt = f"""Normalize operator-provided guest clarification for the DevSecOps Talks publishing pipeline.
+def operator_guest_context(people: list[dict], research: dict | None = None) -> dict:
+    """The guest list is the operator's people, in order and spelled as typed.
 
-The operator text is authoritative for the intended guest names. Extract clean full names only into
-`full_name` and `participant_name`; do not include roles, companies, titles, or links in those fields.
-Put roles/titles into `role`, organizations/projects into `company`, and URLs into `links`.
-
-Use web search for every operator-provided guest to find and verify relevant public professional
-sources. Prefer official personal sites, company profile/team pages, LinkedIn profiles, GitHub
-profiles, conference speaker bios, project documentation, and other authoritative professional
-pages. Include the best relevant sources in `links`, especially LinkedIn when you can confidently
-identify the right profile. Do not invent URLs or include uncertain profile matches.
-
-If verification is not possible, still return the operator-provided names with `confidence` set to
-"medium" or "low".
-Do not ask follow-up questions unless the operator text is genuinely impossible to split into guests.
-
-Return exactly one JSON object and nothing else. Do not wrap it in markdown.
-
-Schema:
-
-{{
-  "status": "no_guests|verified|needs_operator",
-  "guests": [
-    {{
-      "full_name": "Full Name",
-      "participant_name": "Full Name",
-      "role": "Professional role or title",
-      "company": "Company or project, if known",
-      "professional_summary": "One or two factual professional sentences.",
-      "links": [
-        {{
-          "label": "Source label",
-          "url": "https://example.com/",
-          "type": "official|company|linkedin|github|conference|project|operator"
-        }}
-      ],
-      "confidence": "high|medium|low|operator",
-      "needs_operator": false,
-      "question": ""
-    }}
-  ],
-  "notes": "Short note about uncertainty, or empty string."
-}}
-
-Previous ambiguous guest context:
-{previous_json}
-
-Operator-provided guest notes:
-{operator_notes}
-"""
-    output = run_claude(prompt, verbose=verbose, allow_web=True, fatal=False)
-    guest_context = normalize_guest_context(_extract_json_object(output))
-    guests = guest_context.get("guests", [])
-    if guests:
-        print("✓ Normalized guests: " + ", ".join(g["full_name"] for g in guests))
-    return guest_context
+    Research only fills in details: an entry matching a person by name, or by
+    position when the counts agree, lends its fields; nothing it adds or drops counts.
+    """
+    found = normalize_guest_context(research or {}).get("guests", [])
+    by_name = {}
+    for guest in found:
+        for key in (guest["full_name"], guest["participant_name"]):
+            by_name.setdefault(key.casefold(), guest)
+    guests = []
+    for i, person in enumerate(people):
+        match = by_name.get(person["name"].casefold())
+        if match is None and len(found) == len(people):
+            match = found[i]
+        guest = dict(match or {"confidence": "operator"})
+        guest.update({"full_name": person["name"], "participant_name": person["name"]})
+        guest["needs_operator"], guest["question"] = False, ""
+        guests.append(guest)
+    return normalize_guest_context({
+        "status": "verified" if guests else "no_guests",
+        "guests": guests,
+        "notes": str((research or {}).get("notes") or "").strip(),
+    })
 
 
-def detect_guests(
+def research_guests(
+    people: list[dict],
     transcript: str,
     editorial_guidance: str = "",
     raw_notes: str = "",
     verbose: bool = False,
 ) -> dict:
-    """Identify and research episode guests using Claude Code with web search."""
-    print("Detecting and researching episode guests with Claude Code...")
+    """Look up the people the operator named; the transcript and show notes are only context.
 
-    parts: list[str] = [GUESTS_PROMPT]
+    A failed lookup leaves every person credited in plain text rather than stopping.
+    """
+    print("Researching guests with Claude Code: " + ", ".join(p["name"] for p in people))
+    named = "\n".join(
+        f"- {p['name']}" + (f" (operator's notes: {p['hint']})" if p.get("hint") else "") for p in people
+    )
+    parts: list[str] = [GUESTS_PROMPT, f"\n\n## Guests named by the operator\n{named}"]
     if editorial_guidance:
         parts.append(f"\n\n## Editorial Guidance\n{editorial_guidance}")
     if raw_notes:
@@ -486,15 +449,12 @@ def detect_guests(
             f"{raw_notes}"
         )
     parts.append(f"\n\n--- TRANSCRIPT ---\n{transcript}\n")
-
-    output = run_claude("".join(parts), verbose=verbose, allow_web=True)
-    guest_context = normalize_guest_context(_extract_json_object(output))
-    guests = guest_context.get("guests", [])
-    if guests:
-        print("✓ Guests: " + ", ".join(g["full_name"] for g in guests))
-    else:
-        print("✓ No guests detected")
-    return guest_context
+    try:
+        research = _extract_json_object(run_claude("".join(parts), verbose=verbose, allow_web=True, fatal=False))
+    except (RuntimeError, ValueError, subprocess.SubprocessError) as e:
+        print(f"⚠ Guest research failed ({e}); guests are credited in plain text unless you correct them.")
+        research = {}
+    return operator_guest_context(people, research)
 
 
 TRANSCRIPT_CORRECT_PROMPT = load_prompt("transcript-correct")

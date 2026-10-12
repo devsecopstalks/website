@@ -93,7 +93,7 @@ If there is exactly one `raw/*.mp3`, it is chosen automatically. If there are se
 1. Editorial guidance
 2. Local transcription (asks the voice count when it transcribes)
 3. Voice match: confirm who each speaker label is
-4. Guest research; every non-host label is named
+4. Guests: name every voice that is not a host, then confirm what research found
 5. Transcript correction
 6. Chapters
 7. Title and teaser
@@ -121,7 +121,7 @@ FluidAudio's Parakeet v2 ASR and VBx diarization run over the whole file in seco
 
 **Voice match.** Each label's speaker-weighted embedding is compared with the host prints in `host-voices.json`. The run shows label, best match, score and minutes. Enter accepts; `C=Mattias` or `C=guest` renames a label; a number re-diarizes pinned to that many voices (seconds, the ASR is reused). Enter is refused while a match is flagged ⚠: a score between 0.55 and 0.80, or the best host within 0.05 of the runner-up. Confirmed renames are kept in `-speakers.json` for the same diarization. The hosts heard become `hosts_present`, which decides who the announcement credits and whether it speaks as Andrey.
 
-**Guests.** Claude researches guests from the transcript, with host lines already named. One guest and one non-host label bind on their own; otherwise the run asks who each label is (`-guest-labels.json`).
+**Guests.** The run asks who each voice that is not a host is: a full name plus anything that helps find them (company, role, a link). The same name for two labels is one person; a host's name names that label as the host. Claude then looks up only those people, with the transcript and show notes as context, and never adds, drops or renames a guest. The run shows each guest's role and LinkedIn, X and Threads handles ("not found" means credited in plain text); Enter accepts, and a guest number plus a correction looks that guest up again. Answers are kept in `-guest-labels.json` and research in `-guests.json`; a rerun offers to reuse them, and a changed name discards the transcript correction and every later step.
 
 **Voice prints** are built from labels confirmed by ear. They only compare with embeddings from the same model, so prints carry the FluidAudio commit. A pin bump in `do.sh` stops every run until they are rebuilt from diarizations made by the new build:
 
@@ -192,7 +192,7 @@ Only episodes this pipeline released are announced: creating the Podbean episode
 
 **Approval (step 12, before uploads).** Codex, Claude and Grok each draft the post in parallel, each with its own timeout. A draft that breaks a rule is retried once, then dropped; a drafter that fails is left out. The post is one body for every network: a quote or a named disagreement. A quote must match, word for word, consecutive corrected turns of one speaker: the guest's words, or a host's only when there is no guest; flagged turns are never quotable. The preview shows each candidate as posted on LinkedIn, X (post + reply with the credits and link) and Threads, every channel's due time, and opens the cover, which is attached to every post. `1`–`3` picks a draft, `r` drafts again with guidance (rejected rounds go back to the drafters), `s` skips Buffer for this episode.
 
-The voice follows `hosts_present` from the voice match: first person when Andrey was there, third person with no I/we when he was not. A guest is @-tagged only when guest research confirmed that profile (`linkedin_name`, `x_handle`, `threads_handle` in `-guests.json`); otherwise they are credited in plain text. On LinkedIn the company is credited with its Page URL (`linkedin_credit`): Buffer does not resolve @-mentions of company Pages.
+The voice follows `hosts_present` from the speakers' names: first person when Andrey was there, third person with no I/we when he was not. A guest is @-tagged only when guest research confirmed that profile (`linkedin_name`, `x_handle`, `threads_handle` in `-guests.json`); otherwise they are credited in plain text. On LinkedIn the company is credited with its Page URL (`linkedin_credit`): Buffer does not resolve @-mentions of company Pages.
 
 **Scheduling (step 15, after the page).** Timing: release date + 2 days is the earliest date (Wednesday for the Monday 11:00 UTC slot); the time is the first slot in that channel's Buffer posting schedule on or after it. **Push and deploy the page before the due time**: the posts link to it. If what would be posted no longer matches the approval (page URL, cover URL, date, handles), the approval is set aside as `-announcement.stale.json`, the run stops, and the next run asks again. A Buffer error stops the run with exit 1; a rerun posts only the channels that failed.
 

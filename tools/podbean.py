@@ -22,16 +22,16 @@ from episode_pipeline import (
     PipelineStop,
     article_html_problems,
     correct_transcript,
-    detect_guests,
     generate_article,
     guest_context_to_prompt_text,
     guest_full_names,
     load_raw_companion_markdown,
     load_guest_context,
-    normalize_operator_guest_notes,
+    operator_guest_context,
     pick_description,
     pick_title,
     render_corrected_transcript,
+    research_guests,
     save_guest_context,
 )
 from episode_metadata import (
@@ -799,12 +799,15 @@ def require_tools(draft_only: bool = False, which=shutil.which) -> None:
 TRANSCRIPT_SIDECAR_EXTENSIONS = (".vtt", ".txt")
 
 CHECKPOINT_INPUTS_SUFFIX = "-inputs.json"
+GUEST_LABELS_SUFFIX = "-guest-labels.json"
 # Local steps in pipeline order with the out/ files each writes. When a step's
 # inputs change, its files and every later step's go, so nothing outlives what
 # it was built from. Upload markers and the Buffer ledger are remote state: never here.
 CHECKPOINT_STEPS = (
-    ("transcription", ("-asr.json", "-diarization.json", "-turns.json", "-local.txt", "-speakers.json")),
-    ("guests", ("-guests.json", "-guest-labels.json")),
+    ("transcription", (
+        "-asr.json", "-diarization.json", "-turns.json", "-local.txt", "-speakers.json", "-guest-labels.json",
+    )),
+    ("guests", ("-guests.json",)),
     ("transcript", (
         "-turns-corrected.json",
         ".txt",
@@ -973,66 +976,178 @@ def _label_sample(turns: list[dict], label: str) -> str:
     return " ".join(longest.split())[:160]
 
 
-def bind_guest_labels(out_base: str, turns: list[dict], host_names: dict[str, str],
-                      guest_context: dict, input_func=input) -> dict[str, str]:
-    """Name every diarized label: hosts by voice, the rest as guests.
+def _guest_answer(raw: str) -> dict:
+    """``Jane Doe, CTO at Acme`` → name ``Jane Doe``, hint ``CTO at Acme`` for the research."""
+    name, hint = _split_operator_guest_chunk(raw)
+    return {"name": " ".join(name.split()), "hint": hint}
 
-    One guest and one non-host label bind on their own; otherwise the operator
-    maps each label. The answer is kept in ``-guest-labels.json`` for the same
-    labels and guests.
-    """
-    labels = list(dict.fromkeys(str(t.get("speaker") or "") for t in turns))
-    others = [label for label in labels if label not in host_names]
-    names = dict(host_names)
-    if not others:
-        return names
-    guests = guest_full_names(guest_context)
-    if len(guests) == 1 and len(others) == 1:
-        names[others[0]] = guests[0]
-        print(f"✓ {others[0]} is the guest, {guests[0]}")
-        return names
 
-    saved_file = f"{out_base}-guest-labels.json"
-    try:
-        with open(saved_file, "r", encoding="utf-8") as f:
-            saved = json.load(f)
-        if saved.get("labels") == others and saved.get("guests") == guests:
-            names.update(saved["names"])
-            print(f"✓ Guest labels from {saved_file}: "
-                  + ", ".join(f"{label}={saved['names'][label]}" for label in others))
-            return names
-    except (OSError, ValueError, TypeError, KeyError, AttributeError):
-        pass
+def people_from_answers(answers: dict[str, str]) -> list[dict]:
+    """Distinct people in label order; the same name typed for two labels is one person."""
+    people: dict[str, dict] = {}
+    for label, raw in answers.items():
+        answer = _guest_answer(raw)
+        person = people.setdefault(answer["name"].casefold(), {"name": answer["name"], "hint": "", "labels": []})
+        person["labels"].append(label)
+        if answer["hint"] and answer["hint"] not in person["hint"]:
+            person["hint"] = "; ".join(x for x in (person["hint"], answer["hint"]) if x)
+    return list(people.values())
 
+
+def ask_guest_labels(out_base: str, turns: list[dict], labels: list[str], input_func=input) -> dict[str, str]:
+    """The operator's answer for each voice that is not a host."""
     minutes = _label_minutes(turns)
     print("\nName each voice that is not a host:")
-    for i, guest in enumerate(guests, 1):
-        print(f"  {i}. {guest}")
-    picked: dict[str, str] = {}
-    for label in others:
+    answers: dict[str, str] = {}
+    for label in labels:
         print(f"\n[{label}] {minutes.get(label, 0):.1f} min, e.g. \"{_label_sample(turns, label)}\"")
         while True:
-            hint = f"a number 1-{len(guests)} or " if guests else ""
-            print(f"Who is {label}? Type {hint}a full name: ", end="", flush=True)
+            print(
+                f"Who is {label}? Full name, plus anything that helps find them (company, role, a link): ",
+                end="",
+                flush=True,
+            )
             try:
-                raw = input_func().strip()
+                raw = " ".join(input_func().split())
             except EOFError:
                 raise PipelineStop(
                     f"label {label} needs a name and no answer was given; re-run in a terminal",
-                    checkpoint=saved_file,
+                    checkpoint=out_base + GUEST_LABELS_SUFFIX,
                 ) from None
-            if raw.isdigit() and 1 <= int(raw) <= len(guests):
-                picked[label] = guests[int(raw) - 1]
+            if raw and _guest_answer(raw)["name"]:
+                answers[label] = raw
                 break
-            if raw and not raw.isdigit():
-                picked[label] = voice_match.canonical_host(raw) or " ".join(raw.split())
-                break
-            print("Invalid answer, try again.")
-    with open(saved_file, "w", encoding="utf-8") as f:
-        json.dump({"labels": others, "guests": guests, "names": picked}, f, indent=2, ensure_ascii=False)
-        f.write("\n")
-    names.update(picked)
-    return names
+            print("A name is required.")
+    return answers
+
+
+def _saved_guest_answers(labels_file: str, labels: list[str], turns_key: str) -> dict[str, str] | None:
+    try:
+        with open(labels_file, "r", encoding="utf-8") as f:
+            saved = json.load(f)
+        if saved.get("labels") == labels and saved.get("turns") == turns_key:
+            answers = saved["answers"]
+            if isinstance(answers, dict) and list(answers) == labels:
+                return {str(k): str(v) for k, v in answers.items()}
+    except (OSError, ValueError, TypeError, KeyError, AttributeError):
+        pass
+    return None
+
+
+def _handle_lines(guest: dict) -> str:
+    linkedin = " ".join(x for x in (guest.get("linkedin_name"), guest.get("linkedin_url")) if x)
+    x_handle = f"@{guest['x_handle']}" if guest.get("x_handle") else ""
+    threads = f"@{guest['threads_handle']}" if guest.get("threads_handle") else ""
+    if not (linkedin or x_handle or threads):
+        return "not found — credited in plain text"
+    return "  ".join(
+        f"{network}: {value or 'not found'}"
+        for network, value in (("LinkedIn", linkedin), ("X", x_handle), ("Threads", threads))
+    )
+
+
+def confirm_guests(people: list[dict], guest_context: dict, transcript: str, guidance: str,
+                   raw_notes: str, verbose: bool = False, input_func=input) -> dict:
+    """Show what research found; a correction looks that guest up again."""
+    while True:
+        print("\nGuests:")
+        for i, (person, guest) in enumerate(zip(people, guest_context["guests"]), 1):
+            detail = ", ".join(x for x in (guest.get("role"), guest.get("company")) if x)
+            print(f"  {i}. {guest['full_name']} ({', '.join(person['labels'])})" + (f" — {detail}" if detail else ""))
+            print(f"     {_handle_lines(guest)}")
+        print("Enter accepts; or type a guest number and a correction to look them up again: ", end="", flush=True)
+        try:
+            raw = input_func().strip()
+        except EOFError:
+            print("\n(no input available — accepting the guests)")
+            return guest_context
+        if not raw:
+            return guest_context
+        number, _, correction = raw.partition(" ")
+        if not (number.isdigit() and 1 <= int(number) <= len(people) and correction.strip()):
+            print("⚠ Type a guest number, a space, then the correction (company, role, a link).")
+            continue
+        index = int(number) - 1
+        person = people[index]
+        person["hint"] = "; ".join(x for x in (person["hint"], correction.strip()) if x)
+        redone = research_guests([person], transcript, guidance, raw_notes, verbose)
+        guests = list(guest_context["guests"])
+        guests[index] = redone["guests"][0]
+        guest_context = {**guest_context, "guests": guests}
+
+
+def identify_guests(out_base: str, turns: list[dict], host_names: dict[str, str], guidance: str,
+                    raw_notes: str, verbose: bool = False, input_func=input) -> tuple[dict, dict[str, str]]:
+    """Step 4: the operator names every voice that is not a host; research only looks them up.
+
+    Returns the guest context and every label's name. A host name typed here
+    names that label as the host.
+    """
+    labels = list(dict.fromkeys(str(t.get("speaker") or "") for t in turns))
+    others = [label for label in labels if label not in host_names]
+    labels_file = out_base + GUEST_LABELS_SUFFIX
+    guests_file = f"{out_base}-guests.json"
+    turns_key = inputs_fingerprint(turns)
+
+    answers = None
+    saved = _saved_guest_answers(labels_file, others, turns_key) if others else None
+    if saved is not None:
+        known = {}
+        try:
+            known = {g["full_name"].casefold(): g for g in load_guest_context(guests_file)["guests"]}
+        except (OSError, ValueError):
+            pass
+        summary = []
+        for label, raw in saved.items():
+            name = _guest_answer(raw)["name"]
+            company = (known.get(name.casefold()) or {}).get("company")
+            summary.append(f"{label}={name}" + (f" ({company})" if company else ""))
+        print(f"\nFound saved guests: {', '.join(summary)}. Enter reuses, 'new' asks again: ", end="", flush=True)
+        try:
+            reuse = input_func().strip().lower() != "new"
+        except EOFError:
+            reuse = True
+        if reuse:
+            answers = saved
+    if answers is None:
+        answers = ask_guest_labels(out_base, turns, others, input_func) if others else {}
+        with open(labels_file, "w", encoding="utf-8") as f:
+            json.dump({"labels": others, "turns": turns_key, "answers": answers}, f, indent=2, ensure_ascii=False)
+            f.write("\n")
+
+    speaker_names = dict(host_names)
+    guest_answers = {}
+    for label, raw in answers.items():
+        host = voice_match.canonical_host(_guest_answer(raw)["name"])
+        if host:
+            speaker_names[label] = host
+        else:
+            guest_answers[label] = raw
+    people = people_from_answers(guest_answers)
+    for person in people:
+        for label in person["labels"]:
+            speaker_names[label] = person["name"]
+    hosts_present = voice_match.hosts_present(speaker_names)
+
+    refresh_checkpoints(out_base, "guests", answers, host_names, raw_notes)
+    guest_context = None
+    if os.path.exists(guests_file):
+        try:
+            saved_context = load_guest_context(guests_file)
+            if guest_full_names(saved_context) == [p["name"] for p in people]:
+                guest_context = saved_context
+        except (OSError, ValueError):
+            pass
+    if guest_context is None:
+        guest_context = operator_guest_context([])
+        if people:
+            transcript = named_machine_transcript(turns, speaker_names)
+            guest_context = research_guests(people, transcript, guidance, raw_notes, verbose)
+            guest_context = confirm_guests(people, guest_context, transcript, guidance, raw_notes, verbose, input_func)
+    guest_context = {**guest_context, "hosts_present": hosts_present, "andrey_present": AUTHOR_HOST in hosts_present}
+    save_guest_context(guests_file, guest_context)
+    print(f"✓ Guests saved to {guests_file}")
+    return guest_context, speaker_names
 
 
 def parse_vtt(vtt_path: str) -> str:
@@ -1329,61 +1444,6 @@ def _split_operator_guest_chunk(chunk: str) -> tuple[str, str]:
     return name, details
 
 
-def _operator_details_to_fields(details: str) -> tuple[str, str, str]:
-    """Convert loose role/company details into structured fields."""
-    details = details.strip()
-    clean_details = re.sub(r"https?://\S+", "", details).strip(" ,.;")
-    if not clean_details:
-        return "", "", ""
-
-    if "@" in clean_details:
-        role, company = clean_details.split("@", 1)
-        return role.strip(" ,.;"), company.strip(" ,.;"), ""
-
-    org_match = re.match(r"(.+?)\s+(?:at|from|for)\s+(.+)$", clean_details, flags=re.I)
-    if org_match:
-        return org_match.group(1).strip(" ,.;"), org_match.group(2).strip(" ,.;"), ""
-
-    tokens = clean_details.split()
-    role_tokens: list[str] = []
-    for token in tokens:
-        key = token.strip(".,:;()[]{}").casefold()
-        if key in GUEST_ROLE_STARTERS or key in {"&", "and", "of"}:
-            role_tokens.append(token)
-            continue
-        break
-
-    if len(role_tokens) >= 2 and len(role_tokens) < len(tokens):
-        company = " ".join(tokens[len(role_tokens) :]).strip(" ,.;")
-        return " ".join(role_tokens).strip(" ,.;"), company, ""
-
-    return "", "", details
-
-
-def _repair_guest_context_names(guest_context: dict) -> dict:
-    """Fix old operator checkpoints where full_name accidentally included role/company."""
-    for guest in guest_context.get("guests") or []:
-        if not isinstance(guest, dict):
-            continue
-        full_name = str(guest.get("full_name") or "").strip()
-        participant_name = str(guest.get("participant_name") or "").strip()
-        if not full_name or (participant_name and participant_name != full_name):
-            continue
-        name, details = _split_operator_guest_chunk(full_name)
-        if not details or name == full_name:
-            continue
-        guest["full_name"] = name
-        guest["participant_name"] = name
-        role, company, summary = _operator_details_to_fields(details)
-        if role and not str(guest.get("role") or "").strip():
-            guest["role"] = role
-        if company and not str(guest.get("company") or "").strip():
-            guest["company"] = company
-        if summary and not str(guest.get("professional_summary") or "").strip():
-            guest["professional_summary"] = summary
-    return guest_context
-
-
 def _text_includes_guest_names(text: str, guest_context: dict) -> bool:
     required = guest_full_names(guest_context)
     if not required:
@@ -1404,134 +1464,6 @@ def _participants_for_episode(arg: str | None, guest_context: dict) -> list[str]
             participants.append(guest_name)
             seen.add(key)
     return participants
-
-
-def _guest_context_needs_operator(guest_context: dict) -> bool:
-    if guest_context.get("status") == "needs_operator":
-        return True
-    for guest in guest_context.get("guests") or []:
-        if isinstance(guest, dict) and guest.get("needs_operator"):
-            return True
-    return False
-
-
-def _fallback_manual_guest_context(raw: str) -> dict:
-    guests: list[dict] = []
-    for chunk in re.split(r"\s*;\s*", raw):
-        chunk = chunk.strip()
-        if not chunk:
-            continue
-        name, details = _split_operator_guest_chunk(chunk)
-        if not name:
-            continue
-        urls = re.findall(r"https?://\S+", details)
-        links = [
-            {"label": url.rstrip(".,)"), "url": url.rstrip(".,)"), "type": "operator"}
-            for url in urls
-        ]
-        role, company, summary = _operator_details_to_fields(details)
-        guests.append(
-            {
-                "full_name": name,
-                "participant_name": name,
-                "role": role,
-                "company": company,
-                "professional_summary": summary,
-                "links": links,
-                "confidence": "operator",
-                "needs_operator": False,
-                "question": "",
-            }
-        )
-    if guests:
-        return {
-            "status": "verified",
-            "guests": guests,
-            "notes": "Guest context provided by operator.",
-        }
-    return {"status": "needs_operator", "guests": [], "notes": "Could not parse guest names."}
-
-
-def _manual_guest_context_from_operator(guest_context: dict, verbose: bool = False) -> dict:
-    print("\nGuest lookup needs clarification.")
-    notes = str(guest_context.get("notes") or "").strip()
-    if notes:
-        print(f"Notes: {notes}")
-    for guest in guest_context.get("guests") or []:
-        if not isinstance(guest, dict):
-            continue
-        question = str(guest.get("question") or "").strip()
-        full_name = str(guest.get("full_name") or "Unknown guest").strip()
-        if question:
-            print(f"- {full_name}: {question}")
-
-    while True:
-        print(
-            "Enter guest context as free-form text with names, roles, companies, and links. "
-            "Type 'none' if there are no guests."
-        )
-        print("> ", end="", flush=True)
-        raw = input().strip()
-        if not raw:
-            print("Guest clarification is required to continue.")
-            continue
-        if raw.lower() in ("none", "no", "no guests"):
-            return {"status": "no_guests", "guests": [], "notes": "Operator reported no guests."}
-
-        try:
-            normalized = normalize_operator_guest_notes(raw, guest_context, verbose=verbose)
-        except Exception as e:
-            print(f"⚠ Could not normalize guest context with Claude ({e}); using local parser.")
-            normalized = _fallback_manual_guest_context(raw)
-        normalized = _repair_guest_context_names(normalized)
-        if normalized.get("guests"):
-            return normalized
-        print("Could not parse a guest name. Try again.")
-
-
-def _load_or_detect_guest_context(
-    guest_context_file: str,
-    transcript: str,
-    guidance: str,
-    raw_notes: str,
-    verbose: bool,
-    hosts_present: list[str] | None = None,
-) -> dict:
-    """Saved or freshly researched guests; ``hosts_present`` comes from the voice prints and wins."""
-    guest_context: dict | None = None
-    if os.path.exists(guest_context_file):
-        try:
-            saved = load_guest_context(guest_context_file)
-            names = guest_full_names(saved)
-            summary = ", ".join(names) if names else "no guests"
-            print(f'\nFound saved guest context: {summary}')
-            print("Press Enter to reuse, or type 'new' to refresh guest lookup: ", end="", flush=True)
-            if input().strip().lower() != "new":
-                guest_context = _repair_guest_context_names(saved)
-        except Exception as e:
-            print(f"⚠ Could not read saved guest context ({e}); regenerating")
-
-    if guest_context is None:
-        guest_context = detect_guests(
-            transcript,
-            editorial_guidance=guidance,
-            raw_notes=raw_notes,
-            verbose=verbose,
-        )
-
-    if _guest_context_needs_operator(guest_context):
-        guest_context = _manual_guest_context_from_operator(guest_context, verbose=verbose)
-    guest_context = _repair_guest_context_names(guest_context)
-    if hosts_present is not None:
-        guest_context = {
-            **guest_context,
-            "hosts_present": list(hosts_present),
-            "andrey_present": AUTHOR_HOST in hosts_present,
-        }
-
-    save_guest_context(guest_context_file, guest_context)
-    print(f"✓ Guest context saved to {guest_context_file}")
-    return guest_context
 
 
 def _load_or_prompt_guidance(guidance_file: str, guidance: str | None) -> str:
@@ -1936,19 +1868,11 @@ def process_audio(audio_path: str, args) -> None:
     # 2. Local transcription; 3. hosts named by voice
     load_or_transcribe(audio_path, out_base, args.skip_transcription, verbose=args.verbose)
     host_names, turns = confirm_speakers(audio_path, out_base)
-    hosts_present = voice_match.hosts_present(host_names)
 
-    # 4. Guests, then every other voice named
-    refresh_checkpoints(out_base, "guests", turns, host_names, guidance, raw_notes)
-    guest_context = _load_or_detect_guest_context(
-        f"{out_base}-guests.json",
-        named_machine_transcript(turns, host_names),
-        guidance,
-        raw_notes,
-        args.verbose,
-        hosts_present=hosts_present,
+    # 4. The operator names every other voice; research looks those guests up
+    guest_context, speaker_names = identify_guests(
+        out_base, turns, host_names, guidance, raw_notes, verbose=args.verbose
     )
-    speaker_names = bind_guest_labels(out_base, turns, host_names, guest_context)
     guest_prompt_text = guest_context_to_prompt_text(guest_context)
     article_guidance = "\n\n".join(x for x in (guidance, guest_prompt_text) if x).strip()
 

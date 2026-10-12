@@ -292,116 +292,6 @@ class TestPodbeanTextHelpers(unittest.TestCase):
             podbean._text_includes_guest_names("Agent-Native Infra", guest_context)
         )
 
-    def test_manual_guest_context_splits_role_details_without_dash(self):
-        raw = (
-            "Mark Shine Co-Founder & CTO @ Ankra; "
-            "Pawel Piwosz Developer Advocate @ UpCloud; "
-            "Filipe Berti Engineering Manager UpCloud"
-        )
-        with (
-            patch("builtins.input", return_value=raw),
-            patch(
-                "podbean.normalize_operator_guest_notes",
-                side_effect=RuntimeError("claude unavailable"),
-            ),
-            redirect_stdout(StringIO()),
-        ):
-            guest_context = podbean._manual_guest_context_from_operator(
-                {"status": "needs_operator"}
-            )
-
-        self.assertEqual(
-            podbean.guest_full_names(guest_context),
-            ["Mark Shine", "Pawel Piwosz", "Filipe Berti"],
-        )
-        self.assertTrue(
-            podbean._text_includes_guest_names(
-                "European Cloud Sovereignty with Mark Shine, Pawel Piwosz and Filipe Berti",
-                guest_context,
-            )
-        )
-        self.assertEqual(guest_context["guests"][0]["role"], "Co-Founder & CTO")
-        self.assertEqual(guest_context["guests"][0]["company"], "Ankra")
-        self.assertEqual(guest_context["guests"][1]["role"], "Developer Advocate")
-        self.assertEqual(guest_context["guests"][1]["company"], "UpCloud")
-        self.assertEqual(guest_context["guests"][2]["role"], "Engineering Manager")
-        self.assertEqual(guest_context["guests"][2]["company"], "UpCloud")
-
-    def test_manual_guest_context_accepts_agent_normalized_free_form(self):
-        raw = (
-            "The guests are Mark Shine, Co-Founder and CTO at Ankra, "
-            "plus Pawel Piwosz from UpCloud. Mark's company site is https://ankra.io."
-        )
-        normalized = {
-            "status": "verified",
-            "guests": [
-                {
-                    "full_name": "Mark Shine",
-                    "participant_name": "Mark Shine",
-                    "role": "Co-Founder and CTO",
-                    "company": "Ankra",
-                    "professional_summary": "",
-                    "links": [
-                        {
-                            "label": "Ankra",
-                            "url": "https://ankra.io",
-                            "type": "company",
-                        }
-                    ],
-                    "confidence": "operator",
-                    "needs_operator": False,
-                    "question": "",
-                },
-                {
-                    "full_name": "Pawel Piwosz",
-                    "participant_name": "Pawel Piwosz",
-                    "role": "",
-                    "company": "UpCloud",
-                    "professional_summary": "",
-                    "links": [],
-                    "confidence": "operator",
-                    "needs_operator": False,
-                    "question": "",
-                },
-            ],
-            "notes": "",
-        }
-        with (
-            patch("builtins.input", return_value=raw),
-            patch("podbean.normalize_operator_guest_notes", return_value=normalized) as mock_norm,
-            redirect_stdout(StringIO()),
-        ):
-            guest_context = podbean._manual_guest_context_from_operator(
-                {"status": "needs_operator"},
-                verbose=True,
-            )
-
-        mock_norm.assert_called_once_with(raw, {"status": "needs_operator"}, verbose=True)
-        self.assertEqual(podbean.guest_full_names(guest_context), ["Mark Shine", "Pawel Piwosz"])
-        self.assertTrue(
-            podbean._text_includes_guest_names(
-                "EU Cloud with Mark Shine and Pawel Piwosz", guest_context
-            )
-        )
-
-    def test_repair_guest_context_names_fixes_old_operator_checkpoint(self):
-        guest_context = {
-            "guests": [
-                {
-                    "full_name": "Mark Shine Co-Founder & CTO @ Ankra",
-                    "participant_name": "Mark Shine Co-Founder & CTO @ Ankra",
-                    "professional_summary": "",
-                }
-            ]
-        }
-
-        repaired = podbean._repair_guest_context_names(guest_context)
-
-        self.assertEqual(podbean.guest_full_names(repaired), ["Mark Shine"])
-        self.assertEqual(repaired["guests"][0]["full_name"], "Mark Shine")
-        self.assertEqual(repaired["guests"][0]["role"], "Co-Founder & CTO")
-        self.assertEqual(repaired["guests"][0]["company"], "Ankra")
-        self.assertEqual(repaired["guests"][0].get("professional_summary", ""), "")
 
     def test_hugo_shortcode_braces_in_template(self):
         """podbean_line must emit {{< not {< — f-strings need {{{{ for literal {{."""
@@ -784,8 +674,10 @@ class TestPodbeanPublishingFlow(unittest.TestCase):
             "require_publishing_prerequisites": None,
             "load_or_transcribe": TURNS,
             "confirm_speakers": ({"A": "Mattias Hemmingsson"}, TURNS),
-            "_load_or_detect_guest_context": {"status": "no_guests", "guests": []},
-            "bind_guest_labels": {"A": "Mattias Hemmingsson", "B": "Jane Doe"},
+            "identify_guests": (
+                {"status": "no_guests", "guests": [], "hosts_present": ["Mattias Hemmingsson"]},
+                {"A": "Mattias Hemmingsson", "B": "Jane Doe"},
+            ),
             "load_reference_text": "",
             "correct_transcript": TURNS,
             "generate_article": "article",
@@ -842,7 +734,7 @@ class TestPodbeanPublishingFlow(unittest.TestCase):
         ask.assert_called()
         self.assertEqual(prompts_after_upload, [])
         order = [name for name in (
-            "load_or_transcribe", "confirm_speakers", "_load_or_detect_guest_context", "bind_guest_labels",
+            "load_or_transcribe", "confirm_speakers", "identify_guests",
             "correct_transcript", "load_or_generate_chapters", "generate_article", "load_or_generate_metadata",
             "draw_cover", "prompt_publish_action", "approve_episode_announcement", "upload_cover_to_r2",
             "create_podbean_episode", "write_episode_markdown", "schedule_episode_announcement",
@@ -854,8 +746,8 @@ class TestPodbeanPublishingFlow(unittest.TestCase):
         podbean.process_audio(str(self.audio), self.args)
         correct_kwargs = self.mocks["correct_transcript"].call_args.kwargs
         self.assertEqual(correct_kwargs["speaker_names"], {"A": "Mattias Hemmingsson", "B": "Jane Doe"})
-        guest_kwargs = self.mocks["_load_or_detect_guest_context"].call_args.kwargs
-        self.assertEqual(guest_kwargs["hosts_present"], ["Mattias Hemmingsson"])
+        guest_args = self.mocks["identify_guests"].call_args.args
+        self.assertEqual(guest_args[2], {"A": "Mattias Hemmingsson"})
         self.assertIs(self.mocks["load_or_generate_chapters"].call_args.args[1], TURNS)
         article_kwargs = self.mocks["generate_article"].call_args.kwargs
         self.assertEqual((article_kwargs["title"], article_kwargs["teaser"]), ("Title", "Description"))
@@ -1049,7 +941,7 @@ class TestStepInputRecord(unittest.TestCase):
             podbean.refresh_checkpoints(self.base, "title", "x")
 
 
-class TestGuestLabels(unittest.TestCase):
+class TestIdentifyGuests(unittest.TestCase):
     TURNS = [
         {"speaker": "A", "start": 0, "end": 60, "text": "Welcome."},
         {"speaker": "B", "start": 60, "end": 180, "text": "I work on supply chain security."},
@@ -1061,29 +953,94 @@ class TestGuestLabels(unittest.TestCase):
         self.root = Path(self.enterContext(tempfile.TemporaryDirectory()))
         self.base = str(self.root / "episode001")
         self.enterContext(redirect_stdout(StringIO()))
+        self.research = self.enterContext(patch.object(
+            podbean, "research_guests",
+            side_effect=lambda people, *a, **k: episode_pipeline.operator_guest_context(people, {}),
+        ))
 
-    def guests(self, *names):
-        return {"status": "verified", "guests": [{"full_name": n} for n in names]}
+    def identify(self, answers, turns=None):
+        replies = iter(answers)
+        return podbean.identify_guests(
+            self.base, turns or self.TURNS[:2], self.HOSTS, "", "", input_func=lambda: next(replies))
 
-    def test_one_guest_and_one_label_bind_without_asking(self):
-        names = podbean.bind_guest_labels(
-            self.base, self.TURNS[:2], self.HOSTS, self.guests("Jane Doe"), input_func=self.fail)
+    def test_episode_without_guests_asks_nothing(self):
+        context, names = podbean.identify_guests(
+            self.base, self.TURNS[:1], self.HOSTS, "", "", input_func=self.fail)
+        self.assertEqual(context["guests"], [])
+        self.assertEqual(context["hosts_present"], ["Mattias Hemmingsson"])
+        self.assertEqual(names, self.HOSTS)
+        self.research.assert_not_called()
+
+    def test_operator_names_a_guest_research_never_found(self):
+        context, names = self.identify(["Jane Doe, CTO at Acme", ""])
+        self.assertEqual(podbean.guest_full_names(context), ["Jane Doe"])
         self.assertEqual(names, {"A": "Mattias Hemmingsson", "B": "Jane Doe"})
+        people = self.research.call_args.args[0]
+        self.assertEqual(people, [{"name": "Jane Doe", "hint": "CTO at Acme", "labels": ["B"]}])
 
-    def test_other_cases_ask_once_and_reuse_the_answer(self):
-        answers = iter(["1", "andrey"])
-        names = podbean.bind_guest_labels(
-            self.base, self.TURNS, self.HOSTS, self.guests("Jane Doe"), input_func=lambda: next(answers))
-        self.assertEqual(names, {"A": "Mattias Hemmingsson", "B": "Jane Doe", "C": "Andrey Devyatkin"})
-        again = podbean.bind_guest_labels(
-            self.base, self.TURNS, self.HOSTS, self.guests("Jane Doe"), input_func=self.fail)
-        self.assertEqual(again, names)
+    def test_same_name_for_two_labels_is_one_guest(self):
+        context, names = self.identify(["Jane Doe", "jane doe, Acme", ""], turns=self.TURNS)
+        self.assertEqual(podbean.guest_full_names(context), ["Jane Doe"])
+        self.assertEqual((names["B"], names["C"]), ("Jane Doe", "Jane Doe"))
+
+    def test_host_name_names_the_label_as_that_host(self):
+        context, names = self.identify(["andrey"])
+        self.assertEqual(names["B"], "Andrey Devyatkin")
+        self.assertEqual(context["guests"], [])
+        self.assertIn("Andrey Devyatkin", context["hosts_present"])
+
+    def test_rerun_reuses_the_answers_and_the_research(self):
+        first = self.identify(["Jane Doe", ""])
+        again = self.identify([""])
+        self.assertEqual(again[1], first[1])
+        self.assertEqual(podbean.guest_full_names(again[0]), ["Jane Doe"])
+        self.assertEqual(self.research.call_count, 1)
+
+    def test_changed_answer_discards_the_transcript_and_later_steps(self):
+        self.identify(["Jane Doe", ""])
+        podbean.refresh_checkpoints(self.base, "transcript", "turns")
+        Path(f"{self.base}-turns-corrected.json").write_text("[]", encoding="utf-8")
+        context, _ = self.identify(["new", "John Roe", ""])
+        self.assertEqual(podbean.guest_full_names(context), ["John Roe"])
+        self.assertFalse(Path(f"{self.base}-turns-corrected.json").exists())
+
+    def test_correction_looks_that_guest_up_again(self):
+        self.identify(["Jane Doe", "1 she runs security at Globex", ""])
+        self.assertEqual(self.research.call_count, 2)
+        self.assertEqual(self.research.call_args.args[0][0]["hint"], "she runs security at Globex")
 
     def test_no_answer_stops(self):
         def eof():
             raise EOFError
         with self.assertRaises(podbean.PipelineStop):
-            podbean.bind_guest_labels(self.base, self.TURNS, self.HOSTS, self.guests("Jane Doe"), input_func=eof)
+            podbean.identify_guests(self.base, self.TURNS, self.HOSTS, "", "", input_func=eof)
+
+
+class TestOperatorGuestContext(unittest.TestCase):
+    PEOPLE = [{"name": "Jane Doe", "hint": "", "labels": ["B"]}]
+
+    def test_research_cannot_add_or_drop_a_guest(self):
+        research = {"guests": [
+            {"full_name": "Jane Doe", "x_handle": "@janed", "company": "Acme"},
+            {"full_name": "Bob Mentioned", "company": "Elsewhere"},
+        ]}
+        context = episode_pipeline.operator_guest_context(self.PEOPLE, research)
+        self.assertEqual(podbean.guest_full_names(context), ["Jane Doe"])
+        self.assertEqual((context["guests"][0]["x_handle"], context["guests"][0]["company"]), ("janed", "Acme"))
+        self.assertEqual(episode_pipeline.operator_guest_context(self.PEOPLE, {})["guests"][0]["full_name"], "Jane Doe")
+
+    def test_operator_spelling_wins_over_research(self):
+        context = episode_pipeline.operator_guest_context(
+            self.PEOPLE, {"guests": [{"full_name": "Jane A. Doe", "role": "CTO"}]})
+        self.assertEqual(context["guests"][0]["full_name"], "Jane Doe")
+        self.assertEqual(context["guests"][0]["role"], "CTO")
+
+    def test_failed_research_credits_the_guest_in_plain_text(self):
+        with patch.object(episode_pipeline, "run_claude", side_effect=RuntimeError("down")), \
+                redirect_stdout(StringIO()):
+            context = episode_pipeline.research_guests(self.PEOPLE, "transcript")
+        self.assertEqual(podbean.guest_full_names(context), ["Jane Doe"])
+        self.assertEqual(context["guests"][0]["x_handle"], "")
 
 
 class TestPublishingPrerequisites(unittest.TestCase):
@@ -1197,47 +1154,6 @@ class TestEpisodePipelineNumberedPick(unittest.TestCase):
         self.assertIn("Detected guest(s): Paul Stack.", text)
         self.assertIn("every title option must include all guest full names", text)
         self.assertIn("https://github.com/systeminit/swamp", text)
-
-    def test_normalize_operator_guest_notes_requests_web_profile_lookup(self):
-        import episode_pipeline  # noqa: E402
-
-        def fake_run_claude(prompt, verbose=False, allow_web=False, fatal=True):
-            self.assertTrue(allow_web)
-            self.assertFalse(fatal)
-            self.assertIn("Use web search for every operator-provided guest", prompt)
-            self.assertIn("LinkedIn profiles", prompt)
-            self.assertIn("GitHub", prompt)
-            return """
-            {
-              "status": "verified",
-              "guests": [
-                {
-                  "full_name": "Mark Shine",
-                  "participant_name": "Mark Shine",
-                  "role": "Co-Founder & CTO",
-                  "company": "Ankra",
-                  "professional_summary": "",
-                  "links": [
-                    {
-                      "label": "LinkedIn",
-                      "url": "https://www.linkedin.com/in/example/",
-                      "type": "linkedin"
-                    }
-                  ],
-                  "confidence": "high",
-                  "needs_operator": false,
-                  "question": ""
-                }
-              ],
-              "notes": ""
-            }
-            """
-
-        with patch("episode_pipeline.run_claude", side_effect=fake_run_claude):
-            data = episode_pipeline.normalize_operator_guest_notes("Mark Shine from Ankra")
-
-        self.assertEqual(data["guests"][0]["full_name"], "Mark Shine")
-        self.assertEqual(data["guests"][0]["links"][0]["type"], "linkedin")
 
     def test_normalize_guest_context_preserves_needs_operator_without_names(self):
         from episode_pipeline import normalize_guest_context  # noqa: E402

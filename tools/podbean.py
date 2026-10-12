@@ -816,7 +816,8 @@ CHECKPOINT_STEPS = (
         "-transcript-review-limit.txt",
     )),
     ("chapters", ("-chapters-generated.txt",)),
-    ("title", ("-title.txt", "-description.txt")),
+    ("title", ("-title.txt",)),
+    ("description", ("-description.txt",)),
     ("article", ("-draft.md", "-draft-v*.md", "-review-*.md", "-article.md")),
     ("metadata", ("-metadata.json", "-youtube-description.txt")),
 )
@@ -1896,9 +1897,13 @@ def process_audio(audio_path: str, args) -> None:
     if len(title) > TITLE_TARGET_CHARS:
         # Guest names are required, so the length target is advisory only.
         print(f"⚠ Title is {len(title)} chars (target under {TITLE_TARGET_CHARS}); kept as picked.")
+    # The teaser is written to go under the title, so a new title asks for it again.
+    refresh_checkpoints(out_base, "description", chapters, transcript, article_guidance, title)
     description = _load_or_pick(
         "description", f"{out_base}-description.txt", args.description, guest_context,
-        lambda: pick_description(chapters, transcript, editorial_guidance=article_guidance, verbose=args.verbose),
+        lambda: pick_description(
+            chapters, transcript, editorial_guidance=article_guidance, verbose=args.verbose, title=title
+        ),
     )
     print("✓ Description saved")
 

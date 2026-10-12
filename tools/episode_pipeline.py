@@ -1246,40 +1246,60 @@ def _codex_options(
     transcript: str,
     editorial_guidance: str,
     verbose: bool,
+    title: str = "",
 ) -> str:
     prompt = base_prompt
     if editorial_guidance:
         prompt += f"\nEditorial context for this episode: {editorial_guidance}"
-    return run_codex(prompt, stdin_text=episode_source_text(chapters, transcript), verbose=verbose)
+    stdin_text = episode_source_text(chapters, transcript)
+    if title:
+        stdin_text = f"--- TITLE ---\n{title}\n\n{stdin_text}"
+    return run_codex(prompt, stdin_text=stdin_text, verbose=verbose)
 
 
 def generate_title_options(
     chapters: str, transcript: str, editorial_guidance: str = "", verbose: bool = False
 ) -> str:
-    """Generate 5 title options from the chapters and the corrected transcript using Codex CLI."""
+    """Generate 12 title options, one per style, from the chapters and the corrected transcript using Codex CLI."""
     return _codex_options(TITLES_PROMPT, chapters, transcript, editorial_guidance, verbose)
 
 
 def generate_description_options(
-    chapters: str, transcript: str, editorial_guidance: str = "", verbose: bool = False
+    chapters: str, transcript: str, editorial_guidance: str = "", verbose: bool = False, title: str = ""
 ) -> str:
-    """Generate 5 teaser options from the chapters and the corrected transcript using Codex CLI."""
-    return _codex_options(DESCRIPTIONS_PROMPT, chapters, transcript, editorial_guidance, verbose)
+    """Generate 12 teaser options, one per style, to go under the picked ``title``, using Codex CLI."""
+    return _codex_options(DESCRIPTIONS_PROMPT, chapters, transcript, editorial_guidance, verbose, title=title)
 
 
-def _select_from_numbered_codex_output(lines_text: str, choice: str) -> str | None:
-    """Return the selected line for choices 1–5, or None if nothing matched."""
-    if choice not in ("1", "2", "3", "4", "5"):
-        return None
+MAX_CODEX_OPTIONS = 15
+_NUMBERED_OPTION_RE = re.compile(r"^(\d{1,2})[\.\)]\s*(.*)$")
+_STYLE_LABEL_RE = re.compile(r"^\[[^\]\n]*\]\s*")
+
+
+def _numbered_codex_options(lines_text: str) -> dict[int, str]:
+    """Options 1-15 keyed by number; with no numbered lines, the non-blank lines in order."""
+    options: dict[int, str] = {}
     for line in lines_text.splitlines():
-        line = line.strip()
-        if line.startswith(f"{choice}.") or line.startswith(f"{choice})"):
-            return re.sub(r"^\d+[\.\)]\s*", "", line).strip()
-    lines = [l.strip() for l in lines_text.splitlines() if l.strip()]
-    idx = int(choice) - 1
-    if idx < len(lines):
-        return re.sub(r"^\d+[\.\)]\s*", "", lines[idx]).strip()
-    return None
+        match = _NUMBERED_OPTION_RE.match(line.strip())
+        if match and 1 <= int(match.group(1)) <= MAX_CODEX_OPTIONS and match.group(2).strip():
+            options.setdefault(int(match.group(1)), match.group(2).strip())
+    if not options:
+        lines = [l.strip() for l in lines_text.splitlines() if l.strip()]
+        options = dict(enumerate(lines[:MAX_CODEX_OPTIONS], start=1))
+    return options
+
+
+def _select_from_numbered_codex_output(lines_text: str, choice: str, strip_style: bool = False) -> str | None:
+    """Return the option numbered ``choice``, or None if there is none.
+
+    ``strip_style`` drops a leading ``[Style name]`` label, which is for the menu only.
+    """
+    if not choice.isdigit():
+        return None
+    picked = _numbered_codex_options(lines_text).get(int(choice))
+    if picked is not None and strip_style:
+        picked = _STYLE_LABEL_RE.sub("", picked).strip()
+    return picked or None
 
 
 def _interactive_codex_pick(
@@ -1290,10 +1310,9 @@ def _interactive_codex_pick(
     *,
     generate_options: Callable[..., str],
     announce_options: str,
-    instruct_line1: str,
-    instruct_line2: str,
+    kind: str,
     regen_hint_label: str,
-    custom_prompt: str,
+    strip_style: bool = False,
     input_func=input,
 ) -> str:
     regen_hint = ""
@@ -1303,17 +1322,17 @@ def _interactive_codex_pick(
         if regen_hint:
             combined = f"{editorial_guidance}\nAdditional guidance: {regen_hint}".strip()
         options_text = generate_options(chapters, transcript, editorial_guidance=combined, verbose=verbose)
+        count = max(_numbered_codex_options(options_text), default=0)
         print(f"\n{options_text}\n")
-        print(instruct_line1)
-        print(instruct_line2, end="", flush=True)
+        print(f"Enter a number (1-{count}) to pick, 'c' to type a custom {kind},")
+        print("or 'r' to regenerate with guidance: ", end="", flush=True)
         choice = input_func().strip().lower()
 
-        if choice in ("1", "2", "3", "4", "5"):
-            picked = _select_from_numbered_codex_output(options_text, choice)
-            if picked is not None:
-                return picked
-        elif choice == "c":
-            print(custom_prompt, end="", flush=True)
+        picked = _select_from_numbered_codex_output(options_text, choice, strip_style=strip_style)
+        if picked is not None:
+            return picked
+        if choice == "c":
+            print(f"Enter custom {kind}: ", end="", flush=True)
             custom = input_func().strip()
             if custom:
                 return custom
@@ -1335,28 +1354,32 @@ def pick_title(
         verbose,
         generate_options=generate_title_options,
         announce_options="\nGenerating title options...",
-        instruct_line1="Enter a number (1-5) to pick, 'c' to type a custom title,",
-        instruct_line2="or 'r' to regenerate with guidance: ",
+        kind="title",
         regen_hint_label="Enter guidance (e.g. 'focus more on security'): ",
-        custom_prompt="Enter custom title: ",
+        strip_style=True,
         input_func=input_func,
     )
 
 
 def pick_description(
-    chapters: str, transcript: str, editorial_guidance: str = "", verbose: bool = False, input_func=input
+    chapters: str,
+    transcript: str,
+    editorial_guidance: str = "",
+    verbose: bool = False,
+    input_func=input,
+    *,
+    title: str = "",
 ) -> str:
-    """Present teaser options and let the user choose or regenerate."""
+    """Present teaser options written to go under ``title`` and let the user choose or regenerate."""
     return _interactive_codex_pick(
         chapters,
         transcript,
         editorial_guidance,
         verbose,
-        generate_options=generate_description_options,
+        generate_options=lambda *a, **k: generate_description_options(*a, title=title, **k),
         announce_options="\nGenerating podcast description options...",
-        instruct_line1="Enter a number (1-5) to pick, 'c' to type a custom description,",
-        instruct_line2="or 'r' to regenerate with guidance: ",
+        kind="description",
         regen_hint_label="Enter guidance: ",
-        custom_prompt="Enter custom description: ",
+        strip_style=True,
         input_func=input_func,
     )

@@ -935,6 +935,16 @@ class TestStepInputRecord(unittest.TestCase):
         for suffix in ("-chapters-generated.txt", "-title.txt", "-metadata.json"):
             self.assertFalse(self.exists(suffix), suffix)
 
+    def test_new_title_discards_the_teaser_but_keeps_the_title(self):
+        podbean.refresh_checkpoints(self.base, "title", "chapters")
+        podbean.refresh_checkpoints(self.base, "description", "chapters", "Old title")
+        self.touch("-title.txt", "-description.txt", "-article.md")
+        podbean.refresh_checkpoints(self.base, "title", "chapters")
+        podbean.refresh_checkpoints(self.base, "description", "chapters", "New title")
+        self.assertTrue(self.exists("-title.txt"))
+        for suffix in ("-description.txt", "-article.md"):
+            self.assertFalse(self.exists(suffix), suffix)
+
     def test_unreadable_record_stops(self):
         Path(f"{self.base}-inputs.json").write_text("[", encoding="utf-8")
         with self.assertRaises(podbean.PipelineStop):
@@ -1120,6 +1130,15 @@ class TestEpisodePipelineNumberedPick(unittest.TestCase):
         text = "1. First title\n2. Second title\n"
         self.assertEqual(_select_from_numbered_codex_output(text, "1"), "First title")
         self.assertEqual(_select_from_numbered_codex_output(text, "2"), "Second title")
+        self.assertIsNone(_select_from_numbered_codex_output(text, "3"))
+
+    def test_select_strips_the_style_label_and_reads_past_five(self):
+        from episode_pipeline import _select_from_numbered_codex_output  # noqa: E402
+
+        text = "\n".join(f"{n}) [Style {n}] Teaser {n}." for n in range(1, 15))
+        self.assertEqual(_select_from_numbered_codex_output(text, "14", strip_style=True), "Teaser 14.")
+        self.assertEqual(_select_from_numbered_codex_output(text, "7"), "[Style 7] Teaser 7.")
+        self.assertIsNone(_select_from_numbered_codex_output(text, "15", strip_style=True))
 
     def test_load_prompt_expands_context_and_style(self):
         from episode_pipeline import DRAFT_PROMPT  # noqa: E402

@@ -421,6 +421,75 @@ class TranscribeLocalTests(unittest.TestCase):
         self.assertIn("ffmpeg", str(ctx.exception))
 
 
+class RediarizeTests(unittest.TestCase):
+    ASR = {
+        "wordTimings": words(("Hello.", 0.0, 0.5), ("Hi.", 2.0, 2.5), ("Bye.", 4.0, 4.5)),
+        "processingTimeSeconds": 1.0,
+        "rtfx": 100.0,
+    }
+
+    def _run(self, out_base, dia):
+        calls = []
+
+        def fake_run(cmd, **kwargs):
+            calls.append(cmd)
+            if cmd[0] == "ffmpeg":
+                Path(cmd[cmd.index("-c:a") + 2]).write_bytes(b"wav")
+                return subprocess.CompletedProcess(cmd, 0, "", "")
+            Path(cmd[cmd.index("--output") + 1]).write_text(json.dumps(dia), encoding="utf-8")
+            return subprocess.CompletedProcess(cmd, 0, "", "")
+
+        with mock.patch.dict("os.environ", {"FLUIDAUDIO_CLI": "/bin/sh"}, clear=False):
+            with mock.patch.object(tl.shutil, "which", return_value="/usr/bin/ffmpeg"):
+                with mock.patch.object(tl.subprocess, "run", side_effect=fake_run):
+                    transcript = tl.rediarize("ep.mp3", out_base, 3)
+        return transcript, calls
+
+    def test_reuses_saved_asr_and_rewrites_the_diarized_outputs(self):
+        dia = {
+            "segments": segments(("S1", 0.0, 0.5), ("S2", 2.0, 2.5), ("S3", 4.0, 4.5)),
+            "speakerCount": 3,
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            out_base = str(Path(tmp) / "episode001")
+            Path(f"{out_base}-asr.json").write_text(json.dumps(self.ASR), encoding="utf-8")
+            Path(f"{out_base}-local.txt").write_text("[A]: stale", encoding="utf-8")
+
+            transcript, calls = self._run(out_base, dia)
+
+            self.assertEqual(transcript, "[A]: Hello.\n[B]: Hi.\n[C]: Bye.")
+            self.assertEqual(Path(f"{out_base}-local.txt").read_text(encoding="utf-8"), transcript)
+            turns = json.loads(Path(f"{out_base}-turns.json").read_text(encoding="utf-8"))
+            self.assertEqual([t["speaker"] for t in turns], ["A", "B", "C"])
+            saved = json.loads(Path(f"{out_base}-diarization.json").read_text(encoding="utf-8"))
+            self.assertEqual(saved["speakerCount"], 3)
+
+        cli_calls = [c for c in calls if c[0] != "ffmpeg"]
+        self.assertEqual(len(cli_calls), 1)
+        self.assertNotIn("transcribe", cli_calls[0])
+        self.assertEqual(cli_calls[0][cli_calls[0].index("--num-speakers") + 1], "3")
+
+    def test_missing_asr_is_reported_before_any_work(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.object(tl.subprocess, "run") as run:
+                with self.assertRaises(RuntimeError) as ctx:
+                    tl.rediarize("ep.mp3", str(Path(tmp) / "episode001"), 3)
+        self.assertIn("-asr.json", str(ctx.exception))
+        run.assert_not_called()
+
+    def test_count_must_be_positive(self):
+        with self.assertRaises(ValueError):
+            tl.rediarize("ep.mp3", "base", 0)
+
+
+class SpeakerLabelsTests(unittest.TestCase):
+    def test_maps_diarizer_ids_to_turn_labels_by_first_appearance(self):
+        asr = {"wordTimings": words(("a", 0.0, 0.5), ("b", 2.0, 2.5))}
+        dia = {"segments": segments(("S2", 0.0, 0.5), ("S1", 2.0, 2.5), ("S3", 9.0, 9.5))}
+        # S3 wins no word, so no turn carries it.
+        self.assertEqual(tl.speaker_labels(asr, dia), {"S2": "A", "S1": "B"})
+
+
 class SpeakerCountPromptTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

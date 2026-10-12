@@ -19,10 +19,10 @@ them when the article links or references one.
 
 ## Critical rules for this review
 
-### The transcript has speech-to-text errors — do NOT waste time on them
-The transcript is machine-generated and WILL misspell names, tools and products
-("Matthias", "Andre", "devsekovs"). Speakers are labelled `[A]`, `[B]`, ... If
-the article uses the correct spelling from the context or guest context, that is
+### The transcript can still carry speech-to-text errors — do NOT waste time on them
+The transcript is corrected and speaker-named (`Name: text`), but a name, tool
+or product can still be misspelt ("Matthias", "Andre", "devsekovs"). If the
+article uses the correct spelling from the context or guest context, that is
 CORRECT. Flag the article only when it copies a misspelling. If you're unsure
 about a product name, USE WEB SEARCH to verify it.
 

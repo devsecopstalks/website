@@ -1,0 +1,20 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["turns"],
+  "properties": {
+    "turns": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["index", "speaker", "text"],
+        "properties": {
+          "index": {"type": "integer"},
+          "speaker": {"type": "string"},
+          "text": {"type": "string"}
+        }
+      }
+    }
+  }
+}

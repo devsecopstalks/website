@@ -1,0 +1,20 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["status", "turns"],
+  "properties": {
+    "status": {"type": "string", "enum": ["good", "issues"]},
+    "turns": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["index", "problem"],
+        "properties": {
+          "index": {"type": "integer"},
+          "problem": {"type": "string"}
+        }
+      }
+    }
+  }
+}

@@ -1,5 +1,6 @@
 """
-Claude Code + Codex adversarial review loop for episode articles.
+Codex transcript correction, the title and teaser picks, and the Claude Code +
+Codex adversarial review loop for episode articles.
 Checkpoints use the ``out_base`` passed by callers (e.g. ``podbean.py`` → ``out/episodeNNN``).
 """
 
@@ -59,6 +60,14 @@ DESCRIPTIONS_PROMPT = load_prompt("descriptions")
 GUESTS_PROMPT = load_prompt("guests")
 
 
+class PipelineStop(Exception):
+    """A step cannot finish; the run stops here. ``checkpoint`` names the file to fix or delete."""
+
+    def __init__(self, message: str, checkpoint: str = ""):
+        super().__init__(message)
+        self.checkpoint = checkpoint
+
+
 def _review_ends_good_to_go(review_text: str) -> bool:
     """True when Codex ended the review with exactly GOOD_TO_GO on the last line."""
     return review_text.strip().splitlines()[-1].strip() == "GOOD_TO_GO"
@@ -115,6 +124,14 @@ def run_claude(prompt: str, verbose=False, allow_web=False, fatal: bool = True) 
     return output
 
 
+def codex_base_cmd(output_file: str, output_schema: str | None = None) -> list[str]:
+    """``codex exec`` in a read-only sandbox, writing its last message to ``output_file``."""
+    cmd = ["codex", "exec", "--sandbox", "read-only", "-C", REPO_ROOT, "--model", CODEX_MODEL, "-o", output_file]
+    if output_schema:
+        cmd += ["--output-schema", output_schema]
+    return cmd
+
+
 def run_codex(prompt: str, stdin_text: str = "", verbose=False, output_schema: str | None = None) -> str:
     """Run OpenAI Codex CLI in non-interactive mode. Returns output text.
 
@@ -131,20 +148,7 @@ def run_codex(prompt: str, stdin_text: str = "", verbose=False, output_schema: s
         tmp_path = tmp.name
 
     try:
-        cmd = [
-            "codex",
-            "exec",
-            "--sandbox",
-            "read-only",
-            "-C",
-            REPO_ROOT,
-            "--model",
-            CODEX_MODEL,
-            "-o",
-            tmp_path,
-        ]
-        if output_schema:
-            cmd += ["--output-schema", output_schema]
+        cmd = codex_base_cmd(tmp_path, output_schema)
         if stdin_text:
             cmd.append(prompt)
             input_data = stdin_text
@@ -492,11 +496,461 @@ def detect_guests(
     return guest_context
 
 
+TRANSCRIPT_CORRECT_PROMPT = load_prompt("transcript-correct")
+TRANSCRIPT_REVIEW_PROMPT = load_prompt("transcript-review")
+TRANSCRIPT_CORRECT_SCHEMA = os.path.join(PROMPTS_DIR, "transcript-correct-schema.json")
+TRANSCRIPT_REVIEW_SCHEMA = os.path.join(PROMPTS_DIR, "transcript-review-schema.json")
+TRANSCRIPT_REVIEW_ROUNDS = 5
+TRANSCRIPT_EXTENSION_ROUNDS = 5
+CORRECTED_TURNS_SUFFIX = "-turns-corrected.json"
+
+
+def format_timestamp(seconds: float) -> str:
+    seconds = int(seconds)
+    h, rest = divmod(seconds, 3600)
+    m, s = divmod(rest, 60)
+    return f"{h}:{m:02d}:{s:02d}" if h else f"{m:02d}:{s:02d}"
+
+
+def transcript_units(turns: list[dict]) -> list[dict]:
+    """The machine turns as numbered units: index, diarization label, start, end, text."""
+    return [
+        {
+            "index": i,
+            "label": str(turn.get("speaker") or ""),
+            "start": float(turn.get("start") or 0),
+            "end": float(turn.get("end") or 0),
+            "text": " ".join(str(turn.get("text") or "").split()),
+        }
+        for i, turn in enumerate(turns or [], 1)
+    ]
+
+
+def numbered_turn_line(index: int, speaker: str, text: str, start: float | None = None) -> str:
+    """``[17] [11:45] [B]: text``; the time is left out when there is none."""
+    stamp = f" [{format_timestamp(start)}]" if start is not None else ""
+    return f"[{index}]{stamp} [{speaker or '?'}]: {text}"
+
+
+def numbered_turns_text(units: list[dict], current: dict[int, dict] | None = None) -> str:
+    """The units as numbered lines, with the rewritten speaker and text when given."""
+    lines = []
+    for unit in units:
+        turn = current[unit["index"]] if current else unit
+        speaker = turn.get("speaker") or unit["label"]
+        lines.append(numbered_turn_line(unit["index"], speaker, turn["text"], unit.get("start")))
+    return "\n".join(lines)
+
+
+def transcript_correction_context(
+    guest_context: dict, reference_text: str = "", speaker_names: dict | None = None
+) -> str:
+    """Guest research, speakers named by voice and the spelling reference, shared by both sessions."""
+    guest_context = normalize_guest_context(guest_context)
+    guest_text = guest_context_to_prompt_text(guest_context) or "No guests on this episode."
+    parts = [f"--- GUEST RESEARCH ---\n{guest_text}"]
+    if guest_context.get("notes"):
+        parts.append(f"Research notes: {guest_context['notes']}")
+    if guest_context.get("hosts_present"):
+        parts.append("Hosts on this episode: " + ", ".join(guest_context["hosts_present"]))
+    if speaker_names:
+        known = "\n".join(f"{label} = {name}" for label, name in sorted(speaker_names.items()))
+        parts.append(f"--- KNOWN SPEAKERS (named by voice; keep these) ---\n{known}")
+    else:
+        parts.append("--- KNOWN SPEAKERS ---\nNone: name every label.")
+    if reference_text:
+        parts.append(
+            "--- PROVIDED TRANSCRIPT (spelling reference only; never copy its wording) ---\n"
+            f"{reference_text}"
+        )
+    return "\n\n".join(parts)
+
+
+def run_codex_json(prompt: str, stdin_text: str, schema_file: str, checkpoint: str = "", verbose=False) -> dict:
+    """One schema-enforced Codex answer as a dict; any failure raises PipelineStop."""
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as tmp:
+        tmp_path = tmp.name
+    try:
+        result = subprocess.run(
+            codex_base_cmd(tmp_path, schema_file) + [prompt],
+            input=stdin_text,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE if not verbose else None,
+            text=True,
+            timeout=CODEX_TIMEOUT_S,
+        )
+        if result.returncode != 0:
+            raise PipelineStop(
+                f"Codex failed (exit {result.returncode}): {(result.stderr or '')[:2000]}",
+                checkpoint=checkpoint,
+            )
+        with open(tmp_path, "r", encoding="utf-8") as f:
+            return _extract_json_object(f.read())
+    except subprocess.TimeoutExpired:
+        raise PipelineStop(
+            f"Codex timed out after {CODEX_TIMEOUT_S}s (raise CODEX_TIMEOUT_S to allow longer)",
+            checkpoint=checkpoint,
+        ) from None
+    except ValueError as e:
+        raise PipelineStop(f"Codex returned no JSON object: {e}", checkpoint=checkpoint) from e
+    finally:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+
+
+def parse_rewritten_turns(answer: dict, expected: list[int]) -> dict[int, dict]:
+    """The rewriter's turns by index; ValueError unless exactly ``expected`` came back."""
+    turns = answer.get("turns") if isinstance(answer, dict) else None
+    if not isinstance(turns, list):
+        raise ValueError("the answer has no turns list")
+    if len(turns) != len(expected):
+        raise ValueError(f"{len(turns)} turns returned, {len(expected)} expected")
+    parsed: dict[int, dict] = {}
+    for turn in turns:
+        if not isinstance(turn, dict) or not isinstance(turn.get("index"), int):
+            raise ValueError(f"turn without an integer index: {str(turn)[:120]}")
+        if not isinstance(turn.get("text"), str) or not str(turn.get("speaker") or "").strip():
+            raise ValueError(f"turn {turn['index']} lacks a speaker or text")
+        if turn["index"] in parsed:
+            raise ValueError(f"turn {turn['index']} returned twice")
+        parsed[turn["index"]] = {"speaker": turn["speaker"].strip(), "text": " ".join(turn["text"].split())}
+    if sorted(parsed) != sorted(expected):
+        missing = sorted(set(expected) - set(parsed))
+        extra = sorted(set(parsed) - set(expected))
+        raise ValueError(f"indexes differ (missing {missing[:10]}, unexpected {extra[:10]})")
+    return parsed
+
+
+def parse_transcript_review(answer: dict, scope: list[int]) -> dict[int, str]:
+    """Flagged turns as {index: problem}; ValueError on a malformed or out-of-scope answer."""
+    if not isinstance(answer, dict) or answer.get("status") not in ("good", "issues"):
+        raise ValueError("status must be 'good' or 'issues'")
+    turns = answer.get("turns")
+    if not isinstance(turns, list):
+        raise ValueError("the answer has no turns list")
+    flagged: dict[int, str] = {}
+    for turn in turns:
+        if not isinstance(turn, dict) or turn.get("index") not in scope:
+            raise ValueError(f"flagged turn is not one under review: {str(turn)[:120]}")
+        flagged[turn["index"]] = str(turn.get("problem") or "").strip() or "(no reason given)"
+    if (answer["status"] == "good") != (not flagged):
+        raise ValueError(f"status {answer['status']!r} with {len(flagged)} flagged turn(s)")
+    return flagged
+
+
+def _checked_codex_json(prompt, stdin_text, schema_file, parse, label, checkpoint, verbose=False):
+    """Ask once more, with the reason, when an answer fails ``parse``; stop on a second failure."""
+    answer = run_codex_json(prompt, stdin_text, schema_file, checkpoint, verbose=verbose)
+    try:
+        return parse(answer)
+    except ValueError as e:
+        print(f"⚠ {label} answer rejected ({e}); asking again")
+        retry = f"{prompt}\n\nYour previous answer was rejected: {e}. Answer again, following the rules."
+        answer = run_codex_json(retry, stdin_text, schema_file, checkpoint, verbose=verbose)
+        try:
+            return parse(answer)
+        except ValueError as e2:
+            raise PipelineStop(f"{label} answer rejected twice: {e2}", checkpoint=checkpoint) from e2
+
+
+def _apply_speaker_names(units, turns: dict[int, dict], speaker_names: dict | None) -> dict[int, dict]:
+    """Labels named by voice keep that name, whatever the rewriter returned."""
+    for unit in units:
+        name = (speaker_names or {}).get(unit["label"])
+        if name and unit["index"] in turns:
+            turns[unit["index"]]["speaker"] = name
+    return turns
+
+
+def rewrite_transcript(units, context, speaker_names=None, checkpoint="", verbose=False) -> dict[int, dict]:
+    """The first rewrite of every turn."""
+    print(f"Correcting {len(units)} transcript turns with Codex...")
+    stdin_text = f"{context}\n\n--- TURNS ---\n{numbered_turns_text(units)}\n"
+    turns = _checked_codex_json(
+        TRANSCRIPT_CORRECT_PROMPT, stdin_text, TRANSCRIPT_CORRECT_SCHEMA,
+        lambda a: parse_rewritten_turns(a, [u["index"] for u in units]),
+        "transcript rewrite", checkpoint, verbose=verbose,
+    )
+    return _apply_speaker_names(units, turns, speaker_names)
+
+
+def revise_transcript_turns(
+    units, current, flagged, context, speaker_names=None, checkpoint="", verbose=False
+) -> dict[int, dict]:
+    """``current`` with only the flagged turns rewritten again from the original."""
+    print(f"Revising {len(flagged)} flagged transcript turn(s) with Codex...")
+    by_index = {u["index"]: u for u in units}
+    blocks = []
+    for index in sorted(flagged):
+        unit = by_index[index]
+        blocks.append(
+            f"Original: {numbered_turn_line(index, unit['label'], unit['text'], unit.get('start'))}\n"
+            f"Current: {numbered_turn_line(index, current[index]['speaker'], current[index]['text'])}\n"
+            f"Reviewer: {flagged[index]}"
+        )
+    stdin_text = f"{context}\n\n--- REVISE ONLY THESE TURNS ---\n" + "\n\n".join(blocks) + "\n"
+    prompt = (
+        TRANSCRIPT_CORRECT_PROMPT
+        + "\n\nThis is a revision. Return only the turns under REVISE ONLY THESE TURNS, "
+        "redone from the original text so the reviewer's problem is fixed."
+    )
+    revised = _checked_codex_json(
+        prompt, stdin_text, TRANSCRIPT_CORRECT_SCHEMA,
+        lambda a: parse_rewritten_turns(a, sorted(flagged)),
+        "transcript revision", checkpoint, verbose=verbose,
+    )
+    return {**current, **_apply_speaker_names(units, revised, speaker_names)}
+
+
+def review_transcript(units, current, context, scope, checkpoint="", verbose=False) -> tuple[dict, dict[int, str]]:
+    """A second Codex session's verdict on the turns in ``scope``: (answer, flagged)."""
+    print(f"Reviewing {len(scope)} corrected transcript turn(s) with Codex...")
+    scope_text = "all" if len(scope) == len(units) else ", ".join(str(i) for i in scope)
+    stdin_text = (
+        f"{context}\n\n--- TURNS TO REVIEW ---\n{scope_text}\n\n"
+        f"--- ORIGINAL TURNS ---\n{numbered_turns_text(units)}\n\n"
+        f"--- CORRECTED TURNS ---\n{numbered_turns_text(units, current)}\n"
+    )
+    kept = {}
+
+    def parse(answer):
+        flagged = parse_transcript_review(answer, scope)
+        kept["answer"] = answer
+        return flagged
+
+    flagged = _checked_codex_json(
+        TRANSCRIPT_REVIEW_PROMPT, stdin_text, TRANSCRIPT_REVIEW_SCHEMA, parse,
+        "transcript review", checkpoint, verbose=verbose,
+    )
+    return kept["answer"], flagged
+
+
+def _write_rewrite(path, current: dict[int, dict]) -> None:
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump([{"index": i, **current[i]} for i in sorted(current)], f, indent=2, ensure_ascii=False)
+        f.write("\n")
+
+
+def _load_rewrite(path, units) -> dict[int, dict]:
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return parse_rewritten_turns({"turns": json.load(f)}, [u["index"] for u in units])
+    except (OSError, ValueError) as e:
+        raise PipelineStop(f"saved transcript rewrite is unusable ({e}); delete it", checkpoint=path) from e
+
+
+def _write_review(path, round_no, answer, flagged, current) -> None:
+    lines = [f"# Transcript review {round_no}", "", f"{len(flagged)} turn(s) flagged.", ""]
+    for index in sorted(flagged):
+        lines.append(f"- [{index}] {current[index]['speaker']}: {flagged[index]}")
+    lines += ["", "```json", json.dumps(answer, indent=2, ensure_ascii=False), "```", ""]
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines))
+
+
+def _load_review(path, scope) -> dict[int, str]:
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            blocks = re.findall(r"```json\n(.*?)\n```", f.read(), flags=re.S)
+        if not blocks:
+            raise ValueError("no JSON block")
+        return parse_transcript_review(json.loads(blocks[-1]), scope)
+    except (OSError, ValueError) as e:
+        raise PipelineStop(f"saved transcript review is unusable ({e}); delete it", checkpoint=path) from e
+
+
+def _load_round_limit(limit_file: str) -> int:
+    """The extended round cap the operator chose, or the default."""
+    try:
+        with open(limit_file, "r", encoding="utf-8") as f:
+            saved = f.read().strip()
+    except OSError:
+        return TRANSCRIPT_REVIEW_ROUNDS
+    if not saved.isdigit():
+        raise PipelineStop(f"{limit_file} holds {saved!r}, not a round count; fix or delete it", checkpoint=limit_file)
+    return max(int(saved), TRANSCRIPT_REVIEW_ROUNDS)
+
+
+def prompt_transcript_review_cap(rounds, flagged, current, limit_file, input_func=input) -> bool:
+    """Ask at the cap: True runs more rounds, False keeps the reviewed version as is.
+
+    No input stops the run, so no flagged turn becomes quotable unattended.
+    """
+    print(f"\n⚠ {rounds} transcript review rounds; {len(flagged)} turn(s) still flagged:")
+    for index in sorted(flagged):
+        print(f"  [{index}] {current[index]['speaker']}: {current[index]['text'][:160]}")
+        print(f"       → {flagged[index]}")
+    while True:
+        print(
+            f"'e' to run {TRANSCRIPT_EXTENSION_ROUNDS} more rounds, or 's' to keep this version "
+            "(flagged turns stay but cannot be quoted): ",
+            end="",
+            flush=True,
+        )
+        try:
+            choice = input_func().strip().lower()
+        except EOFError:
+            raise PipelineStop(
+                f"transcript review hit {rounds} rounds with turns still flagged and no answer "
+                "was given; re-run in a terminal to extend or keep",
+                checkpoint=limit_file,
+            ) from None
+        if choice in ("e", "s"):
+            return choice == "e"
+        print("Invalid choice, try again.")
+
+
+def render_corrected_transcript(turns: list[dict]) -> str:
+    """``Name: text`` per turn: the transcript every later step reads."""
+    return "\n".join(f"{t['speaker']}: {t['text']}" for t in turns if t.get("text"))
+
+
+def load_corrected_turns(out_base: str) -> list[dict] | None:
+    """The accepted corrected turns, or None before the correction step finished."""
+    try:
+        with open(f"{out_base}{CORRECTED_TURNS_SUFFIX}", "r", encoding="utf-8") as f:
+            turns = json.load(f)
+    except (OSError, ValueError):
+        return None
+    return turns if isinstance(turns, list) and turns else None
+
+
+def correction_checkpoints(out_base: str) -> list[str]:
+    """Every file the correction step writes, for a caller that discards the step."""
+    patterns = (
+        CORRECTED_TURNS_SUFFIX,
+        "-transcript-rewrite-*.json",
+        "-transcript-review-*.md",
+        "-transcript-review-limit.txt",
+    )
+    base = glob.escape(out_base)
+    return sorted({p for pattern in patterns for p in glob.glob(f"{base}{pattern}")})
+
+
+def correct_transcript(
+    out_base: str,
+    turns: list[dict],
+    guest_context: dict,
+    reference_text: str = "",
+    speaker_names: dict | None = None,
+    verbose: bool = False,
+    input_func=input,
+) -> list[dict]:
+    """Rewrite, review and revise the transcript until the reviewer passes it or the operator keeps it.
+
+    ``turns`` are the machine turns (``speaker`` is the diarization label) and
+    ``speaker_names`` maps labels to names known by voice. Writes
+    ``-turns-corrected.json`` and ``{out_base}.txt`` as ``Name: text`` lines.
+    """
+    final_file = f"{out_base}{CORRECTED_TURNS_SUFFIX}"
+    corrected = load_corrected_turns(out_base)
+    if corrected:
+        print(f"✓ Loaded corrected transcript from {final_file}")
+    else:
+        corrected = _run_transcript_correction(
+            out_base, transcript_units(turns), guest_context, reference_text, speaker_names, verbose, input_func
+        )
+        with open(final_file, "w", encoding="utf-8") as f:
+            json.dump(corrected, f, indent=2, ensure_ascii=False)
+            f.write("\n")
+        flagged = sum(1 for t in corrected if t.get("flagged"))
+        suffix = f" ({flagged} flagged turn(s) cannot be quoted)" if flagged else ""
+        print(f"✓ Corrected transcript saved to {final_file}{suffix}")
+    with open(f"{out_base}.txt", "w", encoding="utf-8") as f:
+        f.write(render_corrected_transcript(corrected) + "\n")
+    return corrected
+
+
+def _run_transcript_correction(
+    out_base, units, guest_context, reference_text, speaker_names, verbose, input_func
+) -> list[dict]:
+    if not units:
+        raise PipelineStop(
+            "the machine transcript has no turns; nothing to correct",
+            checkpoint=f"{out_base}-turns.json",
+        )
+    limit_file = f"{out_base}-transcript-review-limit.txt"
+    context = transcript_correction_context(guest_context, reference_text, speaker_names)
+    limit = _load_round_limit(limit_file)
+
+    rewrite_file = f"{out_base}-transcript-rewrite-1.json"
+    if os.path.exists(rewrite_file):
+        current = _load_rewrite(rewrite_file, units)
+    else:
+        current = rewrite_transcript(units, context, speaker_names, rewrite_file, verbose=verbose)
+        _write_rewrite(rewrite_file, current)
+
+    # Round one reviews every turn; later rounds only the turns just revised,
+    # so a turn the reviewer passed stays passed.
+    scope = [u["index"] for u in units]
+    round_no = 1
+    while True:
+        review_file = f"{out_base}-transcript-review-{round_no}.md"
+        if os.path.exists(review_file):
+            flagged = _load_review(review_file, scope)
+        else:
+            answer, flagged = review_transcript(units, current, context, scope, review_file, verbose=verbose)
+            _write_review(review_file, round_no, answer, flagged, current)
+        print(f"Transcript review {round_no}: {len(flagged)} turn(s) flagged")
+        if not flagged:
+            break
+        if round_no >= limit:
+            if not prompt_transcript_review_cap(round_no, flagged, current, limit_file, input_func):
+                print(f"✓ Keeping the reviewed transcript with {len(flagged)} flagged turn(s)")
+                break
+            limit = round_no + TRANSCRIPT_EXTENSION_ROUNDS
+            with open(limit_file, "w", encoding="utf-8") as f:
+                f.write(f"{limit}\n")
+
+        rewrite_file = f"{out_base}-transcript-rewrite-{round_no + 1}.json"
+        if os.path.exists(rewrite_file):
+            current = _load_rewrite(rewrite_file, units)
+        else:
+            current = revise_transcript_turns(
+                units, current, flagged, context, speaker_names, rewrite_file, verbose=verbose
+            )
+            _write_rewrite(rewrite_file, current)
+        scope = sorted(flagged)
+        round_no += 1
+
+    corrected = []
+    for unit in units:
+        index = unit["index"]
+        turn = {
+            "index": index,
+            "label": unit["label"],
+            "speaker": current[index]["speaker"],
+            "start": unit["start"],
+            "end": unit["end"],
+            "text": current[index]["text"],
+            "flagged": index in flagged,
+        }
+        if turn["flagged"]:
+            turn["problem"] = flagged[index]
+        corrected.append(turn)
+    return corrected
+
+
+def episode_frame_text(title: str = "", teaser: str = "", chapters: str = "") -> str:
+    """The picked title and teaser and the approved chapters as a prompt section, or ""."""
+    parts = []
+    if title:
+        parts.append(f"\n\n--- EPISODE TITLE ---\n{title}\n")
+    if teaser:
+        parts.append(f"\n\n--- TEASER ---\n{teaser}\n")
+    if chapters:
+        parts.append(f"\n\n--- CHAPTERS ---\n{chapters}\n")
+    return "".join(parts)
+
+
 def generate_draft(
     transcript: str,
     editorial_guidance: str = "",
     raw_notes: str = "",
     verbose: bool = False,
+    title: str = "",
+    teaser: str = "",
+    chapters: str = "",
 ) -> str:
     """Generate article draft using Claude Code with web search."""
     print("Generating article draft with Claude Code...")
@@ -509,6 +963,7 @@ def generate_draft(
             "\n\n--- SHOW NOTES (companion .md files from raw/, same filename prefix as the audio) ---\n"
             f"{raw_notes}"
         )
+    parts.append(episode_frame_text(title, teaser, chapters))
     parts.append(f"\n\n--- TRANSCRIPT ---\n{transcript}\n")
     prompt = "".join(parts)
 
@@ -557,6 +1012,9 @@ def revise_draft(
     editorial_guidance: str = "",
     raw_notes: str = "",
     verbose: bool = False,
+    title: str = "",
+    teaser: str = "",
+    chapters: str = "",
 ) -> str:
     """Revise draft using Claude Code based on reviewer feedback."""
     print("Revising draft with Claude Code...")
@@ -569,9 +1027,10 @@ def revise_draft(
             "\n\n--- SHOW NOTES (companion .md files from raw/) ---\n"
             f"{raw_notes}"
         )
+    parts.append(episode_frame_text(title, teaser, chapters))
     parts.append(f"""
 
---- ORIGINAL TRANSCRIPT ---
+--- TRANSCRIPT ---
 {transcript}
 
 --- CURRENT DRAFT ---
@@ -615,8 +1074,11 @@ def generate_article(
     raw_notes: str = "",
     verbose: bool = False,
     input_func=input,
+    title: str = "",
+    teaser: str = "",
+    chapters: str = "",
 ) -> str:
-    """Run the draft-review loop. Returns final article text."""
+    """Run the draft-review loop, written to the picked title, teaser and chapters. Returns the final article."""
     article_file = f"{out_base}-article.md"
     if os.path.exists(article_file):
         with open(article_file, "r", encoding="utf-8") as f:
@@ -671,6 +1133,9 @@ def generate_article(
                 editorial_guidance=editorial_guidance,
                 raw_notes=raw_notes,
                 verbose=verbose,
+                title=title,
+                teaser=teaser,
+                chapters=chapters,
             )
             with open(draft_file, "w", encoding="utf-8") as f:
                 f.write(draft)
@@ -724,6 +1189,9 @@ def generate_article(
                 editorial_guidance=editorial_guidance,
                 raw_notes=raw_notes,
                 verbose=verbose,
+                title=title,
+                teaser=teaser,
+                chapters=chapters,
             )
             with open(revised_file, "w", encoding="utf-8") as f:
                 f.write(draft)
@@ -802,26 +1270,40 @@ def article_html_problems(article: str) -> list[str]:
     return problems
 
 
-def _codex_options_for_article(
+def episode_source_text(chapters: str, transcript: str) -> str:
+    """The approved chapters, when there are any, then the corrected transcript."""
+    parts = []
+    if chapters:
+        parts.append(f"--- CHAPTERS ---\n{chapters}\n")
+    parts.append(f"--- TRANSCRIPT ---\n{transcript}\n")
+    return "\n".join(parts)
+
+
+def _codex_options(
     base_prompt: str,
-    article: str,
+    chapters: str,
+    transcript: str,
     editorial_guidance: str,
     verbose: bool,
 ) -> str:
     prompt = base_prompt
     if editorial_guidance:
         prompt += f"\nEditorial context for this episode: {editorial_guidance}"
-    return run_codex(prompt, stdin_text=article, verbose=verbose)
+    return run_codex(prompt, stdin_text=episode_source_text(chapters, transcript), verbose=verbose)
 
 
-def generate_title_options(article: str, editorial_guidance: str = "", verbose: bool = False) -> str:
-    """Generate 5 title options using Codex CLI."""
-    return _codex_options_for_article(TITLES_PROMPT, article, editorial_guidance, verbose)
+def generate_title_options(
+    chapters: str, transcript: str, editorial_guidance: str = "", verbose: bool = False
+) -> str:
+    """Generate 5 title options from the chapters and the corrected transcript using Codex CLI."""
+    return _codex_options(TITLES_PROMPT, chapters, transcript, editorial_guidance, verbose)
 
 
-def generate_description_options(article: str, editorial_guidance: str = "", verbose: bool = False) -> str:
-    """Generate 5 podcast description options using Codex CLI."""
-    return _codex_options_for_article(DESCRIPTIONS_PROMPT, article, editorial_guidance, verbose)
+def generate_description_options(
+    chapters: str, transcript: str, editorial_guidance: str = "", verbose: bool = False
+) -> str:
+    """Generate 5 teaser options from the chapters and the corrected transcript using Codex CLI."""
+    return _codex_options(DESCRIPTIONS_PROMPT, chapters, transcript, editorial_guidance, verbose)
 
 
 def _select_from_numbered_codex_output(lines_text: str, choice: str) -> str | None:
@@ -840,16 +1322,18 @@ def _select_from_numbered_codex_output(lines_text: str, choice: str) -> str | No
 
 
 def _interactive_codex_pick(
-    article: str,
+    chapters: str,
+    transcript: str,
     editorial_guidance: str,
     verbose: bool,
     *,
-    generate_options: Callable[[str, str, bool], str],
+    generate_options: Callable[..., str],
     announce_options: str,
     instruct_line1: str,
     instruct_line2: str,
     regen_hint_label: str,
     custom_prompt: str,
+    input_func=input,
 ) -> str:
     regen_hint = ""
     while True:
@@ -857,11 +1341,11 @@ def _interactive_codex_pick(
         combined = editorial_guidance
         if regen_hint:
             combined = f"{editorial_guidance}\nAdditional guidance: {regen_hint}".strip()
-        options_text = generate_options(article, editorial_guidance=combined, verbose=verbose)
+        options_text = generate_options(chapters, transcript, editorial_guidance=combined, verbose=verbose)
         print(f"\n{options_text}\n")
         print(instruct_line1)
         print(instruct_line2, end="", flush=True)
-        choice = input().strip().lower()
+        choice = input_func().strip().lower()
 
         if choice in ("1", "2", "3", "4", "5"):
             picked = _select_from_numbered_codex_output(options_text, choice)
@@ -869,20 +1353,23 @@ def _interactive_codex_pick(
                 return picked
         elif choice == "c":
             print(custom_prompt, end="", flush=True)
-            custom = input().strip()
+            custom = input_func().strip()
             if custom:
                 return custom
         elif choice == "r":
             print(regen_hint_label, end="", flush=True)
-            regen_hint = input().strip()
+            regen_hint = input_func().strip()
         else:
             print("Invalid choice, try again.")
 
 
-def pick_title(article: str, editorial_guidance: str = "", verbose: bool = False) -> str:
+def pick_title(
+    chapters: str, transcript: str, editorial_guidance: str = "", verbose: bool = False, input_func=input
+) -> str:
     """Present title options and let the user choose or regenerate."""
     return _interactive_codex_pick(
-        article,
+        chapters,
+        transcript,
         editorial_guidance,
         verbose,
         generate_options=generate_title_options,
@@ -891,13 +1378,17 @@ def pick_title(article: str, editorial_guidance: str = "", verbose: bool = False
         instruct_line2="or 'r' to regenerate with guidance: ",
         regen_hint_label="Enter guidance (e.g. 'focus more on security'): ",
         custom_prompt="Enter custom title: ",
+        input_func=input_func,
     )
 
 
-def pick_description(article: str, editorial_guidance: str = "", verbose: bool = False) -> str:
-    """Present description options and let the user choose or regenerate."""
+def pick_description(
+    chapters: str, transcript: str, editorial_guidance: str = "", verbose: bool = False, input_func=input
+) -> str:
+    """Present teaser options and let the user choose or regenerate."""
     return _interactive_codex_pick(
-        article,
+        chapters,
+        transcript,
         editorial_guidance,
         verbose,
         generate_options=generate_description_options,
@@ -906,4 +1397,5 @@ def pick_description(article: str, editorial_guidance: str = "", verbose: bool =
         instruct_line2="or 'r' to regenerate with guidance: ",
         regen_hint_label="Enter guidance: ",
         custom_prompt="Enter custom description: ",
+        input_func=input_func,
     )

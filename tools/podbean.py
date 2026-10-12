@@ -3,34 +3,35 @@
 import os
 import re
 import argparse
+import glob
 import hashlib
 import json
 import requests
 import mimetypes
 import datetime
 import sys
-import tempfile
-import subprocess
 import shutil
-import math
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
-from openai import OpenAI
 
+import voice_match
 from episode_pipeline import (
     ALLOWED_ARTICLE_TAGS,
+    AUTHOR_HOST,
+    PipelineStop,
     article_html_problems,
-    detect_guests,
+    correct_transcript,
     generate_article,
     guest_context_to_prompt_text,
     guest_full_names,
     load_raw_companion_markdown,
     load_guest_context,
-    normalize_operator_guest_notes,
+    operator_guest_context,
     pick_description,
     pick_title,
-    run_codex,
+    render_corrected_transcript,
+    research_guests,
     save_guest_context,
 )
 from episode_metadata import (
@@ -43,10 +44,23 @@ from episode_metadata import (
     readtime_for,
     youtube_description_warnings,
 )
-from buffer_announce import record_announcement_eligibility, schedule_episode_announcement
-from generate_cover import generate_cover
-from transcribe_local import format_turns, transcribe_local
+from buffer_announce import (
+    AnnouncementStop,
+    approve_episode_announcement,
+    episode_page_url,
+    load_announcement_eligibility,
+    preflight_buffer,
+    record_announcement_eligibility,
+    schedule_episode_announcement,
+)
+from generate_cover import draw_cover
+from transcribe_local import resolve_cli, transcribe_local
 from r2_staging import (
+    R2CoverError,
+    check_cover_lifecycle,
+    cover_public_url,
+    require_cover_client,
+    upload_cover_to_r2,
     load_r2_youtube_staging_marker,
     remove_r2_youtube_staging_marker,
     r2_public_uploads_configured,
@@ -613,6 +627,13 @@ def find_episode_page(episode_number: int) -> str | None:
     return str(matches[0]) if matches else None
 
 
+def episode_page_path(episode_number: int, title_short: str) -> str:
+    """Where ``write_episode_markdown`` writes: an existing page keeps its filename, and so its URL."""
+    return find_episode_page(episode_number) or os.path.join(
+        EPISODES_DIR, f"{episode_number:03d}-{title_to_url_safe(title_short)}.md"
+    )
+
+
 def _front_matter_blocks(text: str) -> tuple[list[tuple[str, list[str]]], str]:
     """Split a page into ordered (key, lines) front-matter blocks and the body."""
     lines = text.split("\n")
@@ -702,7 +723,7 @@ def write_episode_markdown(
                 front.append(f"lastmod: {now_iso}")
         front.extend(optional)
     else:
-        path = os.path.join(EPISODES_DIR, f"{episode_number:03d}-{title_to_url_safe(title_short)}.md")
+        path = episode_page_path(episode_number, title_short)
         page_datetime = publish_datetime or datetime.datetime.now().astimezone()
         date_iso = page_datetime.astimezone().replace(microsecond=0).isoformat()
         front = [
@@ -751,250 +772,101 @@ def write_episode_markdown(
     return path
 
 
-def compress_audio_for_transcription(audio_file_path, bitrate='32k', verbose=False):
+REQUIRED_TOOLS = ("ffmpeg", "ffprobe", "claude", "codex", "grok")
+
+
+def require_tools(draft_only: bool = False, which=shutil.which) -> None:
+    """Stop before any work when a CLI or file a later step needs is missing.
+
+    Each would otherwise stop the run only when its step comes up, after minutes
+    of transcription and questions. Grok only drafts the announcement.
     """
-    Compress audio file using ffmpeg to reduce file size for OpenAI transcription uploads.
-    
-    Args:
-        audio_file_path: Path to the audio file
-        bitrate: Target bitrate (default '32k' for 32kbps mono)
-        verbose: Whether to print verbose output
-    
-    Returns:
-        Path to compressed file
-    """
-    if not shutil.which('ffmpeg'):
-        print("Error: ffmpeg not found. Install with: brew install ffmpeg")
-        sys.exit(1)
-    
-    base_name = os.path.splitext(audio_file_path)[0]
-    compressed_file = f"{base_name}_compressed.mp3"
-    
-    original_size_mb = os.path.getsize(audio_file_path) / (1024 * 1024)
-    print(f"Compressing audio ({original_size_mb:.2f} MB) to {bitrate} mono...")
-    
-    cmd = [
-        'ffmpeg', '-i', audio_file_path,
-        '-ac', '1',  # Convert to mono
-        '-b:a', bitrate,  # Set bitrate
-        '-y',  # Overwrite output file
-        compressed_file
-    ]
-    
-    if not verbose:
-        cmd.extend(['-loglevel', 'error'])
-    
+    missing = [t for t in REQUIRED_TOOLS if not which(t) and not (draft_only and t == "grok")]
+    if missing:
+        raise PipelineStop(
+            f"required CLI(s) not on PATH: {', '.join(missing)}. See Prerequisites in tools/README.md."
+        )
     try:
-        subprocess.run(cmd, check=True, capture_output=not verbose)
-        
-        compressed_size_mb = os.path.getsize(compressed_file) / (1024 * 1024)
-        reduction = ((original_size_mb - compressed_size_mb) / original_size_mb) * 100
-        
-        print(f"Compressed: {original_size_mb:.2f} MB → {compressed_size_mb:.2f} MB ({reduction:.1f}% reduction)")
-        
-        return compressed_file
-    except subprocess.CalledProcessError as e:
-        print(f"Error compressing audio: {e}")
-        raise
+        resolve_cli()
+    except RuntimeError as e:
+        raise PipelineStop(str(e)) from e
+    try:
+        voice_match.load_host_voices()
+    except voice_match.VoicePrintError as e:
+        raise PipelineStop(str(e), checkpoint=voice_match.HOST_VOICES_PATH) from e
 
-
-TRANSCRIBE_BACKENDS = ("local", "openai")
-
-# gpt-4o-transcribe-diarize takes at most 1400s of audio per request. Chunks are
-# re-encoded to mono 32 kbps, which also keeps them far below the 25 MB cap.
-_DIARIZE_MODEL = "gpt-4o-transcribe-diarize"
-_DIARIZE_CHUNK_SECONDS = 1300
 
 TRANSCRIPT_SIDECAR_EXTENSIONS = (".vtt", ".txt")
 
-# Checkpoints built from the transcript; a newly saved transcript removes them.
-# Hand-written chapters and the Buffer post ledger are operator/remote state and stay.
-TRANSCRIPT_DERIVED_CHECKPOINTS = (
-    "-guests.json",
-    "-draft.md",
-    "-draft-v*.md",
-    "-review-*.md",
-    "-article.md",
-    "-metadata.json",
-    "-chapters-generated.txt",
-    "-announcement.json",
-    "-announcement.md",
+CHECKPOINT_INPUTS_SUFFIX = "-inputs.json"
+GUEST_LABELS_SUFFIX = "-guest-labels.json"
+# Local steps in pipeline order with the out/ files each writes. When a step's
+# inputs change, its files and every later step's go, so nothing outlives what
+# it was built from. Upload markers and the Buffer ledger are remote state: never here.
+CHECKPOINT_STEPS = (
+    ("transcription", (
+        "-asr.json", "-diarization.json", "-turns.json", "-local.txt", "-speakers.json", "-guest-labels.json",
+    )),
+    ("guests", ("-guests.json",)),
+    ("transcript", (
+        "-turns-corrected.json",
+        ".txt",
+        "-transcript-rewrite-*.json",
+        "-transcript-review-*.md",
+        "-transcript-review-limit.txt",
+    )),
+    ("chapters", ("-chapters-generated.txt",)),
+    ("title", ("-title.txt", "-description.txt")),
+    ("article", ("-draft.md", "-draft-v*.md", "-review-*.md", "-article.md")),
+    ("metadata", ("-metadata.json", "-youtube-description.txt")),
 )
 
 
-def get_audio_duration_seconds(audio_file_path):
-    """Return duration in seconds using ffprobe."""
-    if not shutil.which("ffprobe"):
-        print("Error: ffprobe not found. Install with: brew install ffmpeg")
-        sys.exit(1)
-    cmd = [
-        "ffprobe",
-        "-v",
-        "error",
-        "-show_entries",
-        "format=duration",
-        "-of",
-        "default=noprint_wrappers=1:nokey=1",
-        audio_file_path,
-    ]
-    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-    return float(result.stdout.strip())
+def inputs_fingerprint(*inputs) -> str:
+    """A short hash of JSON-serialisable step inputs."""
+    source = json.dumps(inputs, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(source.encode("utf-8")).hexdigest()[:16]
 
 
-def extract_audio_segment(
-    input_path, start_sec, duration_sec, output_path, verbose=False
-):
-    """Write [start_sec, start_sec + duration_sec) to output_path (mono 32k mp3)."""
-    if not shutil.which("ffmpeg"):
-        print("Error: ffmpeg not found. Install with: brew install ffmpeg")
-        sys.exit(1)
-    cmd = [
-        "ffmpeg",
-        "-y",
-        "-ss",
-        str(start_sec),
-        "-i",
-        input_path,
-        "-t",
-        str(duration_sec),
-        "-ac",
-        "1",
-        "-b:a",
-        "32k",
-        output_path,
-    ]
-    if not verbose:
-        cmd.extend(["-loglevel", "error"])
-    subprocess.run(cmd, check=True, capture_output=not verbose)
+def refresh_checkpoints(out_base: str, step: str, *inputs) -> list[str]:
+    """Record what ``step`` is built from, first discarding it and every later step if that changed.
 
-
-def transcribe_diarized(api_key, audio_path, verbose=False):
-    """Transcribe one chunk with gpt-4o-transcribe-diarize (streaming SSE)."""
-    import httpx
-
-    url = "https://api.openai.com/v1/audio/transcriptions"
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Accept": "text/event-stream",
-    }
-
-    chunking_strategy = json.dumps({
-        "type": "server_vad",
-        "prefix_padding_ms": 300,
-        "silence_duration_ms": 200,
-        "threshold": 0.5,
-    })
-
-    with open(audio_path, "rb") as audio_file:
-        files = [
-            ("file", (os.path.basename(audio_path), audio_file)),
-            ("model", (None, _DIARIZE_MODEL)),
-            ("language", (None, "en")),
-            ("response_format", (None, "diarized_json")),
-            ("chunking_strategy", (None, chunking_strategy)),
-            ("stream", (None, "true")),
-        ]
-
-        timeout = httpx.Timeout(600.0, read=None)
-        with httpx.Client(timeout=timeout) as http_client:
-            with http_client.stream("POST", url, headers=headers, files=files) as response:
-                try:
-                    response.raise_for_status()
-                except httpx.HTTPStatusError as exc:
-                    error_body = response.read()
-                    raise RuntimeError(
-                        f"Diarize API error {exc.response.status_code}: "
-                        f"{error_body.decode('utf-8', errors='replace')}"
-                    ) from exc
-
-                segments = []
-                full_text = ""
-                pending_data = []
-
-                for line in response.iter_lines():
-                    if not line:
-                        if pending_data:
-                            data = "\n".join(pending_data)
-                            pending_data.clear()
-                            if data == "[DONE]":
-                                break
-                            event = json.loads(data)
-                            if event["type"] == "transcript.text.segment":
-                                segments.append(event)
-                                if verbose:
-                                    speaker = event.get("speaker", "?")
-                                    print(f"  [{speaker}] {event['text'][:80]}")
-                            elif event["type"] == "transcript.text.done":
-                                full_text = event["text"]
-                        continue
-
-                    if line.startswith("data:"):
-                        pending_data.append(line[len("data:"):].strip())
-
-                if pending_data:
-                    data = "\n".join(pending_data)
-                    if data != "[DONE]":
-                        event = json.loads(data)
-                        if event["type"] == "transcript.text.done":
-                            full_text = event["text"]
-
-    if segments:
-        labeled_lines = []
-        current_speaker = None
-        for seg in segments:
-            speaker = seg.get("speaker", "Unknown")
-            text = seg.get("text", "").strip()
-            if speaker != current_speaker:
-                current_speaker = speaker
-                labeled_lines.append(f"\n[{speaker}]: {text}")
-            else:
-                labeled_lines.append(f" {text}")
-        transcript = "".join(labeled_lines).strip()
-        print(f"✓ Diarized chunk ({len(segments)} segments, {len(transcript)} chars)")
-        return transcript
-
-    if full_text:
-        print(f"✓ Transcribed chunk (no segments, {len(full_text)} chars)")
-        return full_text
-
-    raise ValueError("Empty response from diarize model")
-
-
-def transcribe_openai(client, audio_path, verbose=False):
-    """Transcribe with gpt-4o-transcribe-diarize, chunked under the per-request limit.
-
-    Speaker labels restart in every chunk, and no word timings come back, so
-    this backend writes no ``-turns.json``.
+    Called before the step runs, so its partial files (review rounds) resume.
+    A step with no recorded entry counts as changed. Returns the removed basenames.
     """
-    duration_sec = get_audio_duration_seconds(audio_path)
-    n_chunks = max(1, math.ceil(duration_sec / _DIARIZE_CHUNK_SECONDS))
-    chunk_len = duration_sec / n_chunks
-    print(f"Transcribing with {_DIARIZE_MODEL} ({duration_sec:.0f}s in {n_chunks} chunk(s))...")
+    fingerprint = inputs_fingerprint(*inputs)
+    record_file = out_base + CHECKPOINT_INPUTS_SUFFIX
+    recorded: dict = {}
+    if os.path.exists(record_file):
+        try:
+            with open(record_file, "r", encoding="utf-8") as f:
+                recorded = json.load(f)
+            if not isinstance(recorded, dict):
+                raise ValueError("not a JSON object")
+        except (OSError, ValueError) as e:
+            raise PipelineStop(
+                f"cannot read the step input record ({e}); delete it to rebuild every local step",
+                checkpoint=record_file,
+            ) from e
+    if recorded.get(step) == fingerprint:
+        return []
 
-    parts = []
-    tmpdir = tempfile.mkdtemp(prefix="podbean_transcribe_")
-    try:
-        for i in range(n_chunks):
-            chunk_path = os.path.join(tmpdir, f"chunk_{i:04d}.mp3")
-            extract_audio_segment(audio_path, i * chunk_len, chunk_len, chunk_path, verbose=verbose)
-            if n_chunks > 1:
-                print(f"  Chunk {i + 1}/{n_chunks}...")
-            parts.append(transcribe_diarized(client.api_key, chunk_path, verbose=verbose))
-    finally:
-        shutil.rmtree(tmpdir, ignore_errors=True)
-
-    transcript = "\n\n".join(parts)
-    print(f"✓ OpenAI transcript: {len(transcript)} chars")
-    return transcript
-
-
-def transcribe_backend() -> str:
-    """Which transcription backend to use: 'local' (default) or 'openai'."""
-    backend = os.environ.get("TRANSCRIBE_BACKEND", "local").strip().lower() or "local"
-    if backend not in TRANSCRIBE_BACKENDS:
-        print(f"Error: TRANSCRIBE_BACKEND must be 'local' or 'openai', got {backend!r}")
-        sys.exit(1)
-    return backend
+    names = [name for name, _ in CHECKPOINT_STEPS]
+    later = CHECKPOINT_STEPS[names.index(step):]
+    removed = []
+    for name, suffixes in later:
+        recorded.pop(name, None)
+        for suffix in suffixes:
+            for path in sorted(glob.glob(glob.escape(out_base) + suffix)):
+                os.remove(path)
+                removed.append(os.path.basename(path))
+    recorded[step] = fingerprint
+    with open(record_file, "w", encoding="utf-8") as f:
+        json.dump(recorded, f, indent=2)
+        f.write("\n")
+    if removed:
+        print(f"✓ {step} inputs changed; discarded: {', '.join(removed)}")
+    return removed
 
 
 def prompt_speaker_count(input_func=input) -> int | None:
@@ -1029,17 +901,253 @@ def prompt_speaker_count(input_func=input) -> int | None:
         print(f"⚠ '{raw}' is not a valid speaker count.")
 
 
-def transcribe(client, audio_path, out_base, backend, num_speakers=None, verbose=False) -> str:
-    """Transcribe and diarize with the given backend.
+def load_turns(out_base: str) -> list[dict]:
+    """The machine turns from ``-turns.json``; every later step is built from them."""
+    turns_file = f"{out_base}-turns.json"
+    try:
+        with open(turns_file, "r", encoding="utf-8") as f:
+            turns = json.load(f)
+    except (OSError, ValueError) as e:
+        raise PipelineStop(f"cannot read the transcript turns ({e})", checkpoint=turns_file) from e
+    if not isinstance(turns, list) or not turns:
+        raise PipelineStop("the transcript has no turns", checkpoint=turns_file)
+    return turns
 
-    The backend is passed in rather than re-read, so a transcript can never be
-    named for one backend and filled by the other.
+
+def load_or_transcribe(audio_path: str, out_base: str, skip_transcription: bool = False,
+                       verbose: bool = False, input_func=input) -> list[dict]:
+    """Transcribe and diarize locally unless this recording's turns are saved; returns the turns."""
+    turns_file = f"{out_base}-turns.json"
+    if skip_transcription:
+        if not os.path.isfile(turns_file):
+            raise PipelineStop("--skip-transcription, but there is no saved transcript", checkpoint=turns_file)
+        print(f"✓ Using saved transcript turns {turns_file}")
+        return load_turns(out_base)
+
+    refresh_checkpoints(
+        out_base, "transcription", audio_source_identity(audio_path)["sha256"], voice_match.fluidaudio_pin()
+    )
+    if os.path.isfile(turns_file):
+        print(f"✓ Loaded transcript turns from {turns_file}")
+        return load_turns(out_base)
+    num_speakers = prompt_speaker_count(input_func=input_func)
+    try:
+        machine_transcript = transcribe_local(audio_path, out_base, num_speakers=num_speakers, verbose=verbose)
+    except RuntimeError as e:
+        raise PipelineStop(f"local transcription failed: {e}", checkpoint=turns_file) from e
+    with open(f"{out_base}-local.txt", "w", encoding="utf-8") as f:
+        f.write(machine_transcript)
+    print(f"✓ Transcript turns saved to {turns_file}")
+    return load_turns(out_base)
+
+
+def named_machine_transcript(turns: list[dict], speaker_names: dict[str, str]) -> str:
+    """The machine turns as ``Name: text`` lines, ``[B]: text`` for a label not named yet."""
+    lines = []
+    for turn in turns:
+        label = str(turn.get("speaker") or "")
+        name = speaker_names.get(label) or f"[{label}]"
+        lines.append(f"{name}: {' '.join(str(turn.get('text') or '').split())}")
+    return "\n".join(lines)
+
+
+def confirm_speakers(audio_path: str, out_base: str, input_func=input) -> tuple[dict[str, str], list[dict]]:
+    """Hosts named by voice print and confirmed by the operator; returns them and the current turns."""
+    try:
+        host_names, _rediarized = voice_match.confirm_speakers(audio_path, out_base, input_func=input_func)
+    except voice_match.SpeakerConfirmationError as e:
+        raise PipelineStop(str(e), checkpoint=e.checkpoint or "") from e
+    # A re-diarization rewrote -turns.json; later steps read the new turns.
+    return host_names, load_turns(out_base)
+
+
+def _label_minutes(turns: list[dict]) -> dict[str, float]:
+    minutes: dict[str, float] = {}
+    for turn in turns:
+        label = str(turn.get("speaker") or "")
+        span = float(turn.get("end") or 0) - float(turn.get("start") or 0)
+        minutes[label] = minutes.get(label, 0.0) + max(span, 0.0) / 60
+    return minutes
+
+
+def _label_sample(turns: list[dict], label: str) -> str:
+    texts = [str(t.get("text") or "") for t in turns if str(t.get("speaker") or "") == label]
+    longest = max(texts, key=len, default="")
+    return " ".join(longest.split())[:160]
+
+
+def _guest_answer(raw: str) -> dict:
+    """``Jane Doe, CTO at Acme`` → name ``Jane Doe``, hint ``CTO at Acme`` for the research."""
+    name, hint = _split_operator_guest_chunk(raw)
+    return {"name": " ".join(name.split()), "hint": hint}
+
+
+def people_from_answers(answers: dict[str, str]) -> list[dict]:
+    """Distinct people in label order; the same name typed for two labels is one person."""
+    people: dict[str, dict] = {}
+    for label, raw in answers.items():
+        answer = _guest_answer(raw)
+        person = people.setdefault(answer["name"].casefold(), {"name": answer["name"], "hint": "", "labels": []})
+        person["labels"].append(label)
+        if answer["hint"] and answer["hint"] not in person["hint"]:
+            person["hint"] = "; ".join(x for x in (person["hint"], answer["hint"]) if x)
+    return list(people.values())
+
+
+def ask_guest_labels(out_base: str, turns: list[dict], labels: list[str], input_func=input) -> dict[str, str]:
+    """The operator's answer for each voice that is not a host."""
+    minutes = _label_minutes(turns)
+    print("\nName each voice that is not a host:")
+    answers: dict[str, str] = {}
+    for label in labels:
+        print(f"\n[{label}] {minutes.get(label, 0):.1f} min, e.g. \"{_label_sample(turns, label)}\"")
+        while True:
+            print(
+                f"Who is {label}? Full name, plus anything that helps find them (company, role, a link): ",
+                end="",
+                flush=True,
+            )
+            try:
+                raw = " ".join(input_func().split())
+            except EOFError:
+                raise PipelineStop(
+                    f"label {label} needs a name and no answer was given; re-run in a terminal",
+                    checkpoint=out_base + GUEST_LABELS_SUFFIX,
+                ) from None
+            if raw and _guest_answer(raw)["name"]:
+                answers[label] = raw
+                break
+            print("A name is required.")
+    return answers
+
+
+def _saved_guest_answers(labels_file: str, labels: list[str], turns_key: str) -> dict[str, str] | None:
+    try:
+        with open(labels_file, "r", encoding="utf-8") as f:
+            saved = json.load(f)
+        if saved.get("labels") == labels and saved.get("turns") == turns_key:
+            answers = saved["answers"]
+            if isinstance(answers, dict) and list(answers) == labels:
+                return {str(k): str(v) for k, v in answers.items()}
+    except (OSError, ValueError, TypeError, KeyError, AttributeError):
+        pass
+    return None
+
+
+def _handle_lines(guest: dict) -> str:
+    linkedin = " ".join(x for x in (guest.get("linkedin_name"), guest.get("linkedin_url")) if x)
+    x_handle = f"@{guest['x_handle']}" if guest.get("x_handle") else ""
+    threads = f"@{guest['threads_handle']}" if guest.get("threads_handle") else ""
+    if not (linkedin or x_handle or threads):
+        return "not found — credited in plain text"
+    return "  ".join(
+        f"{network}: {value or 'not found'}"
+        for network, value in (("LinkedIn", linkedin), ("X", x_handle), ("Threads", threads))
+    )
+
+
+def confirm_guests(people: list[dict], guest_context: dict, transcript: str, guidance: str,
+                   raw_notes: str, verbose: bool = False, input_func=input) -> dict:
+    """Show what research found; a correction looks that guest up again."""
+    while True:
+        print("\nGuests:")
+        for i, (person, guest) in enumerate(zip(people, guest_context["guests"]), 1):
+            detail = ", ".join(x for x in (guest.get("role"), guest.get("company")) if x)
+            print(f"  {i}. {guest['full_name']} ({', '.join(person['labels'])})" + (f" — {detail}" if detail else ""))
+            print(f"     {_handle_lines(guest)}")
+        print("Enter accepts; or type a guest number and a correction to look them up again: ", end="", flush=True)
+        try:
+            raw = input_func().strip()
+        except EOFError:
+            print("\n(no input available — accepting the guests)")
+            return guest_context
+        if not raw:
+            return guest_context
+        number, _, correction = raw.partition(" ")
+        if not (number.isdigit() and 1 <= int(number) <= len(people) and correction.strip()):
+            print("⚠ Type a guest number, a space, then the correction (company, role, a link).")
+            continue
+        index = int(number) - 1
+        person = people[index]
+        person["hint"] = "; ".join(x for x in (person["hint"], correction.strip()) if x)
+        redone = research_guests([person], transcript, guidance, raw_notes, verbose)
+        guests = list(guest_context["guests"])
+        guests[index] = redone["guests"][0]
+        guest_context = {**guest_context, "guests": guests}
+
+
+def identify_guests(out_base: str, turns: list[dict], host_names: dict[str, str], guidance: str,
+                    raw_notes: str, verbose: bool = False, input_func=input) -> tuple[dict, dict[str, str]]:
+    """Step 4: the operator names every voice that is not a host; research only looks them up.
+
+    Returns the guest context and every label's name. A host name typed here
+    names that label as the host.
     """
-    if backend == "local":
-        return transcribe_local(audio_path, out_base, num_speakers=num_speakers, verbose=verbose)
-    if client is None:
-        raise RuntimeError("TRANSCRIBE_BACKEND=openai needs an OpenAI client (set OPENAI_API_KEY)")
-    return transcribe_openai(client, audio_path, verbose=verbose)
+    labels = list(dict.fromkeys(str(t.get("speaker") or "") for t in turns))
+    others = [label for label in labels if label not in host_names]
+    labels_file = out_base + GUEST_LABELS_SUFFIX
+    guests_file = f"{out_base}-guests.json"
+    turns_key = inputs_fingerprint(turns)
+
+    answers = None
+    saved = _saved_guest_answers(labels_file, others, turns_key) if others else None
+    if saved is not None:
+        known = {}
+        try:
+            known = {g["full_name"].casefold(): g for g in load_guest_context(guests_file)["guests"]}
+        except (OSError, ValueError):
+            pass
+        summary = []
+        for label, raw in saved.items():
+            name = _guest_answer(raw)["name"]
+            company = (known.get(name.casefold()) or {}).get("company")
+            summary.append(f"{label}={name}" + (f" ({company})" if company else ""))
+        print(f"\nFound saved guests: {', '.join(summary)}. Enter reuses, 'new' asks again: ", end="", flush=True)
+        try:
+            reuse = input_func().strip().lower() != "new"
+        except EOFError:
+            reuse = True
+        if reuse:
+            answers = saved
+    if answers is None:
+        answers = ask_guest_labels(out_base, turns, others, input_func) if others else {}
+        with open(labels_file, "w", encoding="utf-8") as f:
+            json.dump({"labels": others, "turns": turns_key, "answers": answers}, f, indent=2, ensure_ascii=False)
+            f.write("\n")
+
+    speaker_names = dict(host_names)
+    guest_answers = {}
+    for label, raw in answers.items():
+        host = voice_match.canonical_host(_guest_answer(raw)["name"])
+        if host:
+            speaker_names[label] = host
+        else:
+            guest_answers[label] = raw
+    people = people_from_answers(guest_answers)
+    for person in people:
+        for label in person["labels"]:
+            speaker_names[label] = person["name"]
+    hosts_present = voice_match.hosts_present(speaker_names)
+
+    refresh_checkpoints(out_base, "guests", answers, host_names, raw_notes)
+    guest_context = None
+    if os.path.exists(guests_file):
+        try:
+            saved_context = load_guest_context(guests_file)
+            if guest_full_names(saved_context) == [p["name"] for p in people]:
+                guest_context = saved_context
+        except (OSError, ValueError):
+            pass
+    if guest_context is None:
+        guest_context = operator_guest_context([])
+        if people:
+            transcript = named_machine_transcript(turns, speaker_names)
+            guest_context = research_guests(people, transcript, guidance, raw_notes, verbose)
+            guest_context = confirm_guests(people, guest_context, transcript, guidance, raw_notes, verbose, input_func)
+    guest_context = {**guest_context, "hosts_present": hosts_present, "andrey_present": AUTHOR_HOST in hosts_present}
+    save_guest_context(guests_file, guest_context)
+    print(f"✓ Guests saved to {guests_file}")
+    return guest_context, speaker_names
 
 
 def parse_vtt(vtt_path: str) -> str:
@@ -1098,175 +1206,17 @@ def read_provided_transcript(path: str) -> str:
         return f.read()
 
 
-def merge_transcripts_with_codex(machine_transcript: str, provided_transcript: str, verbose=False) -> str:
-    """Merge the machine and provided transcripts using Codex, with no web access."""
-    prompt = """Merge two transcripts of the same podcast episode into the best possible final transcript.
-
-Work only from the provided transcript and the machine transcript. Do not use web search.
-Preserve speaker labels and timestamps where present. Clean up mistranscriptions,
-obvious misspeaks, dropped words, and formatting inconsistencies. Prefer the provided
-transcript for structure when it is cleaner, but use the machine transcript to recover
-missing or mistranscribed content.
-
-Output the merged transcript only. Do not add commentary, headings, markdown fences,
-or notes.
-"""
-    stdin_text = (
-        "--- PROVIDED TRANSCRIPT ---\n"
-        f"{provided_transcript}\n\n"
-        "--- MACHINE TRANSCRIPT ---\n"
-        f"{machine_transcript}\n"
-    )
-    return run_codex(prompt, stdin_text=stdin_text, verbose=verbose)
-
-
-def invalidate_transcript_checkpoints(out_base: str) -> list[str]:
-    """Delete checkpoints derived from an earlier transcript; returns what was removed."""
-    removed: list[str] = []
-    parent, prefix = os.path.split(out_base)
-    for suffix in TRANSCRIPT_DERIVED_CHECKPOINTS:
-        for path in sorted(Path(parent or ".").glob(f"{prefix}{suffix}")):
-            path.unlink()
-            removed.append(path.name)
-    if removed:
-        print(f"New transcript: removed stale checkpoint(s): {', '.join(removed)}")
-    return removed
-
-
-def _sha256_text(text: str) -> str:
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()
-
-
-def save_transcript_source(out_base: str, backend: str, transcript: str,
-                           machine_transcript: str, provided_path: str | None) -> None:
-    """Record which backend produced out/episodeNNN.txt, binding ``-turns.json`` to it.
-
-    Turns are bound only when they render exactly to the local machine
-    transcript, so a turns file left over from another run or backend never is.
-    """
-    turns_sha = None
-    turns_file = f"{out_base}-turns.json"
-    if backend == "local" and os.path.isfile(turns_file):
-        with open(turns_file, "rb") as f:
-            raw = f.read()
-        try:
-            turns = json.loads(raw)
-            if format_turns(turns) == machine_transcript:
-                turns_sha = hashlib.sha256(raw).hexdigest()
-        except (ValueError, TypeError, KeyError):
-            pass
-        if turns_sha is None:
-            print(f"⚠ {os.path.basename(turns_file)} does not match the local transcript; not using its timings.")
-    with open(f"{out_base}-transcript-source.json", "w", encoding="utf-8") as f:
-        json.dump({
-            "backend": backend,
-            "transcript_sha256": _sha256_text(transcript),
-            "turns_sha256": turns_sha,
-            "provided_transcript": os.path.basename(provided_path) if provided_path else None,
-        }, f, indent=2)
-        f.write("\n")
-
-
-def load_transcript_turns(out_base: str, transcript: str) -> list[dict] | None:
-    """Timestamped turns for ``transcript``, or None when none are bound to it.
-
-    None for the openai backend, ``--transcript``, legacy transcripts, and any
-    turns file that changed since the transcript was saved.
-    """
+def load_reference_text(transcript_arg: str | None, audio_path: str, input_func=input) -> str:
+    """``--transcript`` or a Riverside sidecar, given to the correction as spelling reference only."""
+    path = transcript_arg or select_provided_transcript(audio_path, input_func=input_func)
+    if not path:
+        return ""
     try:
-        with open(f"{out_base}-transcript-source.json", "r", encoding="utf-8") as f:
-            source = json.load(f)
-        if source.get("transcript_sha256") != _sha256_text(transcript) or not source.get("turns_sha256"):
-            return None
-        with open(f"{out_base}-turns.json", "rb") as f:
-            raw = f.read()
-        if hashlib.sha256(raw).hexdigest() != source["turns_sha256"]:
-            return None
-        return json.loads(raw)
-    except (OSError, ValueError, TypeError, AttributeError):
-        return None
-
-
-def adopt_external_transcript(out_base: str, transcript: str, source_path: str) -> bool:
-    """Save a ``--transcript`` file as out/episodeNNN.txt; True when that changed it.
-
-    A change clears the derived checkpoints like a new machine transcript, and
-    the ``external`` backend binds no turns.
-    """
-    transcript_file = f"{out_base}.txt"
-    try:
-        with open(transcript_file, "r", encoding="utf-8") as f:
-            if f.read() == transcript:
-                return False
-    except OSError:
-        pass
-    with open(transcript_file, "w", encoding="utf-8") as f:
-        f.write(transcript)
-    save_transcript_source(out_base, "external", transcript, transcript, source_path)
-    invalidate_transcript_checkpoints(out_base)
-    print(f"✓ Transcript saved to {transcript_file}")
-    return True
-
-
-def load_or_create_transcript(client, audio_path: str, out_base: str, verbose=False, input_func=input) -> str:
-    """Build out/episodeNNN.txt: machine transcript, merged with a sidecar when one exists."""
-    backend = transcribe_backend()
-    transcript_file = f"{out_base}.txt"
-    # Backend-specific so an A/B run keeps both raw transcripts side by side.
-    machine_file = f"{out_base}-{backend}.txt"
-
-    machine_transcript = None
-    if os.path.exists(machine_file):
-        print(
-            f"\nFound saved {backend} transcript {os.path.basename(machine_file)}. "
-            "Press Enter to reuse, or type 'new' to transcribe again: ",
-            end="",
-            flush=True,
-        )
-        try:
-            answer = input_func().strip().lower()
-        except EOFError:
-            answer = ""
-        if answer != "new":
-            with open(machine_file, "r", encoding="utf-8") as f:
-                machine_transcript = f.read()
-            print(f"✓ Loaded {backend} transcript from {machine_file}")
-
-    if machine_transcript is None:
-        other = "openai" if backend == "local" else "local"
-        other_file = f"{out_base}-{other}.txt"
-        if os.path.exists(other_file):
-            print(
-                f"Note: {os.path.basename(other_file)} exists but was produced by the "
-                f"{other} backend; transcribing again with {backend}."
-            )
-        num_speakers = prompt_speaker_count(input_func=input_func) if backend == "local" else None
-        machine_transcript = transcribe(
-            client, audio_path, out_base, backend, num_speakers=num_speakers, verbose=verbose
-        )
-        with open(machine_file, "w", encoding="utf-8") as f:
-            f.write(machine_transcript)
-        print(f"✓ {backend.capitalize()} transcript saved to {machine_file}")
-
-    transcript = machine_transcript
-    provided_path = select_provided_transcript(audio_path, input_func=input_func)
-    if provided_path:
-        provided_transcript = read_provided_transcript(provided_path)
-        provided_file = f"{out_base}-provided-transcript.txt"
-        with open(provided_file, "w", encoding="utf-8") as f:
-            f.write(provided_transcript)
-        print(f"✓ Provided transcript captured from {provided_path} -> {provided_file}")
-        print(f"Merging provided transcript with {backend} transcript using Codex...")
-        transcript = merge_transcripts_with_codex(machine_transcript, provided_transcript, verbose=verbose)
-
-    # Transcript first: a crash before invalidation leaves stale checkpoints
-    # next to the new transcript, never deleted ones with no transcript.
-    with open(transcript_file, "w", encoding="utf-8") as f:
-        f.write(transcript)
-    save_transcript_source(out_base, backend, transcript, machine_transcript, provided_path)
-    invalidate_transcript_checkpoints(out_base)
-    print(f"✓ Transcript saved to {transcript_file}")
-    return transcript
+        text = read_provided_transcript(path)
+    except OSError as e:
+        raise PipelineStop(f"cannot read the reference transcript {path}: {e}") from e
+    print(f"✓ Reference transcript for the correction: {os.path.basename(path)}")
+    return text
 
 
 # get podbean auth token
@@ -1494,61 +1444,6 @@ def _split_operator_guest_chunk(chunk: str) -> tuple[str, str]:
     return name, details
 
 
-def _operator_details_to_fields(details: str) -> tuple[str, str, str]:
-    """Convert loose role/company details into structured fields."""
-    details = details.strip()
-    clean_details = re.sub(r"https?://\S+", "", details).strip(" ,.;")
-    if not clean_details:
-        return "", "", ""
-
-    if "@" in clean_details:
-        role, company = clean_details.split("@", 1)
-        return role.strip(" ,.;"), company.strip(" ,.;"), ""
-
-    org_match = re.match(r"(.+?)\s+(?:at|from|for)\s+(.+)$", clean_details, flags=re.I)
-    if org_match:
-        return org_match.group(1).strip(" ,.;"), org_match.group(2).strip(" ,.;"), ""
-
-    tokens = clean_details.split()
-    role_tokens: list[str] = []
-    for token in tokens:
-        key = token.strip(".,:;()[]{}").casefold()
-        if key in GUEST_ROLE_STARTERS or key in {"&", "and", "of"}:
-            role_tokens.append(token)
-            continue
-        break
-
-    if len(role_tokens) >= 2 and len(role_tokens) < len(tokens):
-        company = " ".join(tokens[len(role_tokens) :]).strip(" ,.;")
-        return " ".join(role_tokens).strip(" ,.;"), company, ""
-
-    return "", "", details
-
-
-def _repair_guest_context_names(guest_context: dict) -> dict:
-    """Fix old operator checkpoints where full_name accidentally included role/company."""
-    for guest in guest_context.get("guests") or []:
-        if not isinstance(guest, dict):
-            continue
-        full_name = str(guest.get("full_name") or "").strip()
-        participant_name = str(guest.get("participant_name") or "").strip()
-        if not full_name or (participant_name and participant_name != full_name):
-            continue
-        name, details = _split_operator_guest_chunk(full_name)
-        if not details or name == full_name:
-            continue
-        guest["full_name"] = name
-        guest["participant_name"] = name
-        role, company, summary = _operator_details_to_fields(details)
-        if role and not str(guest.get("role") or "").strip():
-            guest["role"] = role
-        if company and not str(guest.get("company") or "").strip():
-            guest["company"] = company
-        if summary and not str(guest.get("professional_summary") or "").strip():
-            guest["professional_summary"] = summary
-    return guest_context
-
-
 def _text_includes_guest_names(text: str, guest_context: dict) -> bool:
     required = guest_full_names(guest_context)
     if not required:
@@ -1571,227 +1466,7 @@ def _participants_for_episode(arg: str | None, guest_context: dict) -> list[str]
     return participants
 
 
-def _guest_context_needs_operator(guest_context: dict) -> bool:
-    if guest_context.get("status") == "needs_operator":
-        return True
-    for guest in guest_context.get("guests") or []:
-        if isinstance(guest, dict) and guest.get("needs_operator"):
-            return True
-    return False
-
-
-def _fallback_manual_guest_context(raw: str) -> dict:
-    guests: list[dict] = []
-    for chunk in re.split(r"\s*;\s*", raw):
-        chunk = chunk.strip()
-        if not chunk:
-            continue
-        name, details = _split_operator_guest_chunk(chunk)
-        if not name:
-            continue
-        urls = re.findall(r"https?://\S+", details)
-        links = [
-            {"label": url.rstrip(".,)"), "url": url.rstrip(".,)"), "type": "operator"}
-            for url in urls
-        ]
-        role, company, summary = _operator_details_to_fields(details)
-        guests.append(
-            {
-                "full_name": name,
-                "participant_name": name,
-                "role": role,
-                "company": company,
-                "professional_summary": summary,
-                "links": links,
-                "confidence": "operator",
-                "needs_operator": False,
-                "question": "",
-            }
-        )
-    if guests:
-        return {
-            "status": "verified",
-            "guests": guests,
-            "notes": "Guest context provided by operator.",
-        }
-    return {"status": "needs_operator", "guests": [], "notes": "Could not parse guest names."}
-
-
-def _manual_guest_context_from_operator(guest_context: dict, verbose: bool = False) -> dict:
-    print("\nGuest lookup needs clarification.")
-    notes = str(guest_context.get("notes") or "").strip()
-    if notes:
-        print(f"Notes: {notes}")
-    for guest in guest_context.get("guests") or []:
-        if not isinstance(guest, dict):
-            continue
-        question = str(guest.get("question") or "").strip()
-        full_name = str(guest.get("full_name") or "Unknown guest").strip()
-        if question:
-            print(f"- {full_name}: {question}")
-
-    while True:
-        print(
-            "Enter guest context as free-form text with names, roles, companies, and links. "
-            "Type 'none' if there are no guests."
-        )
-        print("> ", end="", flush=True)
-        raw = input().strip()
-        if not raw:
-            print("Guest clarification is required to continue.")
-            continue
-        if raw.lower() in ("none", "no", "no guests"):
-            return {"status": "no_guests", "guests": [], "notes": "Operator reported no guests."}
-
-        try:
-            normalized = normalize_operator_guest_notes(raw, guest_context, verbose=verbose)
-        except Exception as e:
-            print(f"⚠ Could not normalize guest context with Claude ({e}); using local parser.")
-            normalized = _fallback_manual_guest_context(raw)
-        normalized = _repair_guest_context_names(normalized)
-        if normalized.get("guests"):
-            return normalized
-        print("Could not parse a guest name. Try again.")
-
-
-def _load_or_detect_guest_context(
-    guest_context_file: str,
-    transcript: str,
-    guidance: str,
-    raw_notes: str,
-    verbose: bool,
-) -> dict:
-    guest_context: dict | None = None
-    if os.path.exists(guest_context_file):
-        try:
-            saved = load_guest_context(guest_context_file)
-            names = guest_full_names(saved)
-            summary = ", ".join(names) if names else "no guests"
-            print(f'\nFound saved guest context: {summary}')
-            print("Press Enter to reuse, or type 'new' to refresh guest lookup: ", end="", flush=True)
-            if input().strip().lower() != "new":
-                guest_context = _repair_guest_context_names(saved)
-        except Exception as e:
-            print(f"⚠ Could not read saved guest context ({e}); regenerating")
-
-    if guest_context is None:
-        guest_context = detect_guests(
-            transcript,
-            editorial_guidance=guidance,
-            raw_notes=raw_notes,
-            verbose=verbose,
-        )
-
-    if _guest_context_needs_operator(guest_context):
-        hosts_present = guest_context.get("hosts_present") or []
-        guest_context = _manual_guest_context_from_operator(guest_context, verbose=verbose)
-        if not guest_context.get("hosts_present"):
-            guest_context["hosts_present"] = hosts_present
-    guest_context = _repair_guest_context_names(guest_context)
-
-    save_guest_context(guest_context_file, guest_context)
-    print(f"✓ Guest context saved to {guest_context_file}")
-    return guest_context
-
-
-def process_audio(audio_path: str, args, client: OpenAI | None) -> None:
-    """Run full pipeline for one mp3."""
-    audio_path = os.path.abspath(audio_path)
-    stem = Path(audio_path).stem
-    os.makedirs(OUT_DIR, exist_ok=True)
-
-    print(f"\n{'='*60}")
-    print(f"Audio: {audio_path}")
-    print(f"File stem: {stem}")
-    print(f"{'='*60}")
-
-    client_id = os.environ.get("PODBEAN_CLIENT_ID")
-    client_secret = os.environ.get("PODBEAN_CLIENT_SECRET")
-    if not client_id or not client_secret:
-        print("Error: PODBEAN_CLIENT_ID and PODBEAN_CLIENT_SECRET must be set")
-        sys.exit(1)
-
-    publish_schedule = None
-
-    print("Authenticating with Podbean...")
-    auth_token = get_podbean_auth_token(client_id, client_secret)
-    print("✓ Authenticated")
-
-    podbean_episode_data = get_podbean_episodes(auth_token)
-    episode_plan = episode_plan_from_podbean_response(podbean_episode_data)
-    if args.episode_number is not None and args.episode_number < 1:
-        print("Error: --episode-number must be greater than zero")
-        sys.exit(1)
-    audio_resume = (
-        None
-        if args.episode_number is not None or args.scan
-        else confirm_resume_for_audio(audio_path, episode_plan.next_episode_number)
-    )
-    inferred_resume = (
-        None
-        if args.episode_number is not None or args.scan or audio_resume is not None
-        else infer_resume_episode_number(episode_plan.next_episode_number)
-    )
-    episode_number = (
-        args.episode_number or audio_resume or inferred_resume or episode_plan.next_episode_number
-    )
-    existing_episode = find_podbean_episode(podbean_episode_data, episode_number)
-    if args.episode_number is not None or audio_resume is not None:
-        print(f"✓ Resuming episode number: {episode_number}")
-    elif inferred_resume is not None:
-        print(f"✓ Automatically resuming unfinished episode #{episode_number}")
-    else:
-        print(f"✓ Next episode number (from Podbean episodes): {episode_number}")
-
-    if existing_episode:
-        if str(existing_episode.get("status") or "").strip().lower() == "draft" and not args.draft_only:
-            print(
-                f"Error: Podbean episode #{episode_number} is still a draft; "
-                "a future timestamp alone does not schedule publication. "
-                "Schedule it or publish it in the Podbean dashboard, then re-run "
-                f"with --episode-number {episode_number} to resume.",
-                file=sys.stderr,
-            )
-            sys.exit(1)
-        publish_schedule = publish_schedule_from_podbean_episode(existing_episode)
-        if publish_schedule:
-            print(f"✓ Preserved existing Podbean schedule: {publish_schedule.display}")
-
-    out_base = os.path.join(OUT_DIR, checkpoint_prefix(episode_number))
-    print(f"✓ Checkpoints under: {out_base}-*.txt|.md")
-
-    checkpoint_files = sorted(Path(OUT_DIR).glob(f"{checkpoint_prefix(episode_number)}*"))
-    # The source marker itself is metadata, not evidence of reusable content.
-    reusable_checkpoint_files = [
-        path for path in checkpoint_files if path.name != f"{checkpoint_prefix(episode_number)}-source.json"
-    ]
-    try:
-        validate_or_bind_checkpoint_source(
-            out_base,
-            audio_path,
-            reusable_checkpoint_files,
-        )
-    except ValueError as e:
-        print(f"Error: {e}")
-        sys.exit(1)
-    if reusable_checkpoint_files:
-        print(
-            f"✓ Found {len(reusable_checkpoint_files)} existing checkpoint file(s); "
-            f"resuming episode #{episode_number}"
-        )
-
-    transcript_file = f"{out_base}.txt"
-    title_file = f"{out_base}-title.txt"
-    description_file = f"{out_base}-description.txt"
-    guidance_file = f"{out_base}-guidance.txt"
-    guest_context_file = f"{out_base}-guests.json"
-    youtube_url_file = f"{out_base}-youtube-url.txt"
-    youtube_scheduled_file = f"{out_base}-youtube-scheduled.txt"
-    youtube_staging_marker = f"{out_base}-r2-youtube-staging.txt"
-    podbean_upload_checkpoint = f"{out_base}-podbean-upload.json"
-
-    # Editorial guidance
-    guidance = args.guidance
+def _load_or_prompt_guidance(guidance_file: str, guidance: str | None) -> str:
     if guidance is None:
         if os.path.exists(guidance_file):
             with open(guidance_file, "r", encoding="utf-8") as f:
@@ -1808,244 +1483,222 @@ def process_audio(audio_path: str, args, client: OpenAI | None) -> None:
         with open(guidance_file, "w", encoding="utf-8") as f:
             f.write(guidance)
         print(f"✓ Guidance saved to {guidance_file}")
+    return guidance
 
-    raw_notes, raw_note_names = load_raw_companion_markdown(audio_path)
-    if raw_note_names:
-        print(f"✓ Companion show notes: {', '.join(raw_note_names)}")
 
-    # Transcript
-    if args.transcript:
-        with open(args.transcript, "r", encoding="utf-8") as f:
-            transcript = f.read()
-        print(f"✓ Loaded transcript from {args.transcript}")
-        adopt_external_transcript(out_base, transcript, args.transcript)
-    elif os.path.exists(transcript_file):
-        with open(transcript_file, "r", encoding="utf-8") as f:
-            transcript = f.read()
-        print(f"✓ Loaded existing transcript {transcript_file}")
-    elif args.skip_transcription:
-        print(f"Error: --skip-transcription but no transcript at {transcript_file} (use -t)")
-        sys.exit(1)
-    else:
-        transcript = load_or_create_transcript(client, audio_path, out_base, verbose=args.verbose)
+def _load_or_pick(kind: str, path: str, given: str | None, guest_context: dict, pick) -> str:
+    """The title or teaser: ``given`` (CLI), else the saved pick, else a new Codex pick.
 
-    guest_context = _load_or_detect_guest_context(
-        guest_context_file,
-        transcript,
-        guidance,
-        raw_notes,
-        args.verbose,
-    )
-    guest_prompt_text = guest_context_to_prompt_text(guest_context)
-    article_guidance = "\n\n".join(x for x in (guidance, guest_prompt_text) if x).strip()
-
-    article_md = generate_article(
-        transcript,
-        out_base,
-        editorial_guidance=article_guidance,
-        raw_notes=raw_notes,
-        verbose=args.verbose,
-    )
-    html_problems = article_html_problems(article_md)
-    if html_problems:
-        print(f"Error: the article carries HTML the episode page does not allow "
-              f"({', '.join(sorted(ALLOWED_ARTICLE_TAGS))} only):")
-        for problem in html_problems:
-            print(f"  - {problem}")
-        print(f"Fix {out_base}-article.md, then re-run. Nothing was uploaded.")
-        sys.exit(1)
-
-    if args.draft_only:
-        print(f"\nDraft-only: done. Article: {out_base}-article.md")
-        return
-
-    # Title
-    title = (args.title or "").strip() or None
-    if title and not _text_includes_guest_names(title, guest_context):
-        print(
-            "Error: --title must include guest full name(s): "
-            + ", ".join(guest_full_names(guest_context))
-        )
-        sys.exit(1)
-    if not title and os.path.exists(title_file):
-        with open(title_file, "r", encoding="utf-8") as f:
-            saved_t = f.read().strip()
-        print(f'\nFound saved title: "{saved_t}"')
-        if not _text_includes_guest_names(saved_t, guest_context):
-            print("Saved title does not include guest full name(s); picking again.")
+    Each must name every guest in full; a saved one that does not is picked again.
+    """
+    guests = ", ".join(guest_full_names(guest_context))
+    value = (given or "").strip() or None
+    if value and not _text_includes_guest_names(value, guest_context):
+        raise PipelineStop(f"--{kind} must include guest full name(s): {guests}")
+    if not value and os.path.exists(path):
+        with open(path, "r", encoding="utf-8") as f:
+            saved = f.read().strip()
+        if not _text_includes_guest_names(saved, guest_context):
+            print(f"\nSaved {kind} does not include guest full name(s); picking again.")
         else:
+            print(f'\nFound saved {kind}: "{saved}"')
             print("Press Enter to reuse, or type 'new' to pick again: ", end="", flush=True)
-        if _text_includes_guest_names(saved_t, guest_context) and input().strip().lower() != "new":
-            title = saved_t
-    if not title:
-        while not title:
-            picked_title = pick_title(
-                article_md, editorial_guidance=article_guidance, verbose=args.verbose
-            )
-            if _text_includes_guest_names(picked_title, guest_context):
-                title = picked_title
-            else:
-                print(
-                    "Picked title is missing guest full name(s): "
-                    + ", ".join(guest_full_names(guest_context))
-                )
-    with open(title_file, "w", encoding="utf-8") as f:
-        f.write(title)
-    print(f"✓ Title: {title}")
-    if len(title) > TITLE_TARGET_CHARS:
-        # Guest names are required, so the length target is advisory only.
-        print(f"⚠ Title is {len(title)} chars (target under {TITLE_TARGET_CHARS}); kept as picked.")
-
-    # Short teaser description (Podbean + above-the-fold)
-    description = (args.description or "").strip() or None
-    if description and not _text_includes_guest_names(description, guest_context):
-        print(
-            "Error: --description must include guest full name(s): "
-            + ", ".join(guest_full_names(guest_context))
-        )
-        sys.exit(1)
-    if not description and os.path.exists(description_file):
-        with open(description_file, "r", encoding="utf-8") as f:
-            saved_d = f.read().strip()
-        if not _text_includes_guest_names(saved_d, guest_context):
-            print("\nSaved description does not include guest full name(s); picking again.")
+            if input().strip().lower() != "new":
+                value = saved
+    while not value:
+        picked = pick()
+        if _text_includes_guest_names(picked, guest_context):
+            value = picked
         else:
-            print(f"\nFound saved description ({len(saved_d)} chars). Press Enter to reuse, or 'new': ", end="", flush=True)
-        if _text_includes_guest_names(saved_d, guest_context) and input().strip().lower() != "new":
-            description = saved_d
-    if not description:
-        while not description:
-            picked_description = pick_description(
-                article_md, editorial_guidance=article_guidance, verbose=args.verbose
-            )
-            if _text_includes_guest_names(picked_description, guest_context):
-                description = picked_description
-            else:
-                print(
-                    "Picked description is missing guest full name(s): "
-                    + ", ".join(guest_full_names(guest_context))
-                )
-    with open(description_file, "w", encoding="utf-8") as f:
-        f.write(description)
-    print("✓ Description saved")
+            print(f"Picked {kind} is missing guest full name(s): {guests}")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(value)
+    return value
 
-    # Packaging runs before anything remote, so a failure here uploads nothing.
-    chapters = load_or_generate_chapters(
-        out_base, article_md, load_transcript_turns(out_base, transcript), verbose=args.verbose,
-    )
-    metadata = load_or_generate_metadata(
-        out_base, title, description, article_md, transcript,
-        guest_context=guest_context, guest_text=guest_prompt_text, verbose=args.verbose,
-    )
+
+def youtube_upload_done(out_base: str, args) -> bool:
+    """The video needs no upload: already uploaded or scheduled, given, or opted out."""
+    for marker in (f"{out_base}-youtube-url.txt", f"{out_base}-youtube-scheduled.txt"):
+        if os.path.isfile(marker):
+            with open(marker, "r", encoding="utf-8") as f:
+                if f.read().strip():
+                    return True
+    return bool((args.youtube or "").strip()) or args.skip_youtube_upload
+
+
+def resolve_video_source(args, audio_path: str) -> str | None:
+    """A video URL for upload-post, or the local companion video; None when there is neither."""
+    override = (args.youtube_video_url or os.environ.get("UPLOAD_POST_VIDEO_URL") or "").strip()
+    if override:
+        return override
+    video = args.video or find_companion_video(audio_path)
+    return video if video and os.path.isfile(video) else None
+
+
+def announcement_expected(out_base: str, existing_episode: dict | None) -> bool:
+    """Buffer runs for an episode this run creates on Podbean, or one an earlier run created."""
+    return existing_episode is None or load_announcement_eligibility(out_base) is not None
+
+
+def require_publishing_prerequisites(args, audio_path: str, out_base: str, existing_episode: dict | None) -> None:
+    """Stop before the questions when an upload or post that will run cannot.
+
+    A finished upload (its marker) needs neither its source nor its keys.
+    """
+    problems: list[str] = []
+    if not youtube_upload_done(out_base, args):
+        if not (os.environ.get("UPLOAD_POST_API_KEY") and os.environ.get("UPLOAD_POST_USER")):
+            problems.append("UPLOAD_POST_API_KEY / UPLOAD_POST_USER are not set (YouTube upload)")
+        video = resolve_video_source(args, audio_path)
+        if not video:
+            problems.append(
+                f"no video for {os.path.basename(audio_path)}: put the .mp4/.mov/.mkv next to it, "
+                "or pass --video, --youtube-video-url, --youtube URL or --skip-youtube-upload"
+            )
+        elif (
+            not video.lower().startswith(("http://", "https://"))
+            and wants_r2_staging_for_local_video(video, args)
+            and not r2_public_uploads_configured()
+        ):
+            problems.append(
+                "this video needs R2 staging but R2 is not configured; set the R2_* variables "
+                "or pass --youtube-no-r2-staging"
+            )
     try:
-        cover_image = generate_cover(episode_number, title, guest_full_names(guest_context))
-    except Exception as e:
-        print(f"Error: cover generation failed ({e}); nothing was uploaded.")
-        sys.exit(1)
+        check_cover_lifecycle(require_cover_client())
+    except R2CoverError as e:
+        problems.append(str(e))
+    if announcement_expected(out_base, existing_episode):
+        try:
+            preflight_buffer()
+        except AnnouncementStop as e:
+            problems.append(str(e))
+    if problems:
+        raise PipelineStop("cannot publish this episode:\n  - " + "\n  - ".join(problems))
 
-    youtube_title = build_youtube_title(metadata, episode_number, title)
-    youtube_description_text = build_youtube_description(
-        metadata, episode_number, chapters=chapters, guest_context=guest_context,
+
+def resolve_episode(audio_path: str, args, podbean_episode_data: dict) -> tuple[int, dict | None, PodbeanEpisodePlan]:
+    """The episode number this recording publishes as, and its Podbean episode if one exists."""
+    episode_plan = episode_plan_from_podbean_response(podbean_episode_data)
+    if args.episode_number is not None and args.episode_number < 1:
+        raise PipelineStop("--episode-number must be greater than zero")
+    audio_resume = (
+        None
+        if args.episode_number is not None or args.scan
+        else confirm_resume_for_audio(audio_path, episode_plan.next_episode_number)
     )
-    yt_desc_path = f"{out_base}-youtube-description.txt"
-    with open(yt_desc_path, "w", encoding="utf-8") as f:
-        f.write(youtube_description_text)
-    print(f"✓ YouTube title: {youtube_title}")
-    print(f"✓ YouTube description saved to {yt_desc_path}")
-    for warning in youtube_description_warnings(youtube_description_text, metadata, chapters):
-        print(f"⚠ YouTube description: {warning}")
-
-    # Ask only after all reusable content checkpoints have been loaded so a
-    # resumed run is visibly resumed first. Existing Podbean episodes retain
-    # their current state and do not prompt.
-    if existing_episode is None:
-        publish_schedule = prompt_publish_action(episode_plan)
-        if publish_schedule:
-            print(f"✓ Episode will be published on: {publish_schedule.display}")
-        else:
-            print("✓ Episode will be published immediately")
-
-    full_title = f"#{episode_number} - {title}"
-
-    # Only used when creating the episode; an existing one keeps its show notes.
-    extended_description = build_podbean_show_notes(metadata, episode_number)
-    podbean_episode = existing_episode
-    if existing_episode:
-        podbean_status = str(existing_episode.get("status") or "existing")
+    inferred_resume = (
+        None
+        if args.episode_number is not None or args.scan or audio_resume is not None
+        else infer_resume_episode_number(episode_plan.next_episode_number)
+    )
+    episode_number = (
+        args.episode_number or audio_resume or inferred_resume or episode_plan.next_episode_number
+    )
+    if args.episode_number is not None or audio_resume is not None:
+        print(f"✓ Resuming episode number: {episode_number}")
+    elif inferred_resume is not None:
+        print(f"✓ Automatically resuming unfinished episode #{episode_number}")
     else:
-        podbean_status = "publish"
+        print(f"✓ Next episode number (from Podbean episodes): {episode_number}")
+    existing_episode = find_podbean_episode(podbean_episode_data, episode_number)
+    if existing_episode and not args.draft_only and (
+        str(existing_episode.get("status") or "").strip().lower() == "draft"
+    ):
+        raise PipelineStop(
+            f"Podbean episode #{episode_number} is still a draft; a future timestamp alone does "
+            "not schedule publication. Schedule it or publish it in the Podbean dashboard, then "
+            f"re-run with --episode-number {episode_number} to resume."
+        )
+    return episode_number, existing_episode, episode_plan
 
-    if existing_episode:
-        print(f"\n✓ Reusing existing Podbean {_episode_display_title(existing_episode)}")
-        podbean_id = podbean_player_id(existing_episode)
+
+def publish_to_podbean(
+    auth_token: str,
+    audio_path: str,
+    out_base: str,
+    episode_number: int,
+    title: str,
+    show_notes: str,
+    publish_schedule: PublishSchedule | None,
+    release_at: datetime.datetime,
+    verbose: bool = False,
+) -> dict:
+    """Upload the audio and create the episode; returns Podbean's episode object.
+
+    ``release_at`` is the release time the announcement was approved for, recorded as is."""
+    podbean_upload_checkpoint = f"{out_base}-podbean-upload.json"
+    file_size = os.path.getsize(audio_path)
+    episode_file_name_mp3 = f"{episode_number:03d}-{title_to_url_safe(title)}.mp3"
+    media_key = ""
+    if os.path.isfile(podbean_upload_checkpoint):
+        try:
+            with open(podbean_upload_checkpoint, "r", encoding="utf-8") as f:
+                saved_upload = json.load(f)
+            if saved_upload.get("filename") == episode_file_name_mp3 and saved_upload.get("filesize") == file_size:
+                media_key = str(saved_upload.get("media_key") or "")
+        except (OSError, ValueError, TypeError):
+            media_key = ""
+    if media_key:
+        print(f"✓ Reusing previously uploaded Podbean audio: {episode_file_name_mp3}")
     else:
-        if args.episode_number is not None:
-            print(f"\nNo existing Podbean episode #{episode_number}; creating it.")
-        else:
-            print("\nUploading audio to Podbean...")
-        file_size = os.path.getsize(audio_path)
-        episode_file_name_mp3 = f"{episode_number:03d}-{title_to_url_safe(title)}.mp3"
-        media_key = ""
-        if os.path.isfile(podbean_upload_checkpoint):
-            try:
-                with open(podbean_upload_checkpoint, "r", encoding="utf-8") as f:
-                    saved_upload = json.load(f)
-                if (
-                    saved_upload.get("filename") == episode_file_name_mp3
-                    and saved_upload.get("filesize") == file_size
-                ):
-                    media_key = str(saved_upload.get("media_key") or "")
-            except (OSError, ValueError, TypeError):
-                media_key = ""
-        if media_key:
-            print(f"✓ Reusing previously uploaded Podbean audio: {episode_file_name_mp3}")
-        else:
-            presigned_url_response = get_podbean_upload_link(
-                auth_token, episode_file_name_mp3, file_size
-            )
+        print("\nUploading audio to Podbean...")
+        presigned_url_response = get_podbean_upload_link(auth_token, episode_file_name_mp3, file_size)
+        try:
             presigned_url = presigned_url_response["presigned_url"]
             media_key = presigned_url_response["file_key"]
-            print(f"Uploading {episode_file_name_mp3} ({file_size / (1024*1024):.1f} MB)...")
-            upload_file_to_podbean(presigned_url, audio_path)
-            with open(podbean_upload_checkpoint, "w", encoding="utf-8") as f:
-                json.dump(
-                    {
-                        "filename": episode_file_name_mp3,
-                        "filesize": file_size,
-                        "media_key": media_key,
-                    },
-                    f,
-                )
-            print("✓ Audio uploaded and checkpointed")
+        except (KeyError, TypeError) as e:
+            raise PipelineStop(f"Podbean did not authorize the audio upload: {presigned_url_response!r:.500}") from e
+        print(f"Uploading {episode_file_name_mp3} ({file_size / (1024*1024):.1f} MB)...")
+        upload_file_to_podbean(presigned_url, audio_path)
+        with open(podbean_upload_checkpoint, "w", encoding="utf-8") as f:
+            json.dump({"filename": episode_file_name_mp3, "filesize": file_size, "media_key": media_key}, f)
+        print("✓ Audio uploaded and checkpointed")
 
-        create_episode_response = create_podbean_episode(
-            auth_token,
-            full_title,
-            extended_description,
-            episode_number,
-            media_key=media_key,
-            status=podbean_creation_status(publish_schedule),
-            publish_timestamp=publish_schedule.podbean_timestamp if publish_schedule else None,
-        )
-        if args.verbose:
-            print(create_episode_response)
-        podbean_id = podbean_player_id(create_episode_response)
-        podbean_episode = create_episode_response.get("episode") or create_episode_response
+    create_episode_response = create_podbean_episode(
+        auth_token,
+        f"#{episode_number} - {title}",
+        show_notes,
+        episode_number,
+        media_key=media_key,
+        status=podbean_creation_status(publish_schedule),
+        publish_timestamp=publish_schedule.podbean_timestamp if publish_schedule else None,
+    )
+    if verbose:
+        print(create_episode_response)
+    try:
+        podbean_player_id(create_episode_response)
         if publish_schedule:
             validate_podbean_schedule(create_episode_response, publish_schedule)
-        # Only episodes released by this pipeline are announced; regenerated old pages never are.
-        record_announcement_eligibility(
-            out_base,
-            publish_schedule.podbean_datetime if publish_schedule else datetime.datetime.now(datetime.timezone.utc),
-        )
-        if os.path.isfile(podbean_upload_checkpoint):
-            os.remove(podbean_upload_checkpoint)
-    if publish_schedule:
-        print(f"✓ Podbean player id: {podbean_id} (scheduled {publish_schedule.display})")
-    else:
-        print(f"✓ Podbean player id: {podbean_id} ({podbean_status})")
+    except ValueError as e:
+        raise PipelineStop(str(e), checkpoint=podbean_upload_checkpoint) from e
+    # Only episodes released by this pipeline are announced; regenerated old pages never are.
+    record_announcement_eligibility(out_base, release_at)
+    if os.path.isfile(podbean_upload_checkpoint):
+        os.remove(podbean_upload_checkpoint)
+    return create_episode_response.get("episode") or create_episode_response
 
-    # YouTube
+
+def publish_to_youtube(
+    args,
+    audio_path: str,
+    out_base: str,
+    episode_number: int,
+    youtube_title: str,
+    youtube_description_text: str,
+    publish_schedule: PublishSchedule | None,
+) -> str:
+    """The YouTube embed URL, uploading the video unless a marker or ``--youtube`` covers it.
+
+    "" when the upload is only scheduled or the operator opted out.
+    """
+    youtube_url_file = f"{out_base}-youtube-url.txt"
+    youtube_scheduled_file = f"{out_base}-youtube-scheduled.txt"
+    youtube_staging_marker = f"{out_base}-r2-youtube-staging.txt"
+
+    def stop(message: str) -> PipelineStop:
+        return PipelineStop(message, checkpoint=youtube_url_file)
+
     youtube_embed_url = (args.youtube or "").strip()
     youtube_scheduled = False
     if not youtube_embed_url and os.path.exists(youtube_url_file):
@@ -2061,209 +1714,341 @@ def process_audio(audio_path: str, args, client: OpenAI | None) -> None:
             print(f"✓ Loaded scheduled YouTube upload marker from {youtube_scheduled_file}")
 
     if youtube_embed_url and os.path.isfile(youtube_staging_marker):
-        print(
-            f"✓ YouTube embed present; removing R2 staging marker and object ({youtube_staging_marker})"
-        )
+        print(f"✓ YouTube embed present; removing R2 staging marker and object ({youtube_staging_marker})")
         remove_r2_youtube_staging_marker(youtube_staging_marker)
     if youtube_embed_url and os.path.isfile(youtube_scheduled_file):
         os.unlink(youtube_scheduled_file)
+    if youtube_embed_url or youtube_scheduled:
+        return youtube_embed_url
+    if args.skip_youtube_upload:
+        print("\n--skip-youtube-upload: no video on this page.")
+        return ""
 
-    video_source = None
-    if not youtube_embed_url and not youtube_scheduled and not args.skip_youtube_upload:
-        override = (args.youtube_video_url or os.environ.get("UPLOAD_POST_VIDEO_URL") or "").strip()
-        if override:
-            video_source = override
-            print(f"\nUsing --youtube-video-url for upload-post: {video_source[:90]}…")
-        else:
-            video_source = args.video or find_companion_video(audio_path)
-            if video_source and not str(video_source).lower().startswith(("http://", "https://")):
-                if not os.path.isfile(video_source):
-                    print(f"⚠ Video path not found: {video_source}")
-                    video_source = None
+    # require_publishing_prerequisites checked these before the questions.
+    video_source = resolve_video_source(args, audio_path)
+    if not video_source:
+        raise stop(f"no video for {audio_path}")
+    if not (os.environ.get("UPLOAD_POST_API_KEY") and os.environ.get("UPLOAD_POST_USER")):
+        raise stop("UPLOAD_POST_API_KEY / UPLOAD_POST_USER are not set")
 
-    if not youtube_embed_url and video_source and os.environ.get("UPLOAD_POST_API_KEY") and os.environ.get(
-        "UPLOAD_POST_USER"
-    ):
-        print(f"\nUploading video to YouTube via upload-post: {video_source}")
-        video_for_upload = video_source
-        is_url = str(video_source).lower().startswith(("http://", "https://"))
-        try:
-            if not is_url and os.path.isfile(video_source) and wants_r2_staging_for_local_video(
-                video_source, args
-            ):
-                if not r2_public_uploads_configured():
-                    print(
-                        "Error: R2 staging is required for this local video (size >= "
-                        f"{os.environ.get('YOUTUBE_VIDEO_R2_THRESHOLD_MB', '400')} MB or --youtube-via-r2) "
-                        "but R2 is not fully configured. Set R2_PUBLIC_URL and R2_ACCOUNT_ID, "
-                        "R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY (see tools/README.md). "
-                        "Or pass --youtube-no-r2-staging to allow direct upload-post (fragile for large files)."
-                    )
-                    sys.exit(1)
-                threshold = int(os.environ.get("YOUTUBE_VIDEO_R2_THRESHOLD_MB", "400"))
-                mb = os.path.getsize(video_source) / (1024 * 1024)
-                if getattr(args, "youtube_via_r2", False):
-                    print("R2 staging: forced via --youtube-via-r2")
-                elif mb >= threshold:
-                    print(f"R2 staging: auto ({mb:.0f} MB >= {threshold} MB)")
-                cached_stage = load_r2_youtube_staging_marker(youtube_staging_marker, episode_number)
-                if cached_stage:
-                    video_for_upload, _ = cached_stage
-                    preview = (
-                        video_for_upload
-                        if len(video_for_upload) <= 90
-                        else video_for_upload[:88] + "…"
-                    )
-                    print(
-                        f"✓ Reusing R2-staged video from {youtube_staging_marker} "
-                        f"(no re-upload to R2): {preview}"
-                    )
-                else:
-                    staged = upload_staging_video_to_r2(video_source, episode_number, verbose=args.verbose)
-                    if not staged:
-                        print(
-                            "Error: R2 staging upload failed; refusing direct upload to upload-post. "
-                            "Fix R2 credentials/bucket or use --youtube-video-url / UPLOAD_POST_VIDEO_URL "
-                            "with a public HTTPS URL, or --youtube-no-r2-staging if you accept direct upload."
-                        )
-                        sys.exit(1)
-                    video_for_upload, new_key = staged
-                    save_r2_youtube_staging_marker(
-                        youtube_staging_marker,
-                        video_for_upload,
-                        new_key,
-                        episode_number,
-                    )
-
-            status = upload_to_youtube(
-                video_for_upload,
-                youtube_title,
-                youtube_description_text,
-                scheduled_date=publish_schedule.upload_post_scheduled_date if publish_schedule else None,
-                schedule_timezone=publish_schedule.upload_post_timezone if publish_schedule else None,
+    print(f"\nUploading video to YouTube via upload-post: {video_source}")
+    video_for_upload = video_source
+    is_url = str(video_source).lower().startswith(("http://", "https://"))
+    if not is_url and wants_r2_staging_for_local_video(video_source, args):
+        if not r2_public_uploads_configured():
+            raise stop(
+                "R2 staging is required for this local video (size >= "
+                f"{os.environ.get('YOUTUBE_VIDEO_R2_THRESHOLD_MB', '400')} MB or --youtube-via-r2) "
+                "but R2 is not fully configured. Set R2_PUBLIC_URL and R2_ACCOUNT_ID, "
+                "R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY (see tools/README.md), "
+                "or pass --youtube-no-r2-staging to allow direct upload-post (fragile for large files)."
             )
-            youtube_embed_url = status_to_youtube_embed_url(status) or ""
-            youtube_job_id = scheduled_upload_job_id(status)
-            if youtube_embed_url:
-                print(f"✓ YouTube embed URL: {youtube_embed_url}")
-                with open(youtube_url_file, "w", encoding="utf-8") as f:
-                    f.write(youtube_embed_url + "\n")
-                remove_r2_youtube_staging_marker(youtube_staging_marker)
-            elif youtube_job_id:
-                youtube_scheduled = True
-                with open(youtube_scheduled_file, "w", encoding="utf-8") as f:
-                    f.write(f"job_id={youtube_job_id}\n")
-                    if isinstance(status, dict) and status.get("scheduled_date"):
-                        f.write(f"scheduled_date={status['scheduled_date']}\n")
-                    if publish_schedule:
-                        f.write(f"requested_schedule={publish_schedule.source}\n")
-                print(
-                    f"✓ YouTube upload scheduled via upload-post: {youtube_job_id} "
-                    f"({publish_schedule.upload_post_scheduled_date if publish_schedule else 'scheduled'})"
+        threshold = int(os.environ.get("YOUTUBE_VIDEO_R2_THRESHOLD_MB", "400"))
+        mb = os.path.getsize(video_source) / (1024 * 1024)
+        if getattr(args, "youtube_via_r2", False):
+            print("R2 staging: forced via --youtube-via-r2")
+        elif mb >= threshold:
+            print(f"R2 staging: auto ({mb:.0f} MB >= {threshold} MB)")
+        cached_stage = load_r2_youtube_staging_marker(youtube_staging_marker, episode_number)
+        if cached_stage:
+            video_for_upload, _ = cached_stage
+            preview = video_for_upload if len(video_for_upload) <= 90 else video_for_upload[:88] + "…"
+            print(f"✓ Reusing R2-staged video from {youtube_staging_marker} (no re-upload to R2): {preview}")
+        else:
+            staged = upload_staging_video_to_r2(video_source, episode_number, verbose=args.verbose)
+            if not staged:
+                raise stop(
+                    "R2 staging upload failed; refusing direct upload to upload-post. "
+                    "Fix R2 credentials/bucket or use --youtube-video-url / UPLOAD_POST_VIDEO_URL "
+                    "with a public HTTPS URL, or --youtube-no-r2-staging if you accept direct upload."
                 )
-                if os.path.isfile(youtube_staging_marker):
-                    print(
-                        f"  R2 staging marker kept until the scheduled video is published: {youtube_staging_marker}"
-                    )
-            else:
-                yt_err = (
-                    youtube_status_error_message(status)
-                    if isinstance(status, dict)
-                    else None
-                )
-                if yt_err:
-                    print(f"⚠ YouTube did not publish a video: {yt_err}")
-                else:
-                    print(
-                        "⚠ Upload-post job completed but no YouTube embed URL was found "
-                        "(see response above)."
-                    )
-                print(
-                    f"  Staged MP4 kept on R2 for retry; URL and key in {youtube_staging_marker}. "
-                    "Re-run after fixing upload-post / YouTube, or add the embed URL to "
-                    f"{youtube_url_file} — staging is removed only after a successful embed URL is saved."
-                )
-                sys.exit(1)
-        except Exception as e:
-            print("Error: YouTube upload failed:")
-            for line in str(e).splitlines():
-                print(f"  {line}")
-            if os.path.isfile(youtube_staging_marker):
-                print(
-                    f"  Staged MP4 kept on R2 for retry; URL and key in {youtube_staging_marker}"
-                )
-            sys.exit(1)
-    elif video_source and not youtube_embed_url:
-        print(
-            "\n⚠ UPLOAD_POST_API_KEY / UPLOAD_POST_USER not set — skipping YouTube upload. "
-            "Use --youtube with embed URL or configure env."
+            video_for_upload, new_key = staged
+            save_r2_youtube_staging_marker(youtube_staging_marker, video_for_upload, new_key, episode_number)
+
+    kept = (
+        f" Staged MP4 kept on R2 for retry; URL and key in {youtube_staging_marker}."
+        if os.path.isfile(youtube_staging_marker)
+        else ""
+    )
+    try:
+        status = upload_to_youtube(
+            video_for_upload,
+            youtube_title,
+            youtube_description_text,
+            scheduled_date=publish_schedule.upload_post_scheduled_date if publish_schedule else None,
+            schedule_timezone=publish_schedule.upload_post_timezone if publish_schedule else None,
         )
-    elif not video_source and not youtube_embed_url and not youtube_scheduled:
-        print("\nNo companion video — skipping YouTube upload.")
+    except Exception as e:  # noqa: BLE001 - upload-post and HTTP raise many types
+        raise stop(f"YouTube upload failed: {e}.{kept}") from e
 
-    video_id = resolve_youtube_video_id(youtube_embed_url)
+    youtube_embed_url = status_to_youtube_embed_url(status) or ""
+    youtube_job_id = scheduled_upload_job_id(status)
+    if youtube_embed_url:
+        print(f"✓ YouTube embed URL: {youtube_embed_url}")
+        with open(youtube_url_file, "w", encoding="utf-8") as f:
+            f.write(youtube_embed_url + "\n")
+        remove_r2_youtube_staging_marker(youtube_staging_marker)
+        return youtube_embed_url
+    if youtube_job_id:
+        with open(youtube_scheduled_file, "w", encoding="utf-8") as f:
+            f.write(f"job_id={youtube_job_id}\n")
+            if isinstance(status, dict) and status.get("scheduled_date"):
+                f.write(f"scheduled_date={status['scheduled_date']}\n")
+            if publish_schedule:
+                f.write(f"requested_schedule={publish_schedule.source}\n")
+        print(
+            f"✓ YouTube upload scheduled via upload-post: {youtube_job_id} "
+            f"({publish_schedule.upload_post_scheduled_date if publish_schedule else 'scheduled'})"
+        )
+        if os.path.isfile(youtube_staging_marker):
+            print(f"  R2 staging marker kept until the scheduled video is published: {youtube_staging_marker}")
+        return ""
+    yt_err = youtube_status_error_message(status) if isinstance(status, dict) else None
+    raise stop(
+        f"YouTube did not publish a video: {yt_err or 'upload-post completed without a YouTube embed URL'}."
+        f"{kept} Re-run after fixing upload-post / YouTube, or write the embed URL into the checkpoint."
+    )
 
+
+def process_audio(audio_path: str, args) -> None:
+    """Run the full pipeline for one mp3: every question first, then the uploads."""
+    audio_path = os.path.abspath(audio_path)
+    os.makedirs(OUT_DIR, exist_ok=True)
+
+    print(f"\n{'='*60}")
+    print(f"Audio: {audio_path}")
+    print(f"File stem: {Path(audio_path).stem}")
+    print(f"{'='*60}")
+
+    client_id = os.environ.get("PODBEAN_CLIENT_ID")
+    client_secret = os.environ.get("PODBEAN_CLIENT_SECRET")
+    if not client_id or not client_secret:
+        raise PipelineStop("PODBEAN_CLIENT_ID and PODBEAN_CLIENT_SECRET must be set")
+
+    print("Authenticating with Podbean...")
+    auth_token = get_podbean_auth_token(client_id, client_secret)
+    print("✓ Authenticated")
+
+    episode_number, existing_episode, episode_plan = resolve_episode(
+        audio_path, args, get_podbean_episodes(auth_token)
+    )
+    publish_schedule = None
+    if existing_episode:
+        publish_schedule = publish_schedule_from_podbean_episode(existing_episode)
+        if publish_schedule:
+            print(f"✓ Preserved existing Podbean schedule: {publish_schedule.display}")
+
+    out_base = os.path.join(OUT_DIR, checkpoint_prefix(episode_number))
+    print(f"✓ Checkpoints under: {out_base}-*")
+
+    checkpoint_files = sorted(Path(OUT_DIR).glob(f"{checkpoint_prefix(episode_number)}*"))
+    # The source marker itself is metadata, not evidence of reusable content.
+    reusable_checkpoint_files = [
+        path for path in checkpoint_files if path.name != f"{checkpoint_prefix(episode_number)}-source.json"
+    ]
+    try:
+        validate_or_bind_checkpoint_source(out_base, audio_path, reusable_checkpoint_files)
+    except ValueError as e:
+        raise PipelineStop(str(e), checkpoint=f"{out_base}-source.json") from e
+    if reusable_checkpoint_files:
+        print(
+            f"✓ Found {len(reusable_checkpoint_files)} existing checkpoint file(s); "
+            f"resuming episode #{episode_number}"
+        )
+
+    if not args.draft_only:
+        require_publishing_prerequisites(args, audio_path, out_base, existing_episode)
+
+    # 1. Editorial guidance
+    guidance = _load_or_prompt_guidance(f"{out_base}-guidance.txt", args.guidance)
+    raw_notes, raw_note_names = load_raw_companion_markdown(audio_path)
+    if raw_note_names:
+        print(f"✓ Companion show notes: {', '.join(raw_note_names)}")
+
+    # 2. Local transcription; 3. hosts named by voice
+    load_or_transcribe(audio_path, out_base, args.skip_transcription, verbose=args.verbose)
+    host_names, turns = confirm_speakers(audio_path, out_base)
+
+    # 4. The operator names every other voice; research looks those guests up
+    guest_context, speaker_names = identify_guests(
+        out_base, turns, host_names, guidance, raw_notes, verbose=args.verbose
+    )
+    guest_prompt_text = guest_context_to_prompt_text(guest_context)
+    article_guidance = "\n\n".join(x for x in (guidance, guest_prompt_text) if x).strip()
+
+    # 5. Transcript correction; every later step reads its output
+    reference_text = load_reference_text(args.transcript, audio_path)
+    refresh_checkpoints(out_base, "transcript", turns, guest_context, reference_text, speaker_names)
+    corrected_turns = correct_transcript(
+        out_base, turns, guest_context, reference_text, speaker_names=speaker_names, verbose=args.verbose
+    )
+    transcript = render_corrected_transcript(corrected_turns)
+
+    # 6. Chapters; 7. title and teaser, from the corrected transcript
+    refresh_checkpoints(out_base, "chapters", corrected_turns)
+    chapters = load_or_generate_chapters(out_base, corrected_turns, verbose=args.verbose)
+    refresh_checkpoints(out_base, "title", chapters, transcript, article_guidance)
+    title = _load_or_pick(
+        "title", f"{out_base}-title.txt", args.title, guest_context,
+        lambda: pick_title(chapters, transcript, editorial_guidance=article_guidance, verbose=args.verbose),
+    )
+    print(f"✓ Title: {title}")
+    if len(title) > TITLE_TARGET_CHARS:
+        # Guest names are required, so the length target is advisory only.
+        print(f"⚠ Title is {len(title)} chars (target under {TITLE_TARGET_CHARS}); kept as picked.")
+    description = _load_or_pick(
+        "description", f"{out_base}-description.txt", args.description, guest_context,
+        lambda: pick_description(chapters, transcript, editorial_guidance=article_guidance, verbose=args.verbose),
+    )
+    print("✓ Description saved")
+
+    # 8. Article, written to the picked title, teaser and chapters
+    refresh_checkpoints(out_base, "article", transcript, title, description, chapters, article_guidance, raw_notes)
+    article_md = generate_article(
+        transcript,
+        out_base,
+        editorial_guidance=article_guidance,
+        raw_notes=raw_notes,
+        verbose=args.verbose,
+        title=title,
+        teaser=description,
+        chapters=chapters,
+    )
+    html_problems = article_html_problems(article_md)
+    if html_problems:
+        raise PipelineStop(
+            f"the article carries HTML the episode page does not allow "
+            f"({', '.join(sorted(ALLOWED_ARTICLE_TAGS))} only):\n  - " + "\n  - ".join(html_problems)
+            + "\nFix it, then re-run. Nothing was uploaded.",
+            checkpoint=f"{out_base}-article.md",
+        )
+    if args.draft_only:
+        print(f"\nDraft-only: done. Article: {out_base}-article.md")
+        return
+
+    # 9. Metadata and the YouTube text
+    refresh_checkpoints(out_base, "metadata", title, description, article_md, transcript, guest_context)
+    metadata = load_or_generate_metadata(
+        out_base, title, description, article_md, transcript,
+        guest_context=guest_context, guest_text=guest_prompt_text, verbose=args.verbose,
+    )
+    youtube_title = build_youtube_title(metadata, episode_number, title)
+    youtube_description_text = build_youtube_description(
+        metadata, episode_number, chapters=chapters, guest_context=guest_context,
+    )
+    yt_desc_path = f"{out_base}-youtube-description.txt"
+    with open(yt_desc_path, "w", encoding="utf-8") as f:
+        f.write(youtube_description_text)
+    print(f"✓ YouTube title: {youtube_title}")
+    print(f"✓ YouTube description saved to {yt_desc_path}")
+    for warning in youtube_description_warnings(youtube_description_text, metadata, chapters):
+        print(f"⚠ YouTube description: {warning}")
+
+    # 10. Cover, drawn locally; uploaded with the rest below
+    try:
+        cover_path = draw_cover(episode_number, title, guest_full_names(guest_context), f"{out_base}-cover.png")
+    except Exception as e:  # noqa: BLE001 - Pillow and disk fail differently
+        raise PipelineStop(f"cover generation failed ({e}); nothing was uploaded") from e
+    cover_url = cover_public_url(cover_path, episode_number)
+
+    # 11. Release time. An existing Podbean episode keeps its own.
+    if existing_episode is None:
+        publish_schedule = prompt_publish_action(episode_plan)
+        if publish_schedule:
+            print(f"✓ Episode will be published on: {publish_schedule.display}")
+        else:
+            print("✓ Episode will be published immediately")
+
+    # 12. Announcement approval, at the URL the page will have
+    page_path = episode_page_path(episode_number, title)
+    release_at = None
+    if existing_episode is None:
+        release_at = (
+            publish_schedule.podbean_datetime if publish_schedule else datetime.datetime.now(datetime.timezone.utc)
+        )
+    approve_episode_announcement(
+        out_base, episode_number, episode_page_url(page_path), title, article_md, corrected_turns,
+        guest_context, release_at, cover_path, cover_url, verbose=args.verbose,
+    )
+
+    # Nothing below asks the operator anything: uploads, page and posts run unattended.
+
+    # 14. Cover, Podbean, YouTube
+    cover_url = upload_cover_to_r2(cover_path, episode_number)
+    if existing_episode:
+        print(f"\n✓ Reusing existing Podbean {_episode_display_title(existing_episode)}")
+        podbean_episode = existing_episode
+    else:
+        podbean_episode = publish_to_podbean(
+            auth_token, audio_path, out_base, episode_number, title,
+            build_podbean_show_notes(metadata, episode_number), publish_schedule, release_at, verbose=args.verbose,
+        )
+    podbean_id = podbean_player_id(podbean_episode)
+    when = publish_schedule.display if publish_schedule else str(podbean_episode.get("status") or "publish")
+    print(f"✓ Podbean player id: {podbean_id} ({when})")
+    youtube_embed_url = publish_to_youtube(
+        args, audio_path, out_base, episode_number, youtube_title, youtube_description_text, publish_schedule,
+    )
+
+    # 15. Episode page
     episode_path = write_episode_markdown(
         episode_number,
         title,
         description,
         article_md,
         podbean_id,
-        video_id,
+        resolve_youtube_video_id(youtube_embed_url),
         participants=_participants_for_episode(getattr(args, "participants", None), guest_context),
         publish_datetime=publish_schedule.podbean_datetime if publish_schedule else None,
         subtitle=str(metadata.get("subtitle") or ""),
         readtime=readtime_for(article_md),
-        image=cover_image,
-        audio_url=str((podbean_episode or {}).get("media_url") or ""),
+        image=cover_url,
+        audio_url=str(podbean_episode.get("media_url") or ""),
     )
     print(f"✓ Episode page: {episode_path}")
 
-    # After the page exists, so the post can link it. Promotion only: never fails the run.
-    try:
-        schedule_episode_announcement(
-            out_base,
-            episode_number,
-            episode_path,
-            title,
-            article_md,
-            transcript,
-            load_transcript_turns(out_base, transcript),
-            guest_context,
-            audio_path,
-            verbose=args.verbose,
-        )
-    except Exception as e:  # noqa: BLE001
-        print(
-            f"⚠ Buffer announcement failed ({type(e).__name__}: {e}); "
-            f"re-run with --episode-number {episode_number} to retry."
-        )
+    # 16. The approved announcement, after the page so the post can link it
+    schedule_episode_announcement(out_base, episode_number, episode_path, guest_context, cover_url)
 
     print(f"\n{'='*60}")
     print(f"Episode #{episode_number} complete.")
     print(f"{'='*60}")
 
 
+# Errors a step raises to stop the run; main prints them once and exits 1.
+STOP_ERRORS = (
+    PipelineStop,
+    AnnouncementStop,
+    R2CoverError,
+    voice_match.SpeakerConfirmationError,
+    voice_match.VoicePrintError,
+)
+
+
+def report_stop(error: Exception) -> None:
+    print(f"\nError: {error}", file=sys.stderr)
+    checkpoint = getattr(error, "checkpoint", "") or ""
+    if checkpoint:
+        print(f"Checkpoint: {checkpoint}", file=sys.stderr)
+    print("Fix the cause and re-run ./do.sh; it resumes at this step.", file=sys.stderr)
+
+
 def main():
     args = parse_args()
-    client = None
-    if transcribe_backend() == "openai":
-        api_key = os.environ.get("OPENAI_API_KEY")
-        if not api_key:
-            print("Error: OPENAI_API_KEY not set (required for TRANSCRIBE_BACKEND=openai)")
-            sys.exit(1)
-        client = OpenAI(api_key=api_key)
-
-    # Stage downloads into raw/ unless an explicit file path was given.
-    if not (args.filename or args.audio):
-        stage_downloads_to_raw()
-
-    audio_paths = _collect_audio_paths(args)
-    if len(audio_paths) > 1 and args.episode_number is not None:
-        print("Error: --episode-number cannot be combined with multiple input files")
+    try:
+        require_tools(draft_only=args.draft_only)
+        # Stage downloads into raw/ unless an explicit file path was given.
+        if not (args.filename or args.audio):
+            stage_downloads_to_raw()
+        audio_paths = _collect_audio_paths(args)
+        if len(audio_paths) > 1 and args.episode_number is not None:
+            raise PipelineStop("--episode-number cannot be combined with multiple input files")
+        # One episode at a time, so each episode's questions come after the previous one's uploads.
+        for ap in audio_paths:
+            process_audio(ap, args)
+    except STOP_ERRORS as e:
+        report_stop(e)
         sys.exit(1)
-    for ap in audio_paths:
-        process_audio(ap, args, client)
 
 
 if __name__ == "__main__":

@@ -1,7 +1,8 @@
-"""Cloudflare R2 (S3-compatible) helpers for staging large videos before upload-post fetches by URL."""
+"""Cloudflare R2 (S3-compatible) helpers: video staging for upload-post, and episode covers."""
 
 from __future__ import annotations
 
+import hashlib
 import os
 import uuid
 from pathlib import Path
@@ -231,3 +232,123 @@ def remove_r2_youtube_staging_marker(marker_path: str) -> None:
         os.remove(marker_path)
     except OSError:
         pass
+
+
+# Covers live in their own bucket: the staging bucket expires every object.
+# Keys carry a digest of the PNG, so an object never changes and may be cached
+# for good; a redraw is a new key, never an overwrite.
+R2_COVERS_BUCKET = os.environ.get("R2_COVERS_BUCKET", "")
+R2_COVERS_PUBLIC_URL = os.environ.get("R2_COVERS_PUBLIC_URL", "")
+COVERS_PREFIX = "covers/"
+IMMUTABLE_CACHE_CONTROL = "public, max-age=31536000, immutable"
+
+
+class R2CoverError(RuntimeError):
+    """The cover cannot be put on R2 safely; nothing should be published."""
+
+
+def r2_public_url(r2_key: str) -> str:
+    """A cover key's public URL."""
+    if not R2_COVERS_PUBLIC_URL:
+        raise R2CoverError("R2_COVERS_PUBLIC_URL is not set, so the cover has no public URL")
+    return f"{R2_COVERS_PUBLIC_URL.rstrip('/')}/{r2_key}"
+
+
+def cover_r2_key(ep_num: int, png_bytes: bytes) -> str:
+    digest = hashlib.sha256(png_bytes).hexdigest()[:12]
+    return f"{COVERS_PREFIX}{int(ep_num):03d}-{digest}.png"
+
+
+def cover_public_url(png_path: str, ep_num: int) -> str:
+    """The URL the cover will have once uploaded; known before the upload runs."""
+    with open(png_path, "rb") as f:
+        return r2_public_url(cover_r2_key(ep_num, f.read()))
+
+
+def require_cover_client():
+    """The R2 client for covers; raises R2CoverError naming what is not configured."""
+    missing = [name for name, value in (("R2_COVERS_BUCKET", R2_COVERS_BUCKET),
+                                        ("R2_COVERS_PUBLIC_URL", R2_COVERS_PUBLIC_URL)) if not value]
+    s3 = _r2_s3_client()
+    if s3 is None:
+        missing.insert(0, "R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY")
+    if missing:
+        raise R2CoverError(f"R2 is not configured for covers: set {', '.join(missing)}")
+    return s3
+
+
+def _rule_prefixes(rule: dict) -> list[str]:
+    """Key prefixes a lifecycle rule applies to; [""] when it has none (whole bucket)."""
+    if "Prefix" in rule:  # legacy top-level form
+        return [rule.get("Prefix") or ""]
+    flt = rule.get("Filter") or {}
+    if "And" in flt:
+        flt = flt["And"] or {}
+    return [flt.get("Prefix") or ""]
+
+
+def expiring_cover_rules(lifecycle_rules: list[dict], prefix: str = COVERS_PREFIX) -> list[str]:
+    """IDs of enabled expiring rules whose prefix is empty, a parent of ``prefix`` or inside it.
+
+    Tag filters are ignored on purpose: stopping is cheaper than a page whose cover vanishes.
+    """
+    hits = []
+    for rule in lifecycle_rules:
+        if rule.get("Status", "Enabled") != "Enabled" or "Expiration" not in rule:
+            continue
+        if any(prefix.startswith(p) or p.startswith(prefix) for p in _rule_prefixes(rule)):
+            hits.append(rule.get("ID") or "<unnamed>")
+    return hits
+
+
+def check_cover_lifecycle(s3=None) -> None:
+    """Raise R2CoverError when a bucket lifecycle rule could expire ``covers/``."""
+    import botocore.exceptions
+
+    s3 = s3 or require_cover_client()
+    try:
+        rules = s3.get_bucket_lifecycle_configuration(Bucket=R2_COVERS_BUCKET).get("Rules", [])
+    except botocore.exceptions.ClientError as e:
+        if e.response.get("Error", {}).get("Code") == "NoSuchLifecycleConfiguration":
+            return
+        raise R2CoverError(
+            f"Could not read the lifecycle rules of {R2_COVERS_BUCKET}: {_format_r2_staging_error(e)}"
+        ) from e
+    hits = expiring_cover_rules(rules)
+    if hits:
+        raise R2CoverError(
+            f"Lifecycle rule(s) {', '.join(hits)} on bucket {R2_COVERS_BUCKET} could expire "
+            f"{COVERS_PREFIX}, and published pages would lose their cover. Narrow the rule first."
+        )
+
+
+def r2_object_exists(s3, r2_key: str) -> bool:
+    import botocore.exceptions
+
+    try:
+        s3.head_object(Bucket=R2_COVERS_BUCKET, Key=r2_key)
+        return True
+    except botocore.exceptions.ClientError as e:
+        if e.response.get("Error", {}).get("Code") in ("404", "NoSuchKey", "NotFound"):
+            return False
+        raise
+
+
+def upload_cover_to_r2(png_path: str, ep_num: int, s3=None) -> str:
+    """Upload the cover under its content-addressed key unless it is there; return its URL."""
+    s3 = s3 or require_cover_client()
+    with open(png_path, "rb") as f:
+        key = cover_r2_key(ep_num, f.read())
+    url = r2_public_url(key)
+    try:
+        if r2_object_exists(s3, key):
+            print(f"✓ Cover already on R2: {url}")
+            return url
+        s3.upload_file(
+            png_path, R2_COVERS_BUCKET, key,
+            ExtraArgs={"ContentType": "image/png", "CacheControl": IMMUTABLE_CACHE_CONTROL},
+        )
+    except Exception as e:
+        raise R2CoverError(f"Cover upload failed: {_format_r2_staging_error(e)}") from e
+    print(f"✓ Uploaded cover: {url}")
+    return url

@@ -2,9 +2,10 @@
 
 You propose YouTube chapters for a DevSecOps Talks episode.
 
-On stdin: the final article, then the episode's timestamped speaker turns as
-`[MM:SS] [A]: text` lines (long turns are cut short). Timestamps are from the
-start of the recording.
+On stdin: the episode's corrected transcript as timestamped speaker turns,
+`[MM:SS] [Speaker Name]: text` lines in full. Timestamps are from the start of
+the recording. The title and the article are written after the chapters, so
+the chapters are the episode's first outline.
 
 Rules:
 - Return 5 to 8 chapters, one per line, formatted exactly `MM:SS - Label`

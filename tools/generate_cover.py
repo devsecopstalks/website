@@ -5,6 +5,8 @@ static/images/pod_cover.png; the font is Nunito (OFL, tools/fonts/), a rounded
 geometric face close to the logo lettering, so rendering is identical on any machine.
 """
 
+import hashlib
+import json
 import os
 import re
 import sys
@@ -13,7 +15,6 @@ from PIL import Image, ImageDraw, ImageFont
 
 TOOLS_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.abspath(os.path.join(TOOLS_DIR, ".."))
-COVERS_DIR = os.path.join(REPO_ROOT, "static", "images", "covers")
 LOGO_PATH = os.path.join(REPO_ROOT, "static", "images", "logo.png")
 FONT_PATH = os.path.join(TOOLS_DIR, "fonts", "Nunito-Variable.ttf")
 
@@ -127,22 +128,38 @@ def render_cover(episode_number, title, guests=None, out_path=None):
     return out_path
 
 
-def generate_cover(episode_number, title, guests=None, out_path=None):
-    """Write static/images/covers/NNN.png (or `out_path`) unless it already exists.
+def cover_inputs_digest(episode_number, title, guests=None):
+    """Digest of everything the cover shows, kept in a ``.inputs`` sidecar next to it."""
+    inputs = json.dumps([int(episode_number), title, list(guests or [])], ensure_ascii=False)
+    return hashlib.sha256(inputs.encode("utf-8")).hexdigest()[:12]
 
-    Returns the site-relative path for the page's `image` front matter, e.g.
-    "/images/covers/110.png". An existing file is kept so a hand-made cover wins.
+
+def _read_sidecar(out_path):
+    try:
+        with open(f"{out_path}.inputs", "r", encoding="utf-8") as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
+
+def draw_cover(episode_number, title, guests=None, out_path=None):
+    """Render the cover to ``out_path`` unless it already shows these inputs; return the path.
+
+    The PNG is only the upload source: the site and the posts use its R2 copy.
+    A cover without a sidecar is redrawn once; the render is deterministic, so
+    unchanged inputs give the same bytes and the same R2 key.
     """
-    filename = f"{int(episode_number):03d}.png"
-    target = out_path or os.path.join(COVERS_DIR, filename)
-    if not os.path.exists(target):
-        render_cover(episode_number, title, guests, target)
-        print(f"✓ Generated cover: {target}")
-    return f"/images/covers/{filename}"
+    digest = cover_inputs_digest(episode_number, title, guests)
+    if not os.path.exists(out_path) or _read_sidecar(out_path) != digest:
+        render_cover(episode_number, title, guests, out_path)
+        with open(f"{out_path}.inputs", "w", encoding="utf-8") as f:
+            f.write(digest)
+        print(f"✓ Generated cover: {out_path}")
+    return out_path
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 3:
-        print("Usage: generate_cover.py <episode_number> <title> [guest ...]")
+    if len(sys.argv) < 4:
+        print("Usage: generate_cover.py <episode_number> <title> <out_path> [guest ...]")
         sys.exit(1)
-    print(generate_cover(int(sys.argv[1]), sys.argv[2], sys.argv[3:] or None))
+    print(draw_cover(int(sys.argv[1]), sys.argv[2], sys.argv[4:] or None, sys.argv[3]))

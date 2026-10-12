@@ -69,12 +69,20 @@ class TestChapters(unittest.TestCase):
         self.assertEqual(parsed, [(0, "Intro topic"), (3723, "Late")])
         self.assertEqual(episode_metadata.format_timestamp(3723), "1:02:03")
 
-    def test_turns_for_prompt_caps_long_turns(self):
+    def test_turns_for_prompt_sends_full_turns(self):
         text = episode_metadata.turns_for_prompt(TURNS)
         first = text.splitlines()[0]
         self.assertTrue(first.startswith("[00:00] [A]: Welcome back"))
-        self.assertLess(len(first), episode_metadata.CHAPTER_TURN_TEXT_CAP + 30)
+        self.assertNotIn("...", first)
         self.assertIn("[01:35] [B]:", text)
+
+    def test_chapters_are_proposed_from_named_turns_alone(self):
+        named = [dict(t, speaker="Mattias Hemmingsson") for t in TURNS]
+        with patch.object(episode_metadata, "run_codex", return_value="00:00 - A\n01:35 - B\n06:40 - C") as codex:
+            self.assertEqual(episode_metadata.generate_chapters(named), "00:00 - A\n01:35 - B\n06:40 - C")
+        stdin_text = codex.call_args.kwargs["stdin_text"]
+        self.assertNotIn("--- ARTICLE ---", stdin_text)
+        self.assertIn("[01:35] [Mattias Hemmingsson]: Matthias here", stdin_text)
 
     def test_parse_timestamp_accepts_mm_ss_and_h_mm_ss_only(self):
         self.assertEqual(episode_metadata.parse_timestamp("12:34"), 754)
@@ -101,17 +109,18 @@ class TestChapters(unittest.TestCase):
             base = os.path.join(tmp, "episode001")
             Path(f"{base}-chapters.txt").write_text(CHAPTERS, encoding="utf-8")
             with patch.object(episode_metadata, "run_codex") as codex, redirect_stdout(StringIO()):
-                self.assertEqual(episode_metadata.load_or_generate_chapters(base, "a", TURNS), CHAPTERS)
+                self.assertEqual(episode_metadata.load_or_generate_chapters(base, TURNS), CHAPTERS)
             codex.assert_not_called()
             Path(f"{base}-chapters.txt").write_text("00:00 - only one", encoding="utf-8")
-            with redirect_stdout(StringIO()), self.assertRaises(SystemExit):
-                episode_metadata.load_or_generate_chapters(base, "a", TURNS)
+            with redirect_stdout(StringIO()), self.assertRaises(episode_pipeline.PipelineStop) as stop:
+                episode_metadata.load_or_generate_chapters(base, TURNS)
+            self.assertEqual(stop.exception.checkpoint, f"{base}-chapters.txt")
 
     def test_no_turns_omits_chapters_with_notice(self):
         with tempfile.TemporaryDirectory() as tmp, patch.object(episode_metadata, "run_codex") as codex:
             out = StringIO()
             with redirect_stdout(out):
-                result = episode_metadata.load_or_generate_chapters(os.path.join(tmp, "e"), "a", None)
+                result = episode_metadata.load_or_generate_chapters(os.path.join(tmp, "e"), None)
         self.assertEqual(result, "")
         self.assertIn("no chapters", out.getvalue())
         codex.assert_not_called()
@@ -123,10 +132,10 @@ class TestChapters(unittest.TestCase):
             with patch.object(episode_metadata, "run_codex", return_value="00:10 - A\n01:00 - B"), \
                     redirect_stdout(StringIO()):
                 result = episode_metadata.load_or_generate_chapters(
-                    base, "a", TURNS, input_func=lambda: next(answers))
+                    base, TURNS, input_func=lambda: next(answers))
                 self.assertEqual(result, "")
                 # A later run keeps the operator's skip instead of asking again.
-                self.assertEqual(episode_metadata.load_or_generate_chapters(base, "a", TURNS), "")
+                self.assertEqual(episode_metadata.load_or_generate_chapters(base, TURNS), "")
 
 
 class TestMetadata(unittest.TestCase):
@@ -147,30 +156,35 @@ class TestMetadata(unittest.TestCase):
         self.assertIn("previous answer was rejected", codex.call_args.args[0])
         self.assertIn("--- TRANSCRIPT ---\ntranscript", codex.call_args.kwargs["stdin_text"])
 
-    def test_checkpoint_reused_until_title_or_teaser_changes(self):
+    def test_saved_metadata_is_reused_while_it_validates(self):
+        # Changed inputs are discarded by podbean's step input record, not here.
         with tempfile.TemporaryDirectory() as tmp:
             base = os.path.join(tmp, "episode001")
             with patch.object(episode_metadata, "run_codex", return_value=json.dumps(METADATA)) as codex, \
                     redirect_stdout(StringIO()):
-                for title in ("Title", "Title", "New title"):
+                for title in ("Title", "New title"):
                     episode_metadata.load_or_generate_metadata(base, title, "Teaser", "article", "t")
-            self.assertEqual(codex.call_count, 2)
-            self.assertTrue(Path(f"{base}-metadata.json").exists())
+            self.assertEqual(codex.call_count, 1)
+            self.assertEqual(json.loads(Path(f"{base}-metadata.json").read_text()), {"metadata": METADATA})
 
-    def test_checkpoint_regenerates_when_transcript_or_guests_change(self):
-        guests = {"status": "verified", "guests": [{"full_name": "Jane Doe"}], "hosts_present": ["Paulina"]}
+    def test_saved_metadata_missing_a_guest_is_regenerated(self):
+        guests = {"status": "verified", "guests": [{"full_name": "Jane Doe"}]}
         meta = dict(METADATA, youtube_intro="With Jane Doe.", podcast_who_what="With Jane Doe.")
         with tempfile.TemporaryDirectory() as tmp:
             base = os.path.join(tmp, "episode001")
+            Path(f"{base}-metadata.json").write_text(json.dumps({"metadata": METADATA}))
             with patch.object(episode_metadata, "run_codex", return_value=json.dumps(meta)) as codex, \
                     redirect_stdout(StringIO()):
-                for transcript, context in (
-                    ("t", guests), ("t", dict(guests, notes="")), ("t2", guests),
-                    ("t2", dict(guests, hosts_present=["Paulina", "Mattias"])),
-                ):
-                    episode_metadata.load_or_generate_metadata(base, "Title", "Teaser", "article", transcript,
-                                                               guest_context=context)
-            self.assertEqual(codex.call_count, 3)
+                result = episode_metadata.load_or_generate_metadata(
+                    base, "Title", "Teaser", "article", "t", guest_context=guests)
+            self.assertEqual(codex.call_count, 1)
+            self.assertEqual(result, meta)
+
+    def test_unusable_metadata_stops_the_run(self):
+        with patch.object(episode_metadata, "run_codex", return_value="not json"), redirect_stdout(StringIO()):
+            with self.assertRaises(episode_pipeline.PipelineStop):
+                episode_metadata.extract_metadata("Title", "Teaser", "article", "t")
+
 
     def test_readtime(self):
         self.assertEqual(episode_metadata.readtime_for("word " * 2640), "12 min read")
@@ -393,12 +407,18 @@ class TestPackagingIntegration(unittest.TestCase):
             "get_podbean_auth_token": "token",
             "get_podbean_episodes": {"episodes": []},
             "validate_or_bind_checkpoint_source": None,
-            "load_or_create_transcript": "transcript",
-            "load_transcript_turns": TURNS,
-            "_load_or_detect_guest_context": {"status": "no_guests", "guests": []},
+            "require_publishing_prerequisites": None,
+            "load_or_transcribe": TURNS,
+            "confirm_speakers": ({}, TURNS),
+            "identify_guests": ({"status": "no_guests", "guests": []}, {}),
+            "load_reference_text": "",
+            "correct_transcript": TURNS,
             "generate_article": "## The problem {#problem}\nBody.",
-            "generate_cover": "/images/covers/001.png",
+            "draw_cover": str(root / "episode001-cover.png"),
+            "cover_public_url": "https://r2.example/covers/001-abc.png",
+            "upload_cover_to_r2": "https://r2.example/covers/001-abc.png",
             "prompt_publish_action": None,
+            "approve_episode_announcement": None,
             "get_podbean_upload_link": {"presigned_url": "https://example.test/a", "file_key": "k"},
             "upload_file_to_podbean": None,
             "create_podbean_episode": {"episode": {"id": "episode-id", "status": "publish"}},
@@ -411,7 +431,7 @@ class TestPackagingIntegration(unittest.TestCase):
         self.enterContext(patch.object(episode_metadata, "run_codex", side_effect=fake_codex))
         self.enterContext(patch("builtins.input", return_value=""))
 
-        podbean.process_audio(str(audio), args, None)
+        podbean.process_audio(str(audio), args)
 
         upload_args = mocks["upload_to_youtube"].call_args.args
         # A newly created episode is announceable, and the announcement links the written page.

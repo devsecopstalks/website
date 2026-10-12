@@ -313,6 +313,20 @@ class CliInvocationTests(unittest.TestCase):
         self.assertEqual(cmd[cmd.index("--mode") + 1], "offline")
         self.assertEqual(cmd[cmd.index("--num-speakers") + 1], "4")
 
+    def test_diarization_is_stamped_with_the_built_commit(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            build = Path(tmp) / ".build"
+            (build / "release").mkdir(parents=True)
+            (build / ".built-commit").write_text("abc123\n", encoding="utf-8")
+            cli = str(build / "release" / "fluidaudiocli")
+            out = str(Path(tmp) / "dia.json")
+            self._capture(
+                lambda: tl.run_diarization(cli, "a.wav", out),
+                {"segments": [{"speakerId": "S1", "startTimeSeconds": 0.0, "endTimeSeconds": 1.0}]},
+            )
+            self.assertEqual(json.loads(Path(out).read_text(encoding="utf-8"))["fluidaudioCommit"], "abc123")
+            self.assertIsNone(tl.built_commit("/bin/cli"))
+
     def test_diarization_omits_the_pin_when_auto(self):
         with tempfile.TemporaryDirectory() as tmp:
             out = str(Path(tmp) / "dia.json")
@@ -421,6 +435,75 @@ class TranscribeLocalTests(unittest.TestCase):
         self.assertIn("ffmpeg", str(ctx.exception))
 
 
+class RediarizeTests(unittest.TestCase):
+    ASR = {
+        "wordTimings": words(("Hello.", 0.0, 0.5), ("Hi.", 2.0, 2.5), ("Bye.", 4.0, 4.5)),
+        "processingTimeSeconds": 1.0,
+        "rtfx": 100.0,
+    }
+
+    def _run(self, out_base, dia):
+        calls = []
+
+        def fake_run(cmd, **kwargs):
+            calls.append(cmd)
+            if cmd[0] == "ffmpeg":
+                Path(cmd[cmd.index("-c:a") + 2]).write_bytes(b"wav")
+                return subprocess.CompletedProcess(cmd, 0, "", "")
+            Path(cmd[cmd.index("--output") + 1]).write_text(json.dumps(dia), encoding="utf-8")
+            return subprocess.CompletedProcess(cmd, 0, "", "")
+
+        with mock.patch.dict("os.environ", {"FLUIDAUDIO_CLI": "/bin/sh"}, clear=False):
+            with mock.patch.object(tl.shutil, "which", return_value="/usr/bin/ffmpeg"):
+                with mock.patch.object(tl.subprocess, "run", side_effect=fake_run):
+                    transcript = tl.rediarize("ep.mp3", out_base, 3)
+        return transcript, calls
+
+    def test_reuses_saved_asr_and_rewrites_the_diarized_outputs(self):
+        dia = {
+            "segments": segments(("S1", 0.0, 0.5), ("S2", 2.0, 2.5), ("S3", 4.0, 4.5)),
+            "speakerCount": 3,
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            out_base = str(Path(tmp) / "episode001")
+            Path(f"{out_base}-asr.json").write_text(json.dumps(self.ASR), encoding="utf-8")
+            Path(f"{out_base}-local.txt").write_text("[A]: stale", encoding="utf-8")
+
+            transcript, calls = self._run(out_base, dia)
+
+            self.assertEqual(transcript, "[A]: Hello.\n[B]: Hi.\n[C]: Bye.")
+            self.assertEqual(Path(f"{out_base}-local.txt").read_text(encoding="utf-8"), transcript)
+            turns = json.loads(Path(f"{out_base}-turns.json").read_text(encoding="utf-8"))
+            self.assertEqual([t["speaker"] for t in turns], ["A", "B", "C"])
+            saved = json.loads(Path(f"{out_base}-diarization.json").read_text(encoding="utf-8"))
+            self.assertEqual(saved["speakerCount"], 3)
+
+        cli_calls = [c for c in calls if c[0] != "ffmpeg"]
+        self.assertEqual(len(cli_calls), 1)
+        self.assertNotIn("transcribe", cli_calls[0])
+        self.assertEqual(cli_calls[0][cli_calls[0].index("--num-speakers") + 1], "3")
+
+    def test_missing_asr_is_reported_before_any_work(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.object(tl.subprocess, "run") as run:
+                with self.assertRaises(RuntimeError) as ctx:
+                    tl.rediarize("ep.mp3", str(Path(tmp) / "episode001"), 3)
+        self.assertIn("-asr.json", str(ctx.exception))
+        run.assert_not_called()
+
+    def test_count_must_be_positive(self):
+        with self.assertRaises(ValueError):
+            tl.rediarize("ep.mp3", "base", 0)
+
+
+class SpeakerLabelsTests(unittest.TestCase):
+    def test_maps_diarizer_ids_to_turn_labels_by_first_appearance(self):
+        asr = {"wordTimings": words(("a", 0.0, 0.5), ("b", 2.0, 2.5))}
+        dia = {"segments": segments(("S2", 0.0, 0.5), ("S1", 2.0, 2.5), ("S3", 9.0, 9.5))}
+        # S3 wins no word, so no turn carries it.
+        self.assertEqual(tl.speaker_labels(asr, dia), {"S2": "A", "S1": "B"})
+
+
 class SpeakerCountPromptTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -463,88 +546,8 @@ class SpeakerCountPromptTests(unittest.TestCase):
             self.assertIsNone(self.mod.prompt_speaker_count(input_func=lambda: "3"))
 
 
-class TranscribeBackendTests(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        cls.mod = podbean
-
-    def test_defaults_to_local(self):
-        with mock.patch.dict("os.environ", {"TRANSCRIBE_BACKEND": ""}, clear=False):
-            self.assertEqual(self.mod.transcribe_backend(), "local")
-
-    def test_openai_is_accepted(self):
-        with mock.patch.dict("os.environ", {"TRANSCRIBE_BACKEND": "OpenAI"}, clear=False):
-            self.assertEqual(self.mod.transcribe_backend(), "openai")
-
-    def test_unknown_backend_exits(self):
-        with mock.patch.dict("os.environ", {"TRANSCRIBE_BACKEND": "whisper"}, clear=False):
-            with self.assertRaises(SystemExit):
-                self.mod.transcribe_backend()
-
-    def test_local_backend_calls_the_local_transcriber_with_the_pin(self):
-        with mock.patch.object(self.mod, "transcribe_local", return_value="local text") as local:
-            with mock.patch.object(self.mod, "transcribe_openai") as openai:
-                result = self.mod.transcribe(object(), "ep.mp3", "base", "local", num_speakers=4)
-
-        self.assertEqual(result, "local text")
-        openai.assert_not_called()
-        self.assertEqual(local.call_args.kwargs["num_speakers"], 4)
-
-    def test_openai_backend_calls_the_hosted_transcriber(self):
-        with mock.patch.object(self.mod, "transcribe_local") as local:
-            with mock.patch.object(self.mod, "transcribe_openai", return_value="hosted") as openai:
-                result = self.mod.transcribe(object(), "ep.mp3", "base", "openai")
-
-        self.assertEqual(result, "hosted")
-        local.assert_not_called()
-        openai.assert_called_once()
-
-    def test_openai_backend_without_a_client_is_refused(self):
-        with self.assertRaisesRegex(RuntimeError, "OPENAI_API_KEY"):
-            podbean.transcribe(None, "ep.mp3", "base", "openai")
-
-
-class OpenAIClientTests(unittest.TestCase):
-    def _main(self, backend):
-        env = {"TRANSCRIBE_BACKEND": backend, "OPENAI_API_KEY": ""}
-        with mock.patch.dict("os.environ", env, clear=False), \
-                mock.patch.object(sys, "argv", ["podbean.py", "-f", "ep.mp3"]), \
-                mock.patch.object(podbean, "process_audio") as process, \
-                mock.patch("builtins.print"):
-            podbean.main()
-        return process
-
-    def test_local_backend_needs_no_openai_key(self):
-        process = self._main("local")
-        self.assertIsNone(process.call_args.args[2])
-
-    def test_openai_backend_requires_the_key(self):
-        with self.assertRaises(SystemExit):
-            self._main("openai")
-
-
-class OpenAIChunkingTests(unittest.TestCase):
-    def test_long_audio_is_split_under_the_diarize_limit(self):
-        client = mock.Mock(api_key="k")
-        segments_seen = []
-
-        def fake_extract(src, start, length, out, verbose=False):
-            segments_seen.append((start, length))
-
-        with mock.patch.object(podbean, "get_audio_duration_seconds", return_value=2700.0), \
-                mock.patch.object(podbean, "extract_audio_segment", side_effect=fake_extract), \
-                mock.patch.object(podbean, "transcribe_diarized", side_effect=["[A]: one", "[A]: two", "[A]: three"]), \
-                mock.patch("builtins.print"):
-            text = podbean.transcribe_openai(client, "ep.mp3")
-
-        self.assertEqual(text, "[A]: one\n\n[A]: two\n\n[A]: three")
-        self.assertEqual(len(segments_seen), 3)
-        self.assertTrue(all(length <= podbean._DIARIZE_CHUNK_SECONDS for _, length in segments_seen))
-        self.assertAlmostEqual(sum(length for _, length in segments_seen), 2700.0)
-
-
-class LoadOrCreateTranscriptTests(unittest.TestCase):
-    """out/episodeNNN.txt assembly: backend checkpoint, sidecar merge, invalidation, turns binding."""
+class LoadOrTranscribeTests(unittest.TestCase):
+    """-turns.json is the transcription checkpoint, keyed in the step input record."""
 
     TURNS = [
         {"speaker": "A", "start": 0.0, "end": 1.0, "text": "Hello."},
@@ -555,127 +558,72 @@ class LoadOrCreateTranscriptTests(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.root = Path(tmp.name)
-        self.raw = self.root / "raw"
-        self.raw.mkdir()
-        self.audio = self.raw / "riverside_ep.mp3"
+        self.audio = self.root / "riverside_ep.mp3"
         self.audio.write_bytes(b"audio")
         self.out_base = str(self.root / "episode110")
-        patcher = mock.patch("builtins.print")
-        patcher.start()
-        self.addCleanup(patcher.stop)
+        for patcher in (
+            mock.patch("builtins.print"),
+            mock.patch.dict("os.environ", {"EPISODE_SPEAKERS": "2"}),
+            mock.patch.object(podbean.voice_match, "fluidaudio_pin", return_value="pin1"),
+        ):
+            patcher.start()
+            self.addCleanup(patcher.stop)
 
     def _fake_local(self, audio_path, out_base, num_speakers=None, verbose=False):
         Path(f"{out_base}-turns.json").write_text(json.dumps(self.TURNS), encoding="utf-8")
         return tl.format_turns(self.TURNS)
 
-    def _run(self, backend="local", answers=(), client=None, speakers="4"):
-        answers = list(answers)
-        env = {"TRANSCRIBE_BACKEND": backend, "EPISODE_SPEAKERS": speakers}
-        with mock.patch.dict("os.environ", env, clear=False):
-            return podbean.load_or_create_transcript(
-                client, str(self.audio), self.out_base, input_func=lambda: answers.pop(0)
-            )
-
-    def test_local_run_writes_backend_and_final_checkpoints_with_bound_turns(self):
+    def test_first_run_transcribes_with_the_pin_and_writes_the_raw_text(self):
         with mock.patch.object(podbean, "transcribe_local", side_effect=self._fake_local) as local:
-            transcript = self._run()
+            turns = podbean.load_or_transcribe(str(self.audio), self.out_base)
+        self.assertEqual(turns, self.TURNS)
+        self.assertEqual(local.call_args.kwargs["num_speakers"], 2)
+        self.assertEqual(Path(f"{self.out_base}-local.txt").read_text(), tl.format_turns(self.TURNS))
 
-        self.assertEqual(local.call_args.kwargs["num_speakers"], 4)
-        self.assertEqual(Path(f"{self.out_base}-local.txt").read_text(), transcript)
-        self.assertEqual(Path(f"{self.out_base}.txt").read_text(), transcript)
-        self.assertEqual(podbean.load_transcript_turns(self.out_base, transcript), self.TURNS)
+    def test_rerun_with_the_same_recording_reuses_the_turns(self):
+        with mock.patch.object(podbean, "transcribe_local", side_effect=self._fake_local) as local:
+            podbean.load_or_transcribe(str(self.audio), self.out_base)
+            podbean.load_or_transcribe(str(self.audio), self.out_base)
+        self.assertEqual(local.call_count, 1)
 
-    def test_new_transcript_removes_derived_checkpoints_only(self):
-        derived = ["-guests.json", "-draft.md", "-draft-v2.md", "-review-1.md", "-article.md",
-                   "-metadata.json", "-chapters-generated.txt", "-announcement.json"]
-        kept = ["-title.txt", "-chapters.txt", "-announcement-scheduled.txt", "-source.json",
-                "-youtube-scheduled.txt"]
-        for suffix in derived + kept:
-            Path(f"{self.out_base}{suffix}").write_text("old", encoding="utf-8")
-
-        with mock.patch.object(podbean, "transcribe_local", side_effect=self._fake_local):
-            self._run()
-
-        for suffix in derived:
-            self.assertFalse(Path(f"{self.out_base}{suffix}").exists(), suffix)
-        for suffix in kept:
-            self.assertTrue(Path(f"{self.out_base}{suffix}").exists(), suffix)
-
-    def test_transcript_is_saved_before_derived_checkpoints_are_removed(self):
-        Path(f"{self.out_base}-article.md").write_text("old", encoding="utf-8")
-        seen = []
-
-        def invalidate(out_base):
-            seen.append((Path(f"{out_base}.txt").exists(), Path(f"{out_base}-transcript-source.json").exists()))
-            return []
-
-        with mock.patch.object(podbean, "transcribe_local", side_effect=self._fake_local), \
-                mock.patch.object(podbean, "invalidate_transcript_checkpoints", side_effect=invalidate):
-            self._run()
-        self.assertEqual(seen, [(True, True)])
-
-    def test_external_transcript_change_invalidates_and_binds_no_turns(self):
-        with mock.patch.object(podbean, "transcribe_local", side_effect=self._fake_local):
-            machine = self._run()
-        Path(f"{self.out_base}-article.md").write_text("old", encoding="utf-8")
-        self.assertFalse(podbean.adopt_external_transcript(self.out_base, machine, "same.txt"))
-        self.assertTrue(Path(f"{self.out_base}-article.md").exists())
-        self.assertEqual(podbean.load_transcript_turns(self.out_base, machine), self.TURNS)
-
-        self.assertTrue(podbean.adopt_external_transcript(self.out_base, "[A]: edited", "/x/edited.txt"))
-        self.assertFalse(Path(f"{self.out_base}-article.md").exists())
-        self.assertEqual(Path(f"{self.out_base}.txt").read_text(), "[A]: edited")
-        source = json.loads(Path(f"{self.out_base}-transcript-source.json").read_text())
-        self.assertEqual((source["backend"], source["provided_transcript"]), ("external", "edited.txt"))
-        self.assertIsNone(podbean.load_transcript_turns(self.out_base, "[A]: edited"))
-
-    def test_openai_transcript_never_uses_turns_left_by_the_local_backend(self):
+    def test_turns_without_a_record_are_transcribed_again(self):
         Path(f"{self.out_base}-turns.json").write_text(json.dumps(self.TURNS), encoding="utf-8")
-        with mock.patch.object(podbean, "transcribe_openai", return_value=tl.format_turns(self.TURNS)):
-            transcript = self._run(backend="openai", client=object())
+        Path(f"{self.out_base}-article.md").write_text("old", encoding="utf-8")
+        with mock.patch.object(podbean, "transcribe_local", side_effect=self._fake_local) as local:
+            podbean.load_or_transcribe(str(self.audio), self.out_base)
+        local.assert_called_once()
+        self.assertFalse(Path(f"{self.out_base}-article.md").exists())
 
-        self.assertTrue(Path(f"{self.out_base}-openai.txt").exists())
-        self.assertIsNone(podbean.load_transcript_turns(self.out_base, transcript))
-
-    def test_openai_backend_does_not_prompt_for_speakers(self):
-        with mock.patch.object(podbean, "transcribe_openai", return_value="[A]: hosted"), \
-                mock.patch.object(podbean, "prompt_speaker_count") as prompt:
-            self._run(backend="openai", client=object())
-        prompt.assert_not_called()
-
-    def test_reused_local_transcript_with_mismatched_turns_is_not_bound(self):
-        Path(f"{self.out_base}-local.txt").write_text("[A]: something else", encoding="utf-8")
+    def test_skip_transcription_uses_saved_turns_or_stops(self):
+        with self.assertRaises(podbean.PipelineStop):
+            podbean.load_or_transcribe(str(self.audio), self.out_base, skip_transcription=True)
         Path(f"{self.out_base}-turns.json").write_text(json.dumps(self.TURNS), encoding="utf-8")
         with mock.patch.object(podbean, "transcribe_local") as local:
-            transcript = self._run(answers=[""])
-
+            self.assertEqual(
+                podbean.load_or_transcribe(str(self.audio), self.out_base, skip_transcription=True), self.TURNS
+            )
         local.assert_not_called()
-        self.assertEqual(transcript, "[A]: something else")
-        self.assertIsNone(podbean.load_transcript_turns(self.out_base, transcript))
 
-    def test_edited_turns_file_is_no_longer_bound(self):
-        with mock.patch.object(podbean, "transcribe_local", side_effect=self._fake_local):
-            transcript = self._run()
-        Path(f"{self.out_base}-turns.json").write_text("[]", encoding="utf-8")
-        self.assertIsNone(podbean.load_transcript_turns(self.out_base, transcript))
+    def test_transcription_failure_stops(self):
+        with mock.patch.object(podbean, "transcribe_local", side_effect=RuntimeError("ffmpeg not found")):
+            with self.assertRaisesRegex(podbean.PipelineStop, "ffmpeg not found"):
+                podbean.load_or_transcribe(str(self.audio), self.out_base)
 
-    def test_legacy_transcript_without_source_record_has_no_turns(self):
-        self.assertIsNone(podbean.load_transcript_turns(self.out_base, "[A]: old"))
 
-    def test_sidecar_is_merged_with_codex_and_turns_stay_bound_to_the_machine_pass(self):
-        (self.raw / "riverside_ep.vtt").write_text(
-            "WEBVTT\n\n1\n00:00:00.000 --> 00:00:01.000\nHello there.\n", encoding="utf-8"
-        )
-        with mock.patch.object(podbean, "transcribe_local", side_effect=self._fake_local), \
-                mock.patch.object(podbean, "run_codex", return_value="[A]: Hello there.\n[B]: Hi.") as codex:
-            transcript = self._run()
+class ReferenceTextTests(unittest.TestCase):
+    def test_sidecar_vtt_is_read_as_plain_text(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            audio = Path(tmp) / "ep.mp3"
+            audio.write_bytes(b"x")
+            (Path(tmp) / "ep.vtt").write_text("WEBVTT\n\n1\n00:00.000 --> 00:01.000\nHello there\n", encoding="utf-8")
+            with mock.patch("builtins.print"):
+                self.assertEqual(podbean.load_reference_text(None, str(audio)), "Hello there")
 
-        self.assertEqual(transcript, "[A]: Hello there.\n[B]: Hi.")
-        stdin = codex.call_args.kwargs["stdin_text"]
-        self.assertIn("Hello there.", stdin)
-        self.assertNotIn("-->", stdin)
-        self.assertEqual(Path(f"{self.out_base}.txt").read_text(), transcript)
-        self.assertEqual(podbean.load_transcript_turns(self.out_base, transcript), self.TURNS)
+    def test_no_sidecar_and_no_flag_is_empty(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            audio = Path(tmp) / "ep.mp3"
+            audio.write_bytes(b"x")
+            self.assertEqual(podbean.load_reference_text(None, str(audio)), "")
 
 
 class SidecarStagingTests(unittest.TestCase):

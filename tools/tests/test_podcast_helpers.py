@@ -292,116 +292,6 @@ class TestPodbeanTextHelpers(unittest.TestCase):
             podbean._text_includes_guest_names("Agent-Native Infra", guest_context)
         )
 
-    def test_manual_guest_context_splits_role_details_without_dash(self):
-        raw = (
-            "Mark Shine Co-Founder & CTO @ Ankra; "
-            "Pawel Piwosz Developer Advocate @ UpCloud; "
-            "Filipe Berti Engineering Manager UpCloud"
-        )
-        with (
-            patch("builtins.input", return_value=raw),
-            patch(
-                "podbean.normalize_operator_guest_notes",
-                side_effect=RuntimeError("claude unavailable"),
-            ),
-            redirect_stdout(StringIO()),
-        ):
-            guest_context = podbean._manual_guest_context_from_operator(
-                {"status": "needs_operator"}
-            )
-
-        self.assertEqual(
-            podbean.guest_full_names(guest_context),
-            ["Mark Shine", "Pawel Piwosz", "Filipe Berti"],
-        )
-        self.assertTrue(
-            podbean._text_includes_guest_names(
-                "European Cloud Sovereignty with Mark Shine, Pawel Piwosz and Filipe Berti",
-                guest_context,
-            )
-        )
-        self.assertEqual(guest_context["guests"][0]["role"], "Co-Founder & CTO")
-        self.assertEqual(guest_context["guests"][0]["company"], "Ankra")
-        self.assertEqual(guest_context["guests"][1]["role"], "Developer Advocate")
-        self.assertEqual(guest_context["guests"][1]["company"], "UpCloud")
-        self.assertEqual(guest_context["guests"][2]["role"], "Engineering Manager")
-        self.assertEqual(guest_context["guests"][2]["company"], "UpCloud")
-
-    def test_manual_guest_context_accepts_agent_normalized_free_form(self):
-        raw = (
-            "The guests are Mark Shine, Co-Founder and CTO at Ankra, "
-            "plus Pawel Piwosz from UpCloud. Mark's company site is https://ankra.io."
-        )
-        normalized = {
-            "status": "verified",
-            "guests": [
-                {
-                    "full_name": "Mark Shine",
-                    "participant_name": "Mark Shine",
-                    "role": "Co-Founder and CTO",
-                    "company": "Ankra",
-                    "professional_summary": "",
-                    "links": [
-                        {
-                            "label": "Ankra",
-                            "url": "https://ankra.io",
-                            "type": "company",
-                        }
-                    ],
-                    "confidence": "operator",
-                    "needs_operator": False,
-                    "question": "",
-                },
-                {
-                    "full_name": "Pawel Piwosz",
-                    "participant_name": "Pawel Piwosz",
-                    "role": "",
-                    "company": "UpCloud",
-                    "professional_summary": "",
-                    "links": [],
-                    "confidence": "operator",
-                    "needs_operator": False,
-                    "question": "",
-                },
-            ],
-            "notes": "",
-        }
-        with (
-            patch("builtins.input", return_value=raw),
-            patch("podbean.normalize_operator_guest_notes", return_value=normalized) as mock_norm,
-            redirect_stdout(StringIO()),
-        ):
-            guest_context = podbean._manual_guest_context_from_operator(
-                {"status": "needs_operator"},
-                verbose=True,
-            )
-
-        mock_norm.assert_called_once_with(raw, {"status": "needs_operator"}, verbose=True)
-        self.assertEqual(podbean.guest_full_names(guest_context), ["Mark Shine", "Pawel Piwosz"])
-        self.assertTrue(
-            podbean._text_includes_guest_names(
-                "EU Cloud with Mark Shine and Pawel Piwosz", guest_context
-            )
-        )
-
-    def test_repair_guest_context_names_fixes_old_operator_checkpoint(self):
-        guest_context = {
-            "guests": [
-                {
-                    "full_name": "Mark Shine Co-Founder & CTO @ Ankra",
-                    "participant_name": "Mark Shine Co-Founder & CTO @ Ankra",
-                    "professional_summary": "",
-                }
-            ]
-        }
-
-        repaired = podbean._repair_guest_context_names(guest_context)
-
-        self.assertEqual(podbean.guest_full_names(repaired), ["Mark Shine"])
-        self.assertEqual(repaired["guests"][0]["full_name"], "Mark Shine")
-        self.assertEqual(repaired["guests"][0]["role"], "Co-Founder & CTO")
-        self.assertEqual(repaired["guests"][0]["company"], "Ankra")
-        self.assertEqual(repaired["guests"][0].get("professional_summary", ""), "")
 
     def test_hugo_shortcode_braces_in_template(self):
         """podbean_line must emit {{< not {< — f-strings need {{{{ for literal {{."""
@@ -747,7 +637,16 @@ class TestCodexRunner(unittest.TestCase):
         self.assertIn(os.path.abspath(relative_path), run.call_args.args[0])
 
 
+TURNS = [
+    {"speaker": "A", "start": 0.0, "end": 60.0, "text": "Welcome to DevSecOps Talks."},
+    {"speaker": "B", "start": 60.0, "end": 120.0, "text": "Thanks for having me."},
+]
+
+
 class TestPodbeanPublishingFlow(unittest.TestCase):
+    UPLOADS = ("upload_cover_to_r2", "upload_file_to_podbean", "create_podbean_episode",
+               "upload_to_youtube", "write_episode_markdown", "schedule_episode_announcement")
+
     def setUp(self):
         self.root = Path(self.enterContext(tempfile.TemporaryDirectory()))
         self.audio = self.root / "recording.mp3"
@@ -772,13 +671,23 @@ class TestPodbeanPublishingFlow(unittest.TestCase):
             "get_podbean_auth_token": "token",
             "get_podbean_episodes": {"episodes": []},
             "validate_or_bind_checkpoint_source": None,
-            "load_or_create_transcript": "transcript",
-            "_load_or_detect_guest_context": {"status": "no_guests", "guests": []},
+            "require_publishing_prerequisites": None,
+            "load_or_transcribe": TURNS,
+            "confirm_speakers": ({"A": "Mattias Hemmingsson"}, TURNS),
+            "identify_guests": (
+                {"status": "no_guests", "guests": [], "hosts_present": ["Mattias Hemmingsson"]},
+                {"A": "Mattias Hemmingsson", "B": "Jane Doe"},
+            ),
+            "load_reference_text": "",
+            "correct_transcript": TURNS,
             "generate_article": "article",
             "load_or_generate_chapters": "",
             "load_or_generate_metadata": {"subtitle": "Subtitle", "youtube_title": "Hook"},
-            "generate_cover": "/images/covers/001.png",
+            "draw_cover": str(self.root / "episode001-cover.png"),
+            "cover_public_url": "https://r2.example/covers/001-abc.png",
             "prompt_publish_action": self.schedule,
+            "approve_episode_announcement": None,
+            "upload_cover_to_r2": "https://r2.example/covers/001-abc.png",
             "get_podbean_upload_link": {"presigned_url": "https://example.test/audio", "file_key": "audio"},
             "upload_file_to_podbean": None,
             "create_podbean_episode": {"episode": {"id": "episode-id", "status": "draft"}},
@@ -788,36 +697,105 @@ class TestPodbeanPublishingFlow(unittest.TestCase):
         }.items():
             self.mocks[name] = self.enterContext(patch.object(podbean, name, return_value=result))
 
-    def test_article_with_disallowed_html_stops_before_podbean(self):
-        self.mocks["generate_article"].return_value = "## A {#a}\n<iframe src=x></iframe>"
-        out = StringIO()
-        with redirect_stdout(out), self.assertRaises(SystemExit) as error:
-            podbean.process_audio(str(self.audio), self.args, None)
-        self.assertEqual(error.exception.code, 1)
-        self.assertIn("tag not allowed: <iframe src=x>", out.getvalue())
-        self.assertIn("episode001-article.md", out.getvalue())
-        self.mocks["upload_file_to_podbean"].assert_not_called()
-        self.mocks["write_episode_markdown"].assert_not_called()
+    def _confirm_schedule(self):
+        self.mocks["create_podbean_episode"].return_value = {"episode": {
+            "id": "episode-id", "status": "future", "media_url": "https://example.test/ep.mp3",
+            "publish_time": self.schedule.podbean_timestamp,
+        }}
 
-    def test_external_transcript_is_adopted_into_the_checkpoint(self):
-        external = self.root / "edited.txt"
-        external.write_text("[A]: edited", encoding="utf-8")
-        self.args.transcript = str(external)
-        self.args.draft_only = True
-        with patch.object(podbean, "adopt_external_transcript") as adopt:
-            podbean.process_audio(str(self.audio), self.args, None)
-        adopt.assert_called_once_with(str(self.root / "episode001"), "[A]: edited", str(external))
-        self.mocks["load_or_create_transcript"].assert_not_called()
+    def assert_nothing_uploaded(self):
+        for name in self.UPLOADS:
+            self.mocks[name].assert_not_called()
+
+    def test_article_with_disallowed_html_stops_before_any_upload(self):
+        self.mocks["generate_article"].return_value = "## A {#a}\n<iframe src=x></iframe>"
+        with self.assertRaisesRegex(podbean.PipelineStop, "tag not allowed: <iframe src=x>") as stop:
+            podbean.process_audio(str(self.audio), self.args)
+        self.assertTrue(stop.exception.checkpoint.endswith("episode001-article.md"))
+        self.assert_nothing_uploaded()
+
+    def test_steps_run_in_order_and_nothing_asks_after_the_first_upload(self):
+        self._confirm_schedule()
+        calls = []
+        uploaded = []
+        prompts_after_upload = []
+        for name, mock in self.mocks.items():
+            mock.side_effect = (lambda n, m: lambda *a, **k: (
+                calls.append(n), uploaded.append(n) if n in self.UPLOADS else None, m.return_value)[-1])(name, mock)
+
+        def fake_input(*_args):
+            if uploaded:
+                prompts_after_upload.append(calls[-1])
+            return ""
+
+        self.args.guidance = None  # asks for guidance, so input() is exercised
+        with patch("builtins.input", side_effect=fake_input) as ask:
+            podbean.process_audio(str(self.audio), self.args)
+        ask.assert_called()
+        self.assertEqual(prompts_after_upload, [])
+        order = [name for name in (
+            "load_or_transcribe", "confirm_speakers", "identify_guests",
+            "correct_transcript", "load_or_generate_chapters", "generate_article", "load_or_generate_metadata",
+            "draw_cover", "prompt_publish_action", "approve_episode_announcement", "upload_cover_to_r2",
+            "create_podbean_episode", "write_episode_markdown", "schedule_episode_announcement",
+        )]
+        self.assertEqual([c for c in calls if c in order], order)
+
+    def test_corrected_turns_named_by_voice_and_guest_reach_the_later_steps(self):
+        self._confirm_schedule()
+        podbean.process_audio(str(self.audio), self.args)
+        correct_kwargs = self.mocks["correct_transcript"].call_args.kwargs
+        self.assertEqual(correct_kwargs["speaker_names"], {"A": "Mattias Hemmingsson", "B": "Jane Doe"})
+        guest_args = self.mocks["identify_guests"].call_args.args
+        self.assertEqual(guest_args[2], {"A": "Mattias Hemmingsson"})
+        self.assertIs(self.mocks["load_or_generate_chapters"].call_args.args[1], TURNS)
+        article_kwargs = self.mocks["generate_article"].call_args.kwargs
+        self.assertEqual((article_kwargs["title"], article_kwargs["teaser"]), ("Title", "Description"))
+
+    def test_announcement_is_approved_for_the_predicted_page_and_cover(self):
+        self._confirm_schedule()
+        podbean.process_audio(str(self.audio), self.args)
+        args = self.mocks["approve_episode_announcement"].call_args.args
+        self.assertTrue(args[2].startswith("https://devsecops.fm/episodes/001-"))
+        self.assertEqual(args[7], self.schedule.podbean_datetime)
+        self.assertEqual(args[9], "https://r2.example/covers/001-abc.png")
+        page_kwargs = self.mocks["write_episode_markdown"].call_args.kwargs
+        self.assertEqual(page_kwargs["image"], "https://r2.example/covers/001-abc.png")
+        self.assertEqual(self.mocks["schedule_episode_announcement"].call_args.args[4],
+                         "https://r2.example/covers/001-abc.png")
 
     def test_unconfirmed_schedule_stops_before_youtube_and_keeps_upload_checkpoint(self):
-        with self.assertRaisesRegex(ValueError, "did not confirm scheduled publication"):
-            podbean.process_audio(str(self.audio), self.args, None)
+        with self.assertRaisesRegex(podbean.PipelineStop, "did not confirm scheduled publication") as stop:
+            podbean.process_audio(str(self.audio), self.args)
+        self.assertTrue(stop.exception.checkpoint.endswith("episode001-podbean-upload.json"))
         create_kwargs = self.mocks["create_podbean_episode"].call_args.kwargs
         self.assertEqual(create_kwargs["status"], "future")
         self.assertEqual(create_kwargs["publish_timestamp"], self.schedule.podbean_timestamp)
         self.assertTrue((self.root / "episode001-podbean-upload.json").exists())
         self.mocks["upload_to_youtube"].assert_not_called()
         self.mocks["write_episode_markdown"].assert_not_called()
+
+    def test_unauthorized_audio_upload_stops_the_run(self):
+        self.mocks["get_podbean_upload_link"].return_value = {"error": "invalid_token"}
+        with self.assertRaisesRegex(podbean.PipelineStop, "did not authorize the audio upload"):
+            podbean.process_audio(str(self.audio), self.args)
+        self.mocks["upload_file_to_podbean"].assert_not_called()
+        self.mocks["create_podbean_episode"].assert_not_called()
+
+    def test_rejected_episode_creation_stops_the_run(self):
+        self.mocks["create_podbean_episode"].return_value = {"error": "invalid_request"}
+        with self.assertRaisesRegex(podbean.PipelineStop, "Podbean rejected episode creation"):
+            podbean.process_audio(str(self.audio), self.args)
+        self.mocks["upload_to_youtube"].assert_not_called()
+
+    def test_immediate_release_records_the_approved_release_time(self):
+        self.mocks["prompt_publish_action"].return_value = None
+        self.mocks["create_podbean_episode"].return_value = {"episode": {"id": "episode-id", "status": "publish"}}
+        with patch.object(podbean, "record_announcement_eligibility") as record:
+            podbean.process_audio(str(self.audio), self.args)
+        approved_release = self.mocks["approve_episode_announcement"].call_args.args[7]
+        self.assertIsNotNone(approved_release)
+        self.assertIs(record.call_args.args[1], approved_release)
 
     def test_existing_draft_stops_before_publishing_or_creating_duplicate(self):
         for timestamp in (1, self.schedule.podbean_timestamp):
@@ -826,24 +804,17 @@ class TestPodbeanPublishingFlow(unittest.TestCase):
                     "id": "existing-id", "episode_number": 1,
                     "status": "draft", "publish_time": timestamp,
                 }]}
-                with self.assertRaises(SystemExit) as error:
-                    podbean.process_audio(str(self.audio), self.args, None)
-                self.assertEqual(error.exception.code, 1)
-                self.assertIn("still a draft", self.errors.getvalue())
+                with self.assertRaisesRegex(podbean.PipelineStop, "still a draft"):
+                    podbean.process_audio(str(self.audio), self.args)
                 self.mocks["prompt_publish_action"].assert_not_called()
                 self.mocks["generate_article"].assert_not_called()
-                self.mocks["upload_file_to_podbean"].assert_not_called()
-                self.mocks["create_podbean_episode"].assert_not_called()
-                self.mocks["upload_to_youtube"].assert_not_called()
-                self.mocks["write_episode_markdown"].assert_not_called()
+                self.assert_nothing_uploaded()
 
     def test_confirmed_schedule_completes_and_clears_audio_upload_checkpoint(self):
-        self.mocks["create_podbean_episode"].return_value = {"episode": {
-            "id": "episode-id", "status": "future",
-            "publish_time": self.schedule.podbean_timestamp,
-        }}
-        podbean.process_audio(str(self.audio), self.args, None)
+        self._confirm_schedule()
+        podbean.process_audio(str(self.audio), self.args)
         self.assertFalse((self.root / "episode001-podbean-upload.json").exists())
+        self.assertTrue((self.root / "episode001-announcement-eligible.json").exists())
         page_kwargs = self.mocks["write_episode_markdown"].call_args.kwargs
         self.assertEqual(page_kwargs["publish_datetime"], self.schedule.podbean_datetime)
 
@@ -852,10 +823,12 @@ class TestPodbeanPublishingFlow(unittest.TestCase):
             "id": "existing-id", "episode_number": 1, "status": "future",
             "publish_time": self.schedule.podbean_timestamp,
         }]}
-        podbean.process_audio(str(self.audio), self.args, None)
+        podbean.process_audio(str(self.audio), self.args)
         self.mocks["prompt_publish_action"].assert_not_called()
         self.mocks["upload_file_to_podbean"].assert_not_called()
         self.mocks["create_podbean_episode"].assert_not_called()
+        # No release from this run: only an earlier eligibility record could announce it.
+        self.assertIsNone(self.mocks["approve_episode_announcement"].call_args.args[7])
         page_kwargs = self.mocks["write_episode_markdown"].call_args.kwargs
         self.assertEqual(page_kwargs["publish_datetime"], self.schedule.podbean_datetime)
 
@@ -864,9 +837,18 @@ class TestPodbeanPublishingFlow(unittest.TestCase):
             "id": "existing-id", "episode_number": 1, "status": "draft",
         }]}
         self.args.draft_only = True
-        podbean.process_audio(str(self.audio), self.args, None)
+        podbean.process_audio(str(self.audio), self.args)
         self.mocks["generate_article"].assert_called_once()
-        self.mocks["create_podbean_episode"].assert_not_called()
+        self.mocks["require_publishing_prerequisites"].assert_not_called()
+        self.mocks["load_or_generate_metadata"].assert_not_called()
+        self.assert_nothing_uploaded()
+
+    def test_missing_prerequisites_stop_before_any_question(self):
+        self.mocks["require_publishing_prerequisites"].side_effect = podbean.PipelineStop("no video")
+        with patch("builtins.input") as ask, self.assertRaisesRegex(podbean.PipelineStop, "no video"):
+            podbean.process_audio(str(self.audio), self.args)
+        ask.assert_not_called()
+        self.mocks["load_or_transcribe"].assert_not_called()
 
     def test_codex_description_failure_stops_before_any_upload_and_preserves_title(self):
         self.args.description = None
@@ -874,44 +856,261 @@ class TestPodbeanPublishingFlow(unittest.TestCase):
             stack.enter_context(patch("episode_pipeline.shutil.which", return_value="/bin/codex"))
             stack.enter_context(patch("episode_pipeline.subprocess.run", side_effect=
                 subprocess.TimeoutExpired(cmd=["codex", "private prompt"], timeout=900)))
-            with self.assertRaises(SystemExit) as error:
-                podbean.process_audio(str(self.audio), self.args, None)
-        self.assertEqual(error.exception.code, 1)
+            with self.assertRaises((podbean.PipelineStop, SystemExit)):
+                podbean.process_audio(str(self.audio), self.args)
         self.assertTrue((self.root / "episode001-title.txt").exists())
         self.assertFalse((self.root / "episode001-description.txt").exists())
-        for name in ("load_or_generate_metadata", "prompt_publish_action", "upload_file_to_podbean",
-                     "create_podbean_episode", "upload_to_youtube", "write_episode_markdown"):
-            self.mocks[name].assert_not_called()
+        self.mocks["generate_article"].assert_not_called()
+        self.assert_nothing_uploaded()
 
     def test_metadata_failure_stops_before_anything_remote(self):
-        self.mocks["load_or_generate_metadata"].side_effect = SystemExit(1)
-        with self.assertRaises(SystemExit):
-            podbean.process_audio(str(self.audio), self.args, None)
-        for name in ("generate_cover", "prompt_publish_action", "upload_file_to_podbean",
-                     "create_podbean_episode", "upload_to_youtube", "write_episode_markdown"):
+        self.mocks["load_or_generate_metadata"].side_effect = podbean.PipelineStop("metadata")
+        with self.assertRaises(podbean.PipelineStop):
+            podbean.process_audio(str(self.audio), self.args)
+        for name in ("draw_cover", "prompt_publish_action", "approve_episode_announcement"):
             self.mocks[name].assert_not_called()
+        self.assert_nothing_uploaded()
 
     def test_cover_failure_stops_before_anything_remote(self):
-        self.mocks["generate_cover"].side_effect = OSError("disk full")
-        with self.assertRaises(SystemExit):
-            podbean.process_audio(str(self.audio), self.args, None)
-        for name in ("prompt_publish_action", "upload_file_to_podbean", "create_podbean_episode",
-                     "write_episode_markdown"):
-            self.mocks[name].assert_not_called()
+        self.mocks["draw_cover"].side_effect = OSError("disk full")
+        with self.assertRaisesRegex(podbean.PipelineStop, "disk full"):
+            podbean.process_audio(str(self.audio), self.args)
+        self.mocks["prompt_publish_action"].assert_not_called()
+        self.assert_nothing_uploaded()
+
+    def test_announcement_failure_after_uploads_stops_the_run(self):
+        self._confirm_schedule()
+        self.mocks["schedule_episode_announcement"].side_effect = podbean.AnnouncementStop("Buffer failed on x")
+        with self.assertRaisesRegex(podbean.AnnouncementStop, "Buffer failed"):
+            podbean.process_audio(str(self.audio), self.args)
+        self.mocks["write_episode_markdown"].assert_called_once()
 
     def test_page_gets_metadata_cover_and_show_notes(self):
-        self.mocks["create_podbean_episode"].return_value = {"episode": {
-            "id": "episode-id", "status": "future", "media_url": "https://example.test/ep.mp3",
-            "publish_time": self.schedule.podbean_timestamp,
-        }}
-        podbean.process_audio(str(self.audio), self.args, None)
+        self._confirm_schedule()
+        podbean.process_audio(str(self.audio), self.args)
         page_kwargs = self.mocks["write_episode_markdown"].call_args.kwargs
         self.assertEqual(page_kwargs["subtitle"], "Subtitle")
-        self.assertEqual(page_kwargs["image"], "/images/covers/001.png")
         self.assertEqual(page_kwargs["audio_url"], "https://example.test/ep.mp3")
         self.assertEqual(page_kwargs["readtime"], "1 min read")
         content = self.mocks["create_podbean_episode"].call_args.args[2]
         self.assertIn("https://devsecops.fm/episodes/001/", content)
+
+
+class TestStepInputRecord(unittest.TestCase):
+    def setUp(self):
+        self.root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        self.base = str(self.root / "episode001")
+        self.enterContext(redirect_stdout(StringIO()))
+
+    def touch(self, *suffixes):
+        for suffix in suffixes:
+            Path(f"{self.base}{suffix}").write_text("x", encoding="utf-8")
+
+    def exists(self, suffix):
+        return Path(f"{self.base}{suffix}").exists()
+
+    def test_step_with_no_entry_is_rebuilt_with_every_later_step(self):
+        self.touch("-turns.json", "-guests.json", "-title.txt", "-article.md", "-youtube-url.txt")
+        podbean.refresh_checkpoints(self.base, "guests", "inputs")
+        self.assertTrue(self.exists("-turns.json"))
+        for suffix in ("-guests.json", "-title.txt", "-article.md"):
+            self.assertFalse(self.exists(suffix), suffix)
+        # Upload markers are remote state and never discarded.
+        self.assertTrue(self.exists("-youtube-url.txt"))
+
+    def test_unchanged_inputs_keep_the_checkpoints(self):
+        podbean.refresh_checkpoints(self.base, "title", "chapters", "transcript")
+        self.touch("-title.txt", "-draft-v2.md")
+        podbean.refresh_checkpoints(self.base, "title", "chapters", "transcript")
+        self.assertTrue(self.exists("-title.txt"))
+        self.assertTrue(self.exists("-draft-v2.md"))
+
+    def test_changed_inputs_discard_the_step_and_later_entries(self):
+        podbean.refresh_checkpoints(self.base, "chapters", ["turns"])
+        podbean.refresh_checkpoints(self.base, "title", "chapters")
+        self.touch("-chapters-generated.txt", "-title.txt", "-metadata.json")
+        podbean.refresh_checkpoints(self.base, "chapters", ["other turns"])
+        record = json.loads(Path(f"{self.base}-inputs.json").read_text())
+        self.assertEqual(sorted(record), ["chapters"])
+        for suffix in ("-chapters-generated.txt", "-title.txt", "-metadata.json"):
+            self.assertFalse(self.exists(suffix), suffix)
+
+    def test_unreadable_record_stops(self):
+        Path(f"{self.base}-inputs.json").write_text("[", encoding="utf-8")
+        with self.assertRaises(podbean.PipelineStop):
+            podbean.refresh_checkpoints(self.base, "title", "x")
+
+
+class TestIdentifyGuests(unittest.TestCase):
+    TURNS = [
+        {"speaker": "A", "start": 0, "end": 60, "text": "Welcome."},
+        {"speaker": "B", "start": 60, "end": 180, "text": "I work on supply chain security."},
+        {"speaker": "C", "start": 180, "end": 200, "text": "Thanks."},
+    ]
+    HOSTS = {"A": "Mattias Hemmingsson"}
+
+    def setUp(self):
+        self.root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        self.base = str(self.root / "episode001")
+        self.enterContext(redirect_stdout(StringIO()))
+        self.research = self.enterContext(patch.object(
+            podbean, "research_guests",
+            side_effect=lambda people, *a, **k: episode_pipeline.operator_guest_context(people, {}),
+        ))
+
+    def identify(self, answers, turns=None):
+        replies = iter(answers)
+        return podbean.identify_guests(
+            self.base, turns or self.TURNS[:2], self.HOSTS, "", "", input_func=lambda: next(replies))
+
+    def test_episode_without_guests_asks_nothing(self):
+        context, names = podbean.identify_guests(
+            self.base, self.TURNS[:1], self.HOSTS, "", "", input_func=self.fail)
+        self.assertEqual(context["guests"], [])
+        self.assertEqual(context["hosts_present"], ["Mattias Hemmingsson"])
+        self.assertEqual(names, self.HOSTS)
+        self.research.assert_not_called()
+
+    def test_operator_names_a_guest_research_never_found(self):
+        context, names = self.identify(["Jane Doe, CTO at Acme", ""])
+        self.assertEqual(podbean.guest_full_names(context), ["Jane Doe"])
+        self.assertEqual(names, {"A": "Mattias Hemmingsson", "B": "Jane Doe"})
+        people = self.research.call_args.args[0]
+        self.assertEqual(people, [{"name": "Jane Doe", "hint": "CTO at Acme", "labels": ["B"]}])
+
+    def test_same_name_for_two_labels_is_one_guest(self):
+        context, names = self.identify(["Jane Doe", "jane doe, Acme", ""], turns=self.TURNS)
+        self.assertEqual(podbean.guest_full_names(context), ["Jane Doe"])
+        self.assertEqual((names["B"], names["C"]), ("Jane Doe", "Jane Doe"))
+
+    def test_host_name_names_the_label_as_that_host(self):
+        context, names = self.identify(["andrey"])
+        self.assertEqual(names["B"], "Andrey Devyatkin")
+        self.assertEqual(context["guests"], [])
+        self.assertIn("Andrey Devyatkin", context["hosts_present"])
+
+    def test_rerun_reuses_the_answers_and_the_research(self):
+        first = self.identify(["Jane Doe", ""])
+        again = self.identify([""])
+        self.assertEqual(again[1], first[1])
+        self.assertEqual(podbean.guest_full_names(again[0]), ["Jane Doe"])
+        self.assertEqual(self.research.call_count, 1)
+
+    def test_changed_answer_discards_the_transcript_and_later_steps(self):
+        self.identify(["Jane Doe", ""])
+        podbean.refresh_checkpoints(self.base, "transcript", "turns")
+        Path(f"{self.base}-turns-corrected.json").write_text("[]", encoding="utf-8")
+        context, _ = self.identify(["new", "John Roe", ""])
+        self.assertEqual(podbean.guest_full_names(context), ["John Roe"])
+        self.assertFalse(Path(f"{self.base}-turns-corrected.json").exists())
+
+    def test_correction_looks_that_guest_up_again(self):
+        self.identify(["Jane Doe", "1 she runs security at Globex", ""])
+        self.assertEqual(self.research.call_count, 2)
+        self.assertEqual(self.research.call_args.args[0][0]["hint"], "she runs security at Globex")
+
+    def test_no_answer_stops(self):
+        def eof():
+            raise EOFError
+        with self.assertRaises(podbean.PipelineStop):
+            podbean.identify_guests(self.base, self.TURNS, self.HOSTS, "", "", input_func=eof)
+
+
+class TestOperatorGuestContext(unittest.TestCase):
+    PEOPLE = [{"name": "Jane Doe", "hint": "", "labels": ["B"]}]
+
+    def test_research_cannot_add_or_drop_a_guest(self):
+        research = {"guests": [
+            {"full_name": "Jane Doe", "x_handle": "@janed", "company": "Acme"},
+            {"full_name": "Bob Mentioned", "company": "Elsewhere"},
+        ]}
+        context = episode_pipeline.operator_guest_context(self.PEOPLE, research)
+        self.assertEqual(podbean.guest_full_names(context), ["Jane Doe"])
+        self.assertEqual((context["guests"][0]["x_handle"], context["guests"][0]["company"]), ("janed", "Acme"))
+        self.assertEqual(episode_pipeline.operator_guest_context(self.PEOPLE, {})["guests"][0]["full_name"], "Jane Doe")
+
+    def test_operator_spelling_wins_over_research(self):
+        context = episode_pipeline.operator_guest_context(
+            self.PEOPLE, {"guests": [{"full_name": "Jane A. Doe", "role": "CTO"}]})
+        self.assertEqual(context["guests"][0]["full_name"], "Jane Doe")
+        self.assertEqual(context["guests"][0]["role"], "CTO")
+
+    def test_failed_research_credits_the_guest_in_plain_text(self):
+        with patch.object(episode_pipeline, "run_claude", side_effect=RuntimeError("down")), \
+                redirect_stdout(StringIO()):
+            context = episode_pipeline.research_guests(self.PEOPLE, "transcript")
+        self.assertEqual(podbean.guest_full_names(context), ["Jane Doe"])
+        self.assertEqual(context["guests"][0]["x_handle"], "")
+
+
+class TestPublishingPrerequisites(unittest.TestCase):
+    def setUp(self):
+        self.root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        self.audio = self.root / "ep.mp3"
+        self.audio.write_bytes(b"a")
+        self.base = str(self.root / "episode001")
+        with patch.object(sys, "argv", ["podbean.py"]):
+            self.args = podbean.parse_args()
+        self.enterContext(patch.dict(os.environ, {"UPLOAD_POST_API_KEY": "k", "UPLOAD_POST_USER": "u"}))
+        self.enterContext(patch.object(podbean, "require_cover_client", return_value=object()))
+        self.lifecycle = self.enterContext(patch.object(podbean, "check_cover_lifecycle"))
+        self.buffer = self.enterContext(patch.object(podbean, "preflight_buffer"))
+
+    def check(self, existing=None):
+        podbean.require_publishing_prerequisites(self.args, str(self.audio), self.base, existing)
+
+    def test_all_present_passes(self):
+        (self.root / "ep.mp4").write_bytes(b"v")
+        self.check()
+        self.buffer.assert_called_once()
+
+    def test_every_missing_piece_is_named_at_once(self):
+        os.environ.pop("UPLOAD_POST_USER")
+        self.lifecycle.side_effect = podbean.R2CoverError("rule tmp could expire covers/")
+        self.buffer.side_effect = podbean.AnnouncementStop("Threads: no channel id")
+        with self.assertRaises(podbean.PipelineStop) as stop:
+            self.check()
+        message = str(stop.exception)
+        for part in ("UPLOAD_POST_USER", "no video for ep.mp3", "could expire covers/", "Threads"):
+            self.assertIn(part, message)
+
+    def test_finished_youtube_upload_needs_no_video_or_keys(self):
+        os.environ.pop("UPLOAD_POST_API_KEY")
+        Path(f"{self.base}-youtube-url.txt").write_text("https://www.youtube.com/embed/x\n", encoding="utf-8")
+        self.check()
+
+    def test_old_episode_without_eligibility_needs_no_buffer(self):
+        self.args.skip_youtube_upload = True
+        self.check(existing={"id": "x"})
+        self.buffer.assert_not_called()
+
+
+class TestStops(unittest.TestCase):
+    def test_missing_cli_is_named_and_grok_is_not_needed_for_drafts(self):
+        which = lambda tool: None if tool == "grok" else f"/bin/{tool}"  # noqa: E731
+        with self.assertRaisesRegex(podbean.PipelineStop, "grok"):
+            podbean.require_tools(which=which)
+        with patch.object(podbean, "resolve_cli"), patch.object(podbean.voice_match, "load_host_voices"):
+            podbean.require_tools(draft_only=True, which=which)
+
+    def test_stale_voice_prints_stop_up_front(self):
+        error = podbean.voice_match.VoicePrintError("built with another pin")
+        with patch.object(podbean, "resolve_cli"), \
+                patch.object(podbean.voice_match, "load_host_voices", side_effect=error):
+            with self.assertRaisesRegex(podbean.PipelineStop, "another pin"):
+                podbean.require_tools(which=lambda tool: "/bin/x")
+
+    def test_main_prints_a_stop_once_and_exits_1(self):
+        err = StringIO()
+        with patch.object(sys, "argv", ["podbean.py", "-f", "ep.mp3"]), \
+                patch.object(podbean, "require_tools"), \
+                patch.object(podbean, "process_audio",
+                             side_effect=podbean.PipelineStop("Buffer says no", checkpoint="out/x.json")), \
+                redirect_stderr(err), self.assertRaises(SystemExit) as exit_:
+            podbean.main()
+        self.assertEqual(exit_.exception.code, 1)
+        self.assertIn("Error: Buffer says no", err.getvalue())
+        self.assertIn("Checkpoint: out/x.json", err.getvalue())
 
 
 class TestEpisodePipelineNumberedPick(unittest.TestCase):
@@ -955,47 +1154,6 @@ class TestEpisodePipelineNumberedPick(unittest.TestCase):
         self.assertIn("Detected guest(s): Paul Stack.", text)
         self.assertIn("every title option must include all guest full names", text)
         self.assertIn("https://github.com/systeminit/swamp", text)
-
-    def test_normalize_operator_guest_notes_requests_web_profile_lookup(self):
-        import episode_pipeline  # noqa: E402
-
-        def fake_run_claude(prompt, verbose=False, allow_web=False, fatal=True):
-            self.assertTrue(allow_web)
-            self.assertFalse(fatal)
-            self.assertIn("Use web search for every operator-provided guest", prompt)
-            self.assertIn("LinkedIn profiles", prompt)
-            self.assertIn("GitHub", prompt)
-            return """
-            {
-              "status": "verified",
-              "guests": [
-                {
-                  "full_name": "Mark Shine",
-                  "participant_name": "Mark Shine",
-                  "role": "Co-Founder & CTO",
-                  "company": "Ankra",
-                  "professional_summary": "",
-                  "links": [
-                    {
-                      "label": "LinkedIn",
-                      "url": "https://www.linkedin.com/in/example/",
-                      "type": "linkedin"
-                    }
-                  ],
-                  "confidence": "high",
-                  "needs_operator": false,
-                  "question": ""
-                }
-              ],
-              "notes": ""
-            }
-            """
-
-        with patch("episode_pipeline.run_claude", side_effect=fake_run_claude):
-            data = episode_pipeline.normalize_operator_guest_notes("Mark Shine from Ankra")
-
-        self.assertEqual(data["guests"][0]["full_name"], "Mark Shine")
-        self.assertEqual(data["guests"][0]["links"][0]["type"], "linkedin")
 
     def test_normalize_guest_context_preserves_needs_operator_without_names(self):
         from episode_pipeline import normalize_guest_context  # noqa: E402

@@ -46,10 +46,8 @@ Assembled by `build_youtube_description()` in
 ## Chapters
 
 A hand-written `out/episodeNNN-chapters.txt` always wins. Otherwise the pipeline
-proposes chapters from the timestamped turns of the local transcript and asks
-for approval, saving the result to `out/episodeNNN-chapters-generated.txt`.
-Without timestamped turns (OpenAI backend, `--transcript`) chapters are omitted
-with a notice. Chapters assume the MP3 and MP4 share a timeline, as Riverside
+proposes chapters from the corrected timestamped turns and asks for approval,
+saving the result to `out/episodeNNN-chapters-generated.txt`. Chapters assume the MP3 and MP4 share a timeline, as Riverside
 exports do.
 
 ## Hashtags

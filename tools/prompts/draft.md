@@ -16,9 +16,15 @@ Follow this guide end to end. It overrides anything below that conflicts with it
 
 ## Sources
 
-- The transcript is machine-generated. Speakers are labelled `[A]`, `[B]`, ...;
-  work out who is who from context and from the host list above. Fix name
-  spellings using "Transcript spelling fixes" above.
+- The transcript is corrected and speaker-named (`Name: text`, one line per
+  turn): misheard names and terms are fixed and speakers were identified by
+  voice. A spelling it still gets wrong follows "Transcript spelling fixes"
+  above and the guest context.
+- The input carries the episode title and teaser the operator picked and, when
+  there are any, the approved YouTube chapters. Write the article so it
+  delivers on that title and teaser. Use the chapters as a guide to the
+  episode's structure and emphasis, not a fixed outline: merge, split or
+  reorder sections where the article reads better.
 - If Editorial Guidance includes a "Guest Context" section, it is verified.
   Introduce each guest once, by full name and relevant credentials, in the
   problem section, and include relevant guest links in Resources.

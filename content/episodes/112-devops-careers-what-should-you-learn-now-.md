@@ -10,7 +10,7 @@ aliases:
 description: "Is knowing one cloud platform enough when agents can fill in the syntax? This episode explores why industry knowledge, clear communication and experience with failure deserve a place in your learning plan."
 subtitle: "Knowing how a service fails can matter more than knowing its manual."
 readtime: "15 min read"
-image: "/images/covers/112.png"
+image: "https://pub-44b46df59567461a91e93c803fe57df3.r2.dev/covers/112-bb66a201b7d9.png"
 audio_url: "https://mcdn.podbean.com/mf/web/6xeewmot61umd190/112-devops-careers-what-should-you-learn-now-.mp3"
 ---
 

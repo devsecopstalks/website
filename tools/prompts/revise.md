@@ -14,7 +14,10 @@ with the previous draft.
 
 Previous episodes are available under: ../content/episodes/
 
-You have the original transcript, the current draft, and the reviewer's comments.
+You have the episode title and teaser the operator picked, the approved
+YouTube chapters when there are any (a guide to structure, not a fixed
+outline), the corrected transcript, the current draft, and the reviewer's
+comments. Keep the article delivering on that title and teaser.
 Your job is to:
 
 1. Address EVERY issue the reviewer raised. Do not skip any.

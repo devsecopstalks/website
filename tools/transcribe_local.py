@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
 """Local transcription on Apple Silicon: Parakeet ASR + VBx diarization via FluidAudio.
 
-The default backend; OpenAI ``gpt-4o-transcribe-diarize`` is the opt-in
-fallback. Two CLI passes over a
-single 16 kHz mono WAV -- no chunking, because Parakeet transcribes a full
-45-minute episode in one pass -- and the results are merged here: FluidAudio has
-no combined command, so joining word timings to speaker spans is code this
-project owns.
+Two CLI passes over a single 16 kHz mono WAV -- no chunking, because Parakeet
+transcribes a full 45-minute episode in one pass -- and the results are merged
+here: FluidAudio has no combined command, so joining word timings to speaker
+spans is code this project owns.
 
 Diarization uses ``process --mode offline`` (VBx clustering) rather than
 ``sortformer``. Measured on a 33.6-minute, three-host episode: VBx pinned to
@@ -16,9 +14,8 @@ and -- because the count is pinned -- cannot invent the phantom fourth speaker
 both sortformer and OpenAI produced on that episode. It also has no 4-speaker
 ceiling, which sortformer does.
 
-``tools/do.sh`` builds the pinned FluidAudio CLI and owns the pin;
-``podbean.py`` owns the ``TRANSCRIBE_BACKEND`` switch that selects
-between this module and the OpenAI path.
+``tools/do.sh`` builds the pinned FluidAudio CLI and owns the pin; the
+speaker embeddings in ``-diarization.json`` feed ``voice_match.py``.
 """
 
 import bisect
@@ -66,6 +63,16 @@ def resolve_cli():
             "Run tools/do.sh, or set FLUIDAUDIO_CLI to an existing binary."
         )
     return cli
+
+
+def built_commit(cli):
+    """The FluidAudio commit do.sh stamped next to a managed build, or None when unknown."""
+    stamp = os.path.join(os.path.dirname(os.path.dirname(cli)), ".built-commit")
+    try:
+        with open(stamp, "r", encoding="utf-8") as f:
+            return f.read().strip() or None
+    except OSError:
+        return None
 
 
 def to_wav(audio_path, verbose=False):
@@ -133,6 +140,12 @@ def run_diarization(cli, wav_path, out_json, num_speakers=None, verbose=False):
     _run_cli(cli, args, "process", verbose=verbose)
     with open(out_json, "r", encoding="utf-8") as f:
         dia = json.load(f)
+    # Embeddings only compare within one model; build-host-voices.py checks this stamp.
+    commit = built_commit(cli)
+    if commit:
+        dia["fluidaudioCommit"] = commit
+        with open(out_json, "w", encoding="utf-8") as f:
+            json.dump(dia, f)
 
     segments = dia.get("segments") or []
     if not segments:
@@ -153,7 +166,7 @@ def run_diarization(cli, wav_path, out_json, num_speakers=None, verbose=False):
     return dia
 
 
-def _segment_speaker(seg):
+def segment_speaker(seg):
     """Speaker key for either schema: VBx uses speakerId, sortformer speakerIndex."""
     return seg["speakerId"] if "speakerId" in seg else seg["speakerIndex"]
 
@@ -183,7 +196,7 @@ def _assign_speakers(words, segments):
             s = segs[j]
             overlap = min(b, s["endTimeSeconds"]) - max(a, s["startTimeSeconds"])
             if overlap > best_overlap:
-                best, best_overlap = _segment_speaker(s), overlap
+                best, best_overlap = segment_speaker(s), overlap
             j -= 1
         labels.append(best)
 
@@ -257,8 +270,8 @@ def _speaker_label(n):
             return label
 
 
-def build_turns(asr, dia):
-    """Merge word timings and speaker spans into timestamped speaker turns."""
+def _raw_turns(asr, dia):
+    """Merge word timings and speaker spans into turns keyed by diarizer speaker id."""
     words = asr.get("wordTimings") or []
     if not words:
         raise RuntimeError(
@@ -283,13 +296,33 @@ def build_turns(asr, dia):
                 "end": word["endTime"],
                 "words": [word["word"].strip()],
             })
+    return turns
 
-    # Relabel to the [A]/[B]/[C] convention the OpenAI transcripts used, so the
-    # downstream prompts see the same shape. Order is first appearance.
+
+def _label_order(turns):
+    """Diarizer speaker id -> turn label. Order is first appearance."""
     order = {}
     for turn in turns:
         if turn["speaker"] not in order:
             order[turn["speaker"]] = _speaker_label(len(order))
+    return order
+
+
+def speaker_labels(asr, dia):
+    """Map each diarizer speaker id (``S1``) to its ``-turns.json`` label (``A``).
+
+    Ids that win no word get no turn, and so no label.
+    """
+    return _label_order(_raw_turns(asr, dia))
+
+
+def build_turns(asr, dia):
+    """Merge word timings and speaker spans into timestamped speaker turns."""
+    turns = _raw_turns(asr, dia)
+
+    # Relabel to the [A]/[B]/[C] convention the OpenAI transcripts used, so the
+    # downstream prompts see the same shape.
+    order = _label_order(turns)
 
     return [
         {
@@ -307,15 +340,38 @@ def format_turns(turns):
     return "\n".join(f"[{t['speaker']}]: {t['text']}" for t in turns)
 
 
-def transcribe_local(audio_path, out_base, num_speakers=None, verbose=False):
-    """Transcribe and diarize locally. Returns the ``[A]: ...`` transcript text."""
+def _require_tools():
+    """Return the fluidaudiocli path once both it and ffmpeg are available."""
     cli = resolve_cli()
     if not shutil.which("ffmpeg"):
         raise RuntimeError("ffmpeg not found; required to convert audio to 16 kHz mono WAV")
+    return cli
+
+
+def _write_turns(asr, dia, out_base):
+    """Write ``-turns.json`` and return the ``[A]: ...`` transcript text."""
+    turns = build_turns(asr, dia)
+
+    # Timestamps are kept alongside the text so highlight generation can cite
+    # them later without re-running either model.
+    with open(f"{out_base}-turns.json", "w", encoding="utf-8") as f:
+        json.dump(turns, f, indent=2)
+
+    transcript = format_turns(turns)
+    speakers = sorted({t["speaker"] for t in turns})
+    print(
+        f"✓ Local transcript: {len(turns)} turns, {len(speakers)} speakers "
+        f"({', '.join(speakers)}), {len(transcript)} chars"
+    )
+    return transcript
+
+
+def transcribe_local(audio_path, out_base, num_speakers=None, verbose=False):
+    """Transcribe and diarize locally. Returns the ``[A]: ...`` transcript text."""
+    cli = _require_tools()
 
     asr_json = f"{out_base}-asr.json"
     dia_json = f"{out_base}-diarization.json"
-    turns_json = f"{out_base}-turns.json"
 
     wav_path = to_wav(audio_path, verbose=verbose)
     try:
@@ -325,17 +381,38 @@ def transcribe_local(audio_path, out_base, num_speakers=None, verbose=False):
         if os.path.exists(wav_path):
             os.unlink(wav_path)
 
-    turns = build_turns(asr, dia)
+    return _write_turns(asr, dia, out_base)
 
-    # Timestamps are kept alongside the text so highlight generation can cite
-    # them later without re-running either model.
-    with open(turns_json, "w", encoding="utf-8") as f:
-        json.dump(turns, f, indent=2)
 
-    transcript = format_turns(turns)
-    speakers = sorted({t["speaker"] for t in turns})
-    print(
-        f"✓ Local transcript: {len(turns)} turns, {len(speakers)} speakers "
-        f"({', '.join(speakers)}), {len(transcript)} chars"
-    )
+def rediarize(audio_path, out_base, num_speakers, verbose=False):
+    """Re-run diarization pinned to ``num_speakers``, reusing the saved ASR.
+
+    Rewrites ``-diarization.json``, ``-turns.json`` and ``-local.txt`` and
+    returns the new transcript text. Diarization takes seconds where ASR takes
+    minutes, so the operator can retry a speaker count cheaply.
+    """
+    if not isinstance(num_speakers, int) or num_speakers < 1:
+        raise ValueError(f"num_speakers must be a positive integer, got {num_speakers!r}")
+    asr_json = f"{out_base}-asr.json"
+    if not os.path.exists(asr_json):
+        raise RuntimeError(f"{asr_json} not found; transcribe the episode before re-diarizing")
+    with open(asr_json, "r", encoding="utf-8") as f:
+        asr = json.load(f)
+
+    cli = _require_tools()
+    wav_path = to_wav(audio_path, verbose=verbose)
+    try:
+        dia = run_diarization(
+            cli, wav_path, f"{out_base}-diarization.json",
+            num_speakers=num_speakers, verbose=verbose,
+        )
+    finally:
+        if os.path.exists(wav_path):
+            os.unlink(wav_path)
+
+    transcript = _write_turns(asr, dia, out_base)
+    # podbean.py writes -local.txt after transcribe_local(); a re-diarize
+    # happens later in the run, so the stale raw text is replaced here.
+    with open(f"{out_base}-local.txt", "w", encoding="utf-8") as f:
+        f.write(transcript)
     return transcript

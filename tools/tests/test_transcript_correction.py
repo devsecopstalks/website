@@ -205,6 +205,30 @@ class TestPicksAndFrame(unittest.TestCase):
         self.assertIn("Additional guidance: shorter", codex.call_args.args[0])
         self.assertNotIn("CHAPTERS", codex.call_args.kwargs["stdin_text"])
 
+    def test_teaser_options_are_written_under_the_picked_title(self):
+        options = "\n".join(f"{n}. [Style {n}] Teaser {n} with Jane Doe." for n in range(1, 13))
+        answers = iter(["12"])
+        out = StringIO()
+        with patch.object(ep, "run_codex", return_value=options) as codex, redirect_stdout(out):
+            teaser = ep.pick_description(
+                "00:00 - Intro", "Jane Doe: hi", title="Picked title", input_func=lambda: next(answers))
+        self.assertEqual(teaser, "Teaser 12 with Jane Doe.")
+        self.assertIn("Enter a number (1-12)", out.getvalue())
+        stdin_text = codex.call_args.kwargs["stdin_text"]
+        self.assertTrue(stdin_text.startswith("--- TITLE ---\nPicked title\n"))
+        self.assertLess(stdin_text.index("TITLE"), stdin_text.index("--- CHAPTERS ---"))
+
+    def test_title_choices_follow_the_options_present(self):
+        options = "\n".join(f"{n}. [Style {n}] Title {n} with Jane Doe" for n in range(1, 13))
+        answers = iter(["13", "11"])
+        out = StringIO()
+        with patch.object(ep, "run_codex", return_value=options) as codex, redirect_stdout(out):
+            title = ep.pick_title("", "Jane: hi", input_func=lambda: next(answers))
+        self.assertEqual(title, "Title 11 with Jane Doe")
+        self.assertIn("Enter a number (1-12)", out.getvalue())
+        self.assertEqual(codex.call_count, 2)
+        self.assertNotIn("TITLE", codex.call_args.kwargs["stdin_text"])
+
     def test_draft_and_revision_carry_title_teaser_and_chapters(self):
         article = "## Problem {#problem}\n" + "x " * 300
         with patch.object(ep, "run_claude", return_value=article) as claude, redirect_stdout(StringIO()):

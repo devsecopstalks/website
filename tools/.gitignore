@@ -22,3 +22,4 @@ out/*
 .youtube_credentials
 !prompts/*.json
 !social-handles.json
+!host-voices.json

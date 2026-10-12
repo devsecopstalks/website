@@ -23,18 +23,6 @@ FLUIDAUDIO_COMMIT="667181a368da13b3a9178e310414e9dcbe8f23ce"
 FLUIDAUDIO_DIR="${FLUIDAUDIO_DIR:-$HOME/.cache/fluidaudio/devsecopstalks}"
 
 ensure_fluidaudio() {
-  # Same parsing as podbean.py's transcribe_backend().
-  local backend
-  backend=$(printf '%s' "${TRANSCRIBE_BACKEND:-local}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')
-  backend="${backend:-local}"
-  if [ "$backend" = "openai" ]; then
-    echo "TRANSCRIBE_BACKEND=openai — skipping FluidAudio build."
-    return 0
-  fi
-  if [ "$backend" != "local" ]; then
-    echo "Error: TRANSCRIBE_BACKEND must be 'local' or 'openai', got '${TRANSCRIBE_BACKEND}'."
-    exit 1
-  fi
   if [ -n "${FLUIDAUDIO_CLI:-}" ]; then
     echo "FLUIDAUDIO_CLI set — skipping FluidAudio build."
     return 0
@@ -120,18 +108,9 @@ ensure_fluidaudio() {
   echo "  Models (~685 MB) download to ~/Library/Application Support/FluidAudio/ on first run."
 }
 
-# --transcript / --skip-transcription runs never transcribe, so they need no build.
-needs_fluidaudio=1
-for arg in "$@"; do
-  case "$arg" in
-    -t|-t?*|--transcript|--transcript=*|--skip-transcription) needs_fluidaudio=0 ;;
-  esac
-done
-if [ "$needs_fluidaudio" = 1 ]; then
-  ensure_fluidaudio
-else
-  echo "Transcript given or transcription skipped — skipping FluidAudio build."
-fi
+# Every run needs it: podbean.py checks it up front, and re-diarizing in the
+# voice confirmation runs it even when the transcript is saved.
+ensure_fluidaudio
 
 # Staging of ~/Downloads/*.{mp3,mp4} into raw/ now happens inside podbean.py
 # (see stage_downloads_to_raw): re-run-safe and prompts when raw/ already holds files.

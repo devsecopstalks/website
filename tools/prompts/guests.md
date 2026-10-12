@@ -13,6 +13,9 @@ A guest is any speaker who is NOT Andrey, Mattias, or Paulina. Repeat guests are
 still guests. Julien is a guest if he appears because he is not one of the current
 three hosts for this rule.
 
+The hosts were identified by voice before this step: their lines carry their full
+names. Lines from every other voice are marked with a label such as `[B]`.
+
 ## Guest lookup rules
 
 - Use web search for every detected guest unless the companion show notes already
@@ -38,7 +41,7 @@ Schema:
 
 {
   "status": "no_guests|verified|needs_operator",
-  "hosts_present": ["Full host name"],
+  "hosts_present": [],
   "guests": [
     {
       "full_name": "Full Name",
@@ -70,10 +73,7 @@ infer and put the exact clarification needed in each guest's `question` field.
 
 ## hosts_present
 
-List the current hosts who actually speak in this episode, by exact full name:
-Andrey Devyatkin, Mattias Hemmingsson, Paulina Dubas. The episode announcement
-credits them and is written differently when Andrey was not there, so a host
-who did not speak must not be listed. Leave the list empty if you cannot tell.
+Return an empty list. The pipeline takes the hosts from the voice match.
 
 ## Guest social handles
 

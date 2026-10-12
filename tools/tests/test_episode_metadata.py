@@ -156,30 +156,35 @@ class TestMetadata(unittest.TestCase):
         self.assertIn("previous answer was rejected", codex.call_args.args[0])
         self.assertIn("--- TRANSCRIPT ---\ntranscript", codex.call_args.kwargs["stdin_text"])
 
-    def test_checkpoint_reused_until_title_or_teaser_changes(self):
+    def test_saved_metadata_is_reused_while_it_validates(self):
+        # Changed inputs are discarded by podbean's step input record, not here.
         with tempfile.TemporaryDirectory() as tmp:
             base = os.path.join(tmp, "episode001")
             with patch.object(episode_metadata, "run_codex", return_value=json.dumps(METADATA)) as codex, \
                     redirect_stdout(StringIO()):
-                for title in ("Title", "Title", "New title"):
+                for title in ("Title", "New title"):
                     episode_metadata.load_or_generate_metadata(base, title, "Teaser", "article", "t")
-            self.assertEqual(codex.call_count, 2)
-            self.assertTrue(Path(f"{base}-metadata.json").exists())
+            self.assertEqual(codex.call_count, 1)
+            self.assertEqual(json.loads(Path(f"{base}-metadata.json").read_text()), {"metadata": METADATA})
 
-    def test_checkpoint_regenerates_when_transcript_or_guests_change(self):
-        guests = {"status": "verified", "guests": [{"full_name": "Jane Doe"}], "hosts_present": ["Paulina"]}
+    def test_saved_metadata_missing_a_guest_is_regenerated(self):
+        guests = {"status": "verified", "guests": [{"full_name": "Jane Doe"}]}
         meta = dict(METADATA, youtube_intro="With Jane Doe.", podcast_who_what="With Jane Doe.")
         with tempfile.TemporaryDirectory() as tmp:
             base = os.path.join(tmp, "episode001")
+            Path(f"{base}-metadata.json").write_text(json.dumps({"inputs_sha256": "old", "metadata": METADATA}))
             with patch.object(episode_metadata, "run_codex", return_value=json.dumps(meta)) as codex, \
                     redirect_stdout(StringIO()):
-                for transcript, context in (
-                    ("t", guests), ("t", dict(guests, notes="")), ("t2", guests),
-                    ("t2", dict(guests, hosts_present=["Paulina", "Mattias"])),
-                ):
-                    episode_metadata.load_or_generate_metadata(base, "Title", "Teaser", "article", transcript,
-                                                               guest_context=context)
-            self.assertEqual(codex.call_count, 3)
+                result = episode_metadata.load_or_generate_metadata(
+                    base, "Title", "Teaser", "article", "t", guest_context=guests)
+            self.assertEqual(codex.call_count, 1)
+            self.assertEqual(result, meta)
+
+    def test_unusable_metadata_stops_the_run(self):
+        with patch.object(episode_metadata, "run_codex", return_value="not json"), redirect_stdout(StringIO()):
+            with self.assertRaises(episode_pipeline.PipelineStop):
+                episode_metadata.extract_metadata("Title", "Teaser", "article", "t")
+
 
     def test_readtime(self):
         self.assertEqual(episode_metadata.readtime_for("word " * 2640), "12 min read")
@@ -402,12 +407,19 @@ class TestPackagingIntegration(unittest.TestCase):
             "get_podbean_auth_token": "token",
             "get_podbean_episodes": {"episodes": []},
             "validate_or_bind_checkpoint_source": None,
-            "load_or_create_transcript": "transcript",
-            "load_transcript_turns": TURNS,
+            "require_publishing_prerequisites": None,
+            "load_or_transcribe": TURNS,
+            "confirm_speakers": ({}, TURNS),
             "_load_or_detect_guest_context": {"status": "no_guests", "guests": []},
+            "bind_guest_labels": {},
+            "load_reference_text": "",
+            "correct_transcript": TURNS,
             "generate_article": "## The problem {#problem}\nBody.",
-            "generate_cover": "/images/covers/001.png",
+            "draw_cover": str(root / "episode001-cover.png"),
+            "cover_public_url": "https://r2.example/covers/001-abc.png",
+            "upload_cover_to_r2": "https://r2.example/covers/001-abc.png",
             "prompt_publish_action": None,
+            "approve_episode_announcement": None,
             "get_podbean_upload_link": {"presigned_url": "https://example.test/a", "file_key": "k"},
             "upload_file_to_podbean": None,
             "create_podbean_episode": {"episode": {"id": "episode-id", "status": "publish"}},
@@ -420,7 +432,7 @@ class TestPackagingIntegration(unittest.TestCase):
         self.enterContext(patch.object(episode_metadata, "run_codex", side_effect=fake_codex))
         self.enterContext(patch("builtins.input", return_value=""))
 
-        podbean.process_audio(str(audio), args, None)
+        podbean.process_audio(str(audio), args)
 
         upload_args = mocks["upload_to_youtube"].call_args.args
         # A newly created episode is announceable, and the announcement links the written page.

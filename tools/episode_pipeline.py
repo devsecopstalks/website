@@ -305,6 +305,7 @@ def normalize_guest_context(data: dict) -> dict:
                 "linkedin_url": str(raw_guest.get("linkedin_url") or "").strip(),
                 "linkedin_name": str(raw_guest.get("linkedin_name") or "").strip(),
                 "x_handle": str(raw_guest.get("x_handle") or "").strip().lstrip("@"),
+                "threads_handle": str(raw_guest.get("threads_handle") or "").strip().lstrip("@"),
             }
         )
 

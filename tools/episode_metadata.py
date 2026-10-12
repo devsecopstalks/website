@@ -8,12 +8,10 @@ House rules: youtube-description.md and podcast-description.md.
 
 from __future__ import annotations
 
-import hashlib
 import html
 import json
 import os
 import re
-import sys
 
 from episode_pipeline import (
     PROMPTS_DIR,
@@ -21,7 +19,6 @@ from episode_pipeline import (
     format_timestamp,
     guest_full_names,
     load_prompt,
-    normalize_guest_context,
     run_codex,
 )
 
@@ -266,16 +263,7 @@ def extract_metadata(
         errors = validate_metadata(meta, guest_full_names(guest_context))
         if not errors:
             return meta
-    print("Error: metadata packaging failed: " + "; ".join(errors), file=sys.stderr)
-    print("Nothing was uploaded. Re-run to retry this step.", file=sys.stderr)
-    sys.exit(1)
-
-
-def _inputs_fingerprint(title: str, teaser: str, article: str, transcript: str, guest_context: dict | None) -> str:
-    """Hash of every input the metadata call sees; guests normalized so key order does not matter."""
-    guests = json.dumps(normalize_guest_context(guest_context or {}), sort_keys=True, ensure_ascii=False)
-    transcript_sha = hashlib.sha256(transcript.encode("utf-8")).hexdigest()
-    return hashlib.sha256("\0".join((title, teaser, article, transcript_sha, guests)).encode("utf-8")).hexdigest()
+    raise PipelineStop("metadata packaging failed: " + "; ".join(errors) + ". Nothing was uploaded.")
 
 
 def load_or_generate_metadata(
@@ -288,25 +276,26 @@ def load_or_generate_metadata(
     guest_text: str = "",
     verbose: bool = False,
 ) -> dict:
-    """``-metadata.json``, regenerated when the title, teaser, article, transcript or guests changed."""
+    """``-metadata.json``, generated when missing or no longer valid.
+
+    podbean.py's step input record discards it when the title, teaser, article,
+    transcript or guests change.
+    """
     metadata_file = f"{out_base}-metadata.json"
-    fingerprint = _inputs_fingerprint(title, teaser, article, transcript, guest_context)
     if os.path.isfile(metadata_file):
         try:
             with open(metadata_file, "r", encoding="utf-8") as f:
                 saved = json.load(f)
-            if saved.get("inputs_sha256") == fingerprint and not validate_metadata(
-                saved.get("metadata") or {}, guest_full_names(guest_context)
-            ):
+            if not validate_metadata(saved.get("metadata") or {}, guest_full_names(guest_context)):
                 print(f"✓ Loaded metadata from {metadata_file}")
                 return saved["metadata"]
-            print("Title, teaser, article, transcript or guests changed since the saved metadata; regenerating.")
+            print("Saved metadata no longer validates; regenerating.")
         except (OSError, ValueError, AttributeError) as e:
             print(f"⚠ Could not read {metadata_file} ({e}); regenerating")
 
     meta = extract_metadata(title, teaser, article, transcript, guest_context, guest_text, verbose)
     with open(metadata_file, "w", encoding="utf-8") as f:
-        json.dump({"inputs_sha256": fingerprint, "metadata": meta}, f, indent=2, ensure_ascii=False)
+        json.dump({"metadata": meta}, f, indent=2, ensure_ascii=False)
         f.write("\n")
     print(f"✓ Metadata saved to {metadata_file} (subtitle: {meta['subtitle'][:60]})")
     return meta

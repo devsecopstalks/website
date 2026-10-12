@@ -219,10 +219,6 @@ By default, new episode pages get `participants: ["Paulina", "Mattias", "Andrey"
 uv run podbean.py -f raw/ep.mp3 --participants "Paulina,Mattias,Andrey,Guest Name"
 ```
 
-### `article.py` (legacy)
-
-`article.py` is an older workflow (GPT draft, single Claude pass, episode-number-based filenames in the working directory). Prefer `podbean.py` + `raw/`/`out/` for new episodes. See the script docstring for details.
-
 ### Examples
 
 ```bash

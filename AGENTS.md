@@ -11,7 +11,6 @@ There is no separate demo documentation tree in this repository. Authoritative d
 - **`tools/episode_metadata.py`** — YouTube chapters from the corrected turns, the structured metadata call, and the YouTube description / Podbean show notes builders.
 - **`tools/generate_cover.py`** / **`tools/r2_staging.py`** — Episode cover, served from R2; `tools/migrate_covers_to_r2.py` moves pre-R2 covers once.
 - **`tools/buffer_announce.py`** — Buffer announcement on Andrey's LinkedIn, X and Threads: three drafters, approval before uploads, scheduling after the page; tags and channel ids in `tools/social-handles.json`.
-- **`tools/article.py`** — Legacy post-publish article helper; prefer `podbean.py` for new work.
 
 ## Expectations for changes
 

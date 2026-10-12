@@ -6,9 +6,6 @@ requires-python = ">=3.13"
 dependencies = [
     "requests",
     "upload-post",
-    "openai",
-    "httpx",
-    "markdown",
     "boto3",
     "pillow",
 ]

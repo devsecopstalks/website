@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""One-off: move the episode covers from static/images/covers/ to R2.
+"""One-off: move the episode covers from static/images/covers/ to the R2 covers bucket.
 
 Uploads each NNN.png under the key the pipeline uses (covers/NNN-<digest>.png),
 skipping objects already there, then points the matching ``image:`` lines in
 content/episodes/*.md at the public URL. Safe to re-run. Needs the R2_* variables
 from tools/.env (`op run --env-file=./.env -- uv run python3 migrate_covers_to_r2.py`);
-``--dry-run`` needs only R2_PUBLIC_URL and touches nothing.
+``--dry-run`` needs only R2_COVERS_PUBLIC_URL and touches nothing.
 """
 
 import argparse
@@ -55,8 +55,8 @@ def rewrite_images(urls, episodes_dir=EPISODES_DIR, dry_run=False):
 
 def migrate(dry_run=False, covers_dir=COVERS_DIR, episodes_dir=EPISODES_DIR):
     """Check the lifecycle, upload, then rewrite; returns the process exit code."""
-    if not r2_staging.R2_PUBLIC_URL:
-        print("Error: R2_PUBLIC_URL is not set", file=sys.stderr)
+    if not r2_staging.R2_COVERS_PUBLIC_URL:
+        print("Error: R2_COVERS_PUBLIC_URL is not set", file=sys.stderr)
         return 1
     s3 = None
     if not dry_run:

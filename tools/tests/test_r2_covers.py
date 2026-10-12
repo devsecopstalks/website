@@ -66,8 +66,29 @@ class LifecycleTests(unittest.TestCase):
         with self.assertRaises(r2_staging.R2CoverError):
             r2_staging.check_cover_lifecycle(s3)
 
+    def test_check_reads_the_covers_bucket(self):
+        s3 = mock.Mock()
+        s3.get_bucket_lifecycle_configuration.return_value = {"Rules": []}
+        with mock.patch.object(r2_staging, "R2_COVERS_BUCKET", "covers-bucket"):
+            r2_staging.check_cover_lifecycle(s3)
+        s3.get_bucket_lifecycle_configuration.assert_called_once_with(Bucket="covers-bucket")
 
-@mock.patch.object(r2_staging, "R2_PUBLIC_URL", PUBLIC)
+
+class CoverConfigTests(unittest.TestCase):
+    def test_missing_covers_variables_are_named_without_staging_fallback(self):
+        with mock.patch.object(r2_staging, "_r2_s3_client", return_value=object()), \
+                mock.patch.object(r2_staging, "R2_BUCKET", "podcast-staging"), \
+                mock.patch.object(r2_staging, "R2_PUBLIC_URL", PUBLIC):
+            for bucket, url, missing in (("", PUBLIC, "R2_COVERS_BUCKET"),
+                                         ("covers-bucket", "", "R2_COVERS_PUBLIC_URL")):
+                with mock.patch.object(r2_staging, "R2_COVERS_BUCKET", bucket), \
+                        mock.patch.object(r2_staging, "R2_COVERS_PUBLIC_URL", url):
+                    with self.assertRaisesRegex(r2_staging.R2CoverError, missing):
+                        r2_staging.require_cover_client()
+
+
+@mock.patch.object(r2_staging, "R2_COVERS_BUCKET", "covers-bucket")
+@mock.patch.object(r2_staging, "R2_COVERS_PUBLIC_URL", PUBLIC)
 class UploadCoverTests(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
@@ -86,7 +107,7 @@ class UploadCoverTests(unittest.TestCase):
         url = r2_staging.upload_cover_to_r2(self.png, 12, s3=s3)
         self.assertEqual(url, f"{PUBLIC}/{self.key}")
         s3.upload_file.assert_called_once_with(
-            self.png, r2_staging.R2_BUCKET, self.key,
+            self.png, "covers-bucket", self.key,
             ExtraArgs={"ContentType": "image/png",
                        "CacheControl": "public, max-age=31536000, immutable"})
 
@@ -106,7 +127,7 @@ class UploadCoverTests(unittest.TestCase):
         with mock.patch.object(r2_staging, "_r2_s3_client", return_value=None):
             with self.assertRaises(r2_staging.R2CoverError):
                 r2_staging.upload_cover_to_r2(self.png, 12)
-        with mock.patch.object(r2_staging, "R2_PUBLIC_URL", ""):
+        with mock.patch.object(r2_staging, "R2_COVERS_PUBLIC_URL", ""):
             with self.assertRaises(r2_staging.R2CoverError):
                 r2_staging.cover_public_url(self.png, 12)
 

@@ -22,7 +22,8 @@ Body mentions image: "/images/covers/110.png" and must stay.
 """
 
 
-@mock.patch.object(r2_staging, "R2_PUBLIC_URL", PUBLIC)
+@mock.patch.object(r2_staging, "R2_COVERS_BUCKET", "covers-bucket")
+@mock.patch.object(r2_staging, "R2_COVERS_PUBLIC_URL", PUBLIC)
 class MigrateCoversTests(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()

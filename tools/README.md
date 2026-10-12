@@ -31,7 +31,9 @@ Environment variables (often injected via 1Password `op run --env-file=./.env`):
 | `UPLOAD_POST_CONNECT_TIMEOUT_S` / `UPLOAD_POST_READ_TIMEOUT_MULTIPART_S` / `UPLOAD_POST_READ_TIMEOUT_DEFAULT_S` | Optional timeouts for upload-post HTTP client (connect default 120s; multipart read default 4h; default GET/JSON read 600s) |
 | `UPLOAD_POST_HTTP_MAX_RETRIES` / `UPLOAD_POST_HTTP_BACKOFF` / `UPLOAD_POST_HTTP_BACKOFF_MAX_S` / `UPLOAD_POST_HTTP_RETRY_STATUS` | Optional urllib3 retries for flaky networks (POST retries enabled; status list defaults include 429, 499, 502–504) |
 | `UPLOAD_POST_POOL_CONNECTIONS` / `UPLOAD_POST_POOL_MAXSIZE` | Optional `requests` connection pool sizing (defaults 4) |
-| `R2_ACCOUNT_ID` / `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` / `R2_BUCKET` / `R2_PUBLIC_URL` | Cloudflare R2: episode covers (required) and large-MP4 staging. `R2_BUCKET` defaults to `podcast-staging` |
+| `R2_ACCOUNT_ID` / `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` | Cloudflare R2 credentials for covers and large-MP4 staging; the token needs R2 Storage Read and Write |
+| `R2_COVERS_BUCKET` / `R2_COVERS_PUBLIC_URL` | Required; the covers bucket and its public base URL |
+| `R2_BUCKET` / `R2_PUBLIC_URL` | Large-MP4 staging bucket (default `podcast-staging`) and its public base URL |
 | `R2_MAX_RETRY_ATTEMPTS` / `R2_READ_TIMEOUT_S` | Optional boto client retries/read timeout for R2 uploads |
 | `R2_MULTIPART_MAX_CONCURRENCY` / `R2_MULTIPART_CHUNKSIZE_MB` | Optional multipart tuning for R2 uploads (defaults 2 concurrent parts, 32 MiB chunks, min 8 MiB) |
 | `BUFFER_API_KEY` | Buffer API key for the episode announcement; required for an episode this run releases |
@@ -150,7 +152,7 @@ The page gets `description` (the teaser), `subtitle`, `readtime`, `image`, `yout
 
 ### Covers on R2
 
-Covers are served from R2 under `covers/NNN-<sha12>.png` with `Cache-Control: public, max-age=31536000, immutable`. The key changes with the image, so a redrawn cover gets a new URL instead of a stale cached one. Before any upload the run reads the bucket's lifecycle rules and stops if one could expire `covers/` (an empty prefix or any prefix overlapping it), since published pages would lose their image.
+Covers live in their own bucket (`R2_COVERS_BUCKET`), because the staging bucket expires every object. They are stored under `covers/NNN-<sha12>.png` with `Cache-Control: public, max-age=31536000, immutable`. The key changes with the image, so a redrawn cover gets a new URL instead of a stale cached one. Before any upload the run reads the covers bucket's lifecycle rules and stops if one could expire `covers/` (an empty prefix or any prefix overlapping it), since published pages would lose their image. Give the covers bucket no expiry rule.
 
 Pages from before this moved to R2 point at `/images/covers/NNN.png`. `migrate_covers_to_r2.py` uploads those files and rewrites their `image:` lines; then delete `static/images/covers/`:
 

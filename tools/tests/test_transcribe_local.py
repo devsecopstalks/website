@@ -313,6 +313,20 @@ class CliInvocationTests(unittest.TestCase):
         self.assertEqual(cmd[cmd.index("--mode") + 1], "offline")
         self.assertEqual(cmd[cmd.index("--num-speakers") + 1], "4")
 
+    def test_diarization_is_stamped_with_the_built_commit(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            build = Path(tmp) / ".build"
+            (build / "release").mkdir(parents=True)
+            (build / ".built-commit").write_text("abc123\n", encoding="utf-8")
+            cli = str(build / "release" / "fluidaudiocli")
+            out = str(Path(tmp) / "dia.json")
+            self._capture(
+                lambda: tl.run_diarization(cli, "a.wav", out),
+                {"segments": [{"speakerId": "S1", "startTimeSeconds": 0.0, "endTimeSeconds": 1.0}]},
+            )
+            self.assertEqual(json.loads(Path(out).read_text(encoding="utf-8"))["fluidaudioCommit"], "abc123")
+            self.assertIsNone(tl.built_commit("/bin/cli"))
+
     def test_diarization_omits_the_pin_when_auto(self):
         with tempfile.TemporaryDirectory() as tmp:
             out = str(Path(tmp) / "dia.json")

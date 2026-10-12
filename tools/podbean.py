@@ -1689,9 +1689,12 @@ def publish_to_podbean(
     title: str,
     show_notes: str,
     publish_schedule: PublishSchedule | None,
+    release_at: datetime.datetime,
     verbose: bool = False,
 ) -> dict:
-    """Upload the audio and create the episode; returns Podbean's episode object."""
+    """Upload the audio and create the episode; returns Podbean's episode object.
+
+    ``release_at`` is the release time the announcement was approved for, recorded as is."""
     podbean_upload_checkpoint = f"{out_base}-podbean-upload.json"
     file_size = os.path.getsize(audio_path)
     episode_file_name_mp3 = f"{episode_number:03d}-{title_to_url_safe(title)}.mp3"
@@ -1709,8 +1712,11 @@ def publish_to_podbean(
     else:
         print("\nUploading audio to Podbean...")
         presigned_url_response = get_podbean_upload_link(auth_token, episode_file_name_mp3, file_size)
-        presigned_url = presigned_url_response["presigned_url"]
-        media_key = presigned_url_response["file_key"]
+        try:
+            presigned_url = presigned_url_response["presigned_url"]
+            media_key = presigned_url_response["file_key"]
+        except (KeyError, TypeError) as e:
+            raise PipelineStop(f"Podbean did not authorize the audio upload: {presigned_url_response!r:.500}") from e
         print(f"Uploading {episode_file_name_mp3} ({file_size / (1024*1024):.1f} MB)...")
         upload_file_to_podbean(presigned_url, audio_path)
         with open(podbean_upload_checkpoint, "w", encoding="utf-8") as f:
@@ -1728,14 +1734,14 @@ def publish_to_podbean(
     )
     if verbose:
         print(create_episode_response)
-    podbean_player_id(create_episode_response)
-    if publish_schedule:
-        validate_podbean_schedule(create_episode_response, publish_schedule)
+    try:
+        podbean_player_id(create_episode_response)
+        if publish_schedule:
+            validate_podbean_schedule(create_episode_response, publish_schedule)
+    except ValueError as e:
+        raise PipelineStop(str(e), checkpoint=podbean_upload_checkpoint) from e
     # Only episodes released by this pipeline are announced; regenerated old pages never are.
-    record_announcement_eligibility(
-        out_base,
-        publish_schedule.podbean_datetime if publish_schedule else datetime.datetime.now(datetime.timezone.utc),
-    )
+    record_announcement_eligibility(out_base, release_at)
     if os.path.isfile(podbean_upload_checkpoint):
         os.remove(podbean_upload_checkpoint)
     return create_episode_response.get("episode") or create_episode_response
@@ -2051,7 +2057,7 @@ def process_audio(audio_path: str, args) -> None:
     else:
         podbean_episode = publish_to_podbean(
             auth_token, audio_path, out_base, episode_number, title,
-            build_podbean_show_notes(metadata, episode_number), publish_schedule, verbose=args.verbose,
+            build_podbean_show_notes(metadata, episode_number), publish_schedule, release_at, verbose=args.verbose,
         )
     podbean_id = podbean_player_id(podbean_episode)
     when = publish_schedule.display if publish_schedule else str(podbean_episode.get("status") or "publish")

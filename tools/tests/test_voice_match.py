@@ -275,11 +275,26 @@ class BuilderTests(unittest.TestCase):
         cls.mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(cls.mod)
 
-    def _episode(self, out_dir, num, segs):
-        Path(out_dir, f"episode{num:03d}-diarization.json").write_text(json.dumps({"segments": [
+    def _episode(self, out_dir, num, segs, commit="pinned"):
+        dia = {"segments": [
             {"speakerId": spk, "startTimeSeconds": s, "endTimeSeconds": e, "embedding": emb}
             for spk, s, e, emb in segs
-        ]}), encoding="utf-8")
+        ]}
+        if commit:
+            dia["fluidaudioCommit"] = vm.fluidaudio_pin() if commit == "pinned" else commit
+        Path(out_dir, f"episode{num:03d}-diarization.json").write_text(json.dumps(dia), encoding="utf-8")
+
+    def test_refuses_sources_from_another_or_unknown_build(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self._episode(tmp, 1, [("S1", 0, 60, [1, 0])], commit="0" * 40)
+            self._episode(tmp, 2, [("S1", 0, 60, [1, 0])], commit=None)
+            with self.assertRaisesRegex(SystemExit, "was made by FluidAudio 0000"):
+                self.mod.main(["1:S1=Andrey", "--out-dir", tmp])
+            with self.assertRaisesRegex(SystemExit, "no fluidaudioCommit stamp"):
+                self.mod.main(["2:S1=Andrey", "--out-dir", tmp])
+            self.assertEqual(self.mod.main(["2:S1=Andrey", "--out-dir", tmp, "--assume-pin"]), 0)
+            with self.assertRaises(SystemExit):  # --assume-pin never overrides a different stamp
+                self.mod.main(["1:S1=Andrey", "--out-dir", tmp, "--assume-pin"])
 
     def test_source_spec_forms(self):
         self.assertEqual(self.mod.parse_source("22:S2=paulina"), ("episode022", "S2", "Paulina Dubas"))

@@ -172,7 +172,7 @@ class TestMetadata(unittest.TestCase):
         meta = dict(METADATA, youtube_intro="With Jane Doe.", podcast_who_what="With Jane Doe.")
         with tempfile.TemporaryDirectory() as tmp:
             base = os.path.join(tmp, "episode001")
-            Path(f"{base}-metadata.json").write_text(json.dumps({"inputs_sha256": "old", "metadata": METADATA}))
+            Path(f"{base}-metadata.json").write_text(json.dumps({"metadata": METADATA}))
             with patch.object(episode_metadata, "run_codex", return_value=json.dumps(meta)) as codex, \
                     redirect_stdout(StringIO()):
                 result = episode_metadata.load_or_generate_metadata(

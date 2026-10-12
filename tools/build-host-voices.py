@@ -11,6 +11,10 @@ writes only with --write: the clusters must be checked by ear before a voice is
 named, and a merged label (two people under one id) poisons a print.
 
 Rebuild after every FluidAudio pin bump in do.sh; matching refuses stale prints.
+Each source must carry the do.sh pin in its ``fluidaudioCommit`` stamp, so a
+rebuild cannot certify embeddings from an older model. Diarizations made before
+the stamp existed (the 111 and 112 sources of the current prints) need
+--assume-pin, after confirming they came from the pinned build.
 """
 
 import argparse
@@ -38,14 +42,27 @@ def parse_source(spec):
     return f"episode{int(m.group(1)):03d}", m.group(2), host
 
 
-def load_sources(specs, out_dir):
+def check_pin(episode, dia, pin, assume_pin=False):
+    """Refuse a diarization made by another FluidAudio build, or an unstamped one unless assumed."""
+    stamped = dia.get("fluidaudioCommit")
+    if stamped == pin or (stamped is None and assume_pin):
+        return
+    found = f"was made by FluidAudio {stamped}" if stamped else "has no fluidaudioCommit stamp"
+    hint = "re-transcribe it" if stamped else "re-transcribe it, or pass --assume-pin if it came from that build"
+    raise SystemExit(f"{episode}-diarization.json {found}, but do.sh pins {pin}; {hint}.")
+
+
+def load_sources(specs, out_dir, pin=None, assume_pin=False):
     """Resolve each source to its LabelVoice, reading each episode once."""
+    pin = pin or vm.fluidaudio_pin()
     cache, sources = {}, []
     for episode, label, host in specs:
         if episode not in cache:
             path = os.path.join(out_dir, f"{episode}-diarization.json")
             with open(path, "r", encoding="utf-8") as f:
-                cache[episode] = vm.label_embeddings(json.load(f))
+                dia = json.load(f)
+            check_pin(episode, dia, pin, assume_pin)
+            cache[episode] = vm.label_embeddings(dia)
         voices = cache[episode]
         if label not in voices:
             raise SystemExit(f"{episode} has no label {label}; it has {', '.join(sorted(voices))}")
@@ -130,9 +147,11 @@ def main(argv=None):
     parser.add_argument("--output", default=vm.HOST_VOICES_PATH, help="file to write")
     parser.add_argument("--write", action="store_true",
                         help="write the prints; without it only the report is printed")
+    parser.add_argument("--assume-pin", action="store_true",
+                        help="accept diarizations without a fluidaudioCommit stamp as made by the do.sh pin")
     args = parser.parse_args(argv)
 
-    sources = load_sources(args.sources, args.out_dir)
+    sources = load_sources(args.sources, args.out_dir, assume_pin=args.assume_pin)
     prints = build_prints(sources)
     report(sources, prints)
 

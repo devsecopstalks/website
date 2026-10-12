@@ -1,6 +1,6 @@
 ## DevSecOps Talks — podcast publish pipeline
 
-Drop an MP3 (and its video) in `raw/` and run `bash do.sh`. For each episode the pipeline asks every question first: who is speaking, the corrected transcript, chapters, title, teaser, article, release time and the social announcement. Then it uploads the cover to R2, the audio to **Podbean** and the video to **YouTube** via [upload-post.com](https://upload-post.com), writes `content/episodes/NNN-slug.md` and schedules the announcement on Andrey's LinkedIn, X and Threads through **Buffer**, all without further prompts.
+Drop an MP3 (and its video) in `raw/` and run `bash do.sh`. For each episode the pipeline asks every question first: who is speaking, the corrected transcript, chapters, title, teaser, article, release time and the social announcement. Then, without further prompts, it uploads the cover to R2, the audio to **Podbean** and the video to **YouTube** via [upload-post.com](https://upload-post.com). It writes `content/episodes/NNN-slug.md` and schedules the announcement on Andrey's LinkedIn, X and Threads through **Buffer**.
 
 Checkpoint files live under `out/episodeNNN-*` (NNN = next Podbean episode number at run start) so you can resume after interruptions. The next number is calculated from the highest existing Podbean episode number, so future scheduled episodes are included.
 
@@ -123,14 +123,14 @@ FluidAudio's Parakeet v2 ASR and VBx diarization run over the whole file in seco
 
 **Guests.** Claude researches guests from the transcript, with host lines already named. One guest and one non-host label bind on their own; otherwise the run asks who each label is (`-guest-labels.json`).
 
-**Voice prints** are built from labels confirmed by ear, and only compare with embeddings from the same model, so prints carry the FluidAudio commit and a pin bump in `do.sh` stops every run until they are rebuilt:
+**Voice prints** are built from labels confirmed by ear. They only compare with embeddings from the same model, so prints carry the FluidAudio commit. A pin bump in `do.sh` stops every run until they are rebuilt from diarizations made by the new build:
 
 ```bash
 uv run python build-host-voices.py 111:S1=Mattias 112:S2=Mattias 111:S2=Paulina 112:S1=Andrey          # check minutes and the cosine matrix
 uv run python build-host-voices.py 111:S1=Mattias 112:S2=Mattias 111:S2=Paulina 112:S1=Andrey --write
 ```
 
-Labels here are the diarizer ids (`S1`) in `out/episodeNNN-diarization.json`. Add more sources per host as episodes come in: Paulina and Andrey have one recording each, so a noisy episode may flag them.
+Labels here are the diarizer ids (`S1`) in `out/episodeNNN-diarization.json`. The builder refuses a diarization whose `fluidaudioCommit` stamp differs from the `do.sh` pin. Episodes 111 and 112 predate the stamp, so rebuilding from them needs `--assume-pin`. Add more sources per host as episodes come in: Paulina and Andrey have one recording each, so a noisy episode may flag them.
 
 ### Transcript correction
 
@@ -188,13 +188,13 @@ There are no CLI flags for overriding publication status, date, time, or timezon
 
 ### Buffer announcement
 
-Only episodes this pipeline released are announced: creating the Podbean episode writes `out/episodeNNN-announcement-eligible.json` with the release time. Regenerating an older page (no such file, e.g. #110) skips Buffer. For an announced episode, `BUFFER_API_KEY` and the LinkedIn, X and Threads channel ids in `social-handles.json` are required, and each channel must be connected in Buffer; otherwise the run stops before any question or upload, listing Buffer's Threads channels when that id is missing.
+Only episodes this pipeline released are announced: creating the Podbean episode writes `out/episodeNNN-announcement-eligible.json` with the release time. Regenerating an older page (no such file, e.g. #110) skips Buffer. An announced episode needs `BUFFER_API_KEY` and the LinkedIn, X and Threads channel ids in `social-handles.json`, and each channel must be connected in Buffer. Otherwise the run stops before any question or upload; when the Threads id is missing, the message lists Buffer's Threads channels. Each channel also needs a posting slot on the target date, which is checked at the announcement step, still before any upload.
 
 **Approval (step 12, before uploads).** Codex, Claude and Grok each draft the post in parallel, each with its own timeout. A draft that breaks a rule is retried once, then dropped; a drafter that fails is left out. The post is one body for every network: a quote or a named disagreement. A quote must match, word for word, consecutive corrected turns of one speaker: the guest's words, or a host's only when there is no guest; flagged turns are never quotable. The preview shows each candidate as posted on LinkedIn, X (post + reply with the credits and link) and Threads, every channel's due time, and opens the cover, which is attached to every post. `1`–`3` picks a draft, `r` drafts again with guidance (rejected rounds go back to the drafters), `s` skips Buffer for this episode.
 
 The voice follows `hosts_present` from the voice match: first person when Andrey was there, third person with no I/we when he was not. A guest is @-tagged only when guest research confirmed that profile (`linkedin_name`, `x_handle`, `threads_handle` in `-guests.json`); otherwise they are credited in plain text. On LinkedIn the company is credited with its Page URL (`linkedin_credit`): Buffer does not resolve @-mentions of company Pages.
 
-**Scheduling (step 16, after the page).** Timing: release date + 2 days is the earliest date (Wednesday for the Monday 11:00 UTC slot); the time is the first slot in that channel's Buffer posting schedule on or after it. **Push and deploy the page before the due time**: the posts link to it. If what would be posted no longer matches the approval (page URL, cover URL, date, handles), the approval is set aside as `-announcement.stale.json`, the run stops, and the next run asks again. A Buffer error stops the run with exit 1; a rerun posts only the channels that failed.
+**Scheduling (step 15, after the page).** Timing: release date + 2 days is the earliest date (Wednesday for the Monday 11:00 UTC slot); the time is the first slot in that channel's Buffer posting schedule on or after it. **Push and deploy the page before the due time**: the posts link to it. If what would be posted no longer matches the approval (page URL, cover URL, date, handles), the approval is set aside as `-announcement.stale.json`, the run stops, and the next run asks again. A Buffer error stops the run with exit 1; a rerun posts only the channels that failed.
 
 State in `out/`:
 
@@ -205,7 +205,7 @@ State in `out/`:
 
 ### Stops and reruns
 
-Anything that cannot finish stops the run with the message, the checkpoint to fix or delete, and exit 1; nothing is skipped silently. Before the first question the run checks the CLIs above, the voice prints' FluidAudio pin, and, unless `--draft-only`: the upload-post keys and the video (unless the video is already uploaded, given with `--youtube`, or opted out), R2 and its lifecycle rules, and Buffer. A finished upload (its marker in `out/`) needs neither its source nor its keys again.
+Anything that cannot finish stops the run with the message, the checkpoint to fix or delete, and exit 1; nothing is skipped silently. Before the first question the run checks the CLIs above and the voice prints' FluidAudio pin. Unless `--draft-only`, it also checks R2 and its lifecycle rules, Buffer, and the upload-post keys and video. The video checks are skipped when the video is already uploaded, given with `--youtube`, or opted out. A finished upload (its marker in `out/`) needs neither its source nor its keys again.
 
 Each local step records what it was built from in `out/episodeNNN-inputs.json`. When a step's inputs change (a re-diarization, a new guest, another title), its checkpoints and every later step's are discarded and rebuilt; unchanged steps are reused. A step with no entry counts as changed, so the first run on an episode from older tooling transcribes it again and asks again. Upload markers, the Podbean episode and the Buffer ledger are never discarded: to redo an upload, delete it remotely and delete its marker.
 
@@ -241,7 +241,7 @@ Built from `-metadata.json` and the chapters as described in `youtube-descriptio
 
 ### Tests
 
-Stdlib `unittest` covers the step order (no prompt after the first upload), the step input record, voice matching, transcript correction, chapters, metadata and the YouTube/Podbean builders, covers on R2, page writing, Podbean scheduling and resume, and the Buffer announcement (drafters, quote check, Threads, assets, ledger). Network and subprocess calls are mocked; the tests do not publish episodes:
+Stdlib `unittest` covers the step order (no prompt after the first upload), the step input record, voice matching and transcript correction. It also covers chapters, metadata, the YouTube and Podbean builders, covers on R2, page writing, Podbean scheduling and resume, and the Buffer announcement (drafters, quote check, Threads, assets, ledger). Network and subprocess calls are mocked; the tests do not publish episodes:
 
 ```bash
 cd tools && uv run python -m unittest discover -s tests -v

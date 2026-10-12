@@ -873,14 +873,37 @@ class TestPodbeanPublishingFlow(unittest.TestCase):
                          "https://r2.example/covers/001-abc.png")
 
     def test_unconfirmed_schedule_stops_before_youtube_and_keeps_upload_checkpoint(self):
-        with self.assertRaisesRegex(ValueError, "did not confirm scheduled publication"):
+        with self.assertRaisesRegex(podbean.PipelineStop, "did not confirm scheduled publication") as stop:
             podbean.process_audio(str(self.audio), self.args)
+        self.assertTrue(stop.exception.checkpoint.endswith("episode001-podbean-upload.json"))
         create_kwargs = self.mocks["create_podbean_episode"].call_args.kwargs
         self.assertEqual(create_kwargs["status"], "future")
         self.assertEqual(create_kwargs["publish_timestamp"], self.schedule.podbean_timestamp)
         self.assertTrue((self.root / "episode001-podbean-upload.json").exists())
         self.mocks["upload_to_youtube"].assert_not_called()
         self.mocks["write_episode_markdown"].assert_not_called()
+
+    def test_unauthorized_audio_upload_stops_the_run(self):
+        self.mocks["get_podbean_upload_link"].return_value = {"error": "invalid_token"}
+        with self.assertRaisesRegex(podbean.PipelineStop, "did not authorize the audio upload"):
+            podbean.process_audio(str(self.audio), self.args)
+        self.mocks["upload_file_to_podbean"].assert_not_called()
+        self.mocks["create_podbean_episode"].assert_not_called()
+
+    def test_rejected_episode_creation_stops_the_run(self):
+        self.mocks["create_podbean_episode"].return_value = {"error": "invalid_request"}
+        with self.assertRaisesRegex(podbean.PipelineStop, "Podbean rejected episode creation"):
+            podbean.process_audio(str(self.audio), self.args)
+        self.mocks["upload_to_youtube"].assert_not_called()
+
+    def test_immediate_release_records_the_approved_release_time(self):
+        self.mocks["prompt_publish_action"].return_value = None
+        self.mocks["create_podbean_episode"].return_value = {"episode": {"id": "episode-id", "status": "publish"}}
+        with patch.object(podbean, "record_announcement_eligibility") as record:
+            podbean.process_audio(str(self.audio), self.args)
+        approved_release = self.mocks["approve_episode_announcement"].call_args.args[7]
+        self.assertIsNotNone(approved_release)
+        self.assertIs(record.call_args.args[1], approved_release)
 
     def test_existing_draft_stops_before_publishing_or_creating_duplicate(self):
         for timestamp in (1, self.schedule.podbean_timestamp):

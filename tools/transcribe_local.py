@@ -65,6 +65,16 @@ def resolve_cli():
     return cli
 
 
+def built_commit(cli):
+    """The FluidAudio commit do.sh stamped next to a managed build, or None when unknown."""
+    stamp = os.path.join(os.path.dirname(os.path.dirname(cli)), ".built-commit")
+    try:
+        with open(stamp, "r", encoding="utf-8") as f:
+            return f.read().strip() or None
+    except OSError:
+        return None
+
+
 def to_wav(audio_path, verbose=False):
     """Convert audio to the 16 kHz mono PCM WAV both FluidAudio models expect."""
     fd, wav_path = tempfile.mkstemp(suffix=".wav", prefix="fluidaudio-")
@@ -130,6 +140,12 @@ def run_diarization(cli, wav_path, out_json, num_speakers=None, verbose=False):
     _run_cli(cli, args, "process", verbose=verbose)
     with open(out_json, "r", encoding="utf-8") as f:
         dia = json.load(f)
+    # Embeddings only compare within one model; build-host-voices.py checks this stamp.
+    commit = built_commit(cli)
+    if commit:
+        dia["fluidaudioCommit"] = commit
+        with open(out_json, "w", encoding="utf-8") as f:
+            json.dump(dia, f)
 
     segments = dia.get("segments") or []
     if not segments:

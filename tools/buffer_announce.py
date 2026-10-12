@@ -880,7 +880,9 @@ def post_input(channel: dict, text: str, due_at: dt.datetime, thread: list[str] 
         "dueAt": due_at.astimezone(_UTC).strftime("%Y-%m-%dT%H:%M:%S.000Z"),
     }
     if thread:
-        payload["metadata"] = {"twitter": {"thread": [{"text": t, "assets": []} for t in thread]}}
+        # Buffer publishes the thread array, root included; the cover rides on the root post.
+        entries = [{"text": text, "assets": payload["assets"]}] + [{"text": t, "assets": []} for t in thread]
+        payload["metadata"] = {"twitter": {"thread": entries}}
     elif channel.get("service") == "threads":
         payload["metadata"] = {"threads": {"type": "post", **({"topic": topic} if topic else {})}}
     return payload

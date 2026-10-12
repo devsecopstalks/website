@@ -238,7 +238,11 @@ class Approval(AnnouncementCase):
             self.assertIn("episode 111", post["assets"][0]["image"]["metadata"]["altText"])
 
         x = buffer.post_for(X_ID)
-        reply = x["metadata"]["twitter"]["thread"][0]["text"]
+        root, reply_entry = x["metadata"]["twitter"]["thread"]
+        self.assertEqual(root["text"], x["text"])  # Buffer publishes the thread array, root included
+        self.assertEqual(root["assets"][0]["image"]["url"], COVER_URL)
+        self.assertEqual(reply_entry["assets"], [])
+        reply = reply_entry["text"]
         self.assertNotIn("http", x["text"])
         self.assertIn("with @janedoe, @pauladubas and Mattias Hemmingsson.", reply)
 

@@ -58,7 +58,8 @@ Schema:
       "question": "",
       "linkedin_url": "https://www.linkedin.com/in/vanity/ or empty string",
       "linkedin_name": "name LinkedIn displays for them, or empty string",
-      "x_handle": "handle without the @, or empty string"
+      "x_handle": "handle without the @, or empty string",
+      "threads_handle": "Threads handle without the @, or empty string"
     }
   ],
   "notes": "Short note about uncertainty, or empty string."
@@ -83,6 +84,8 @@ you verified, or the show notes. Leave the field an empty string when you are
 not certain, and never guess a handle from the person's name.
 
 - `x_handle`: their X handle without the `@`.
+- `threads_handle`: their Threads handle without the `@`. Often the same as
+  their Instagram handle, but fill it only from a Threads profile you found.
 - `linkedin_url`: their profile URL.
 - `linkedin_name`: the name LinkedIn displays, which is what an `@` mention
   resolves against. Fill it whenever you confirmed the profile, even when it

@@ -1,7 +1,8 @@
 """
-Episode packaging after the article is final: YouTube chapters from timestamped
-turns, one structured Codex call for subtitle / YouTube / Podbean copy, and the
-builders that turn those into the upload description and show notes.
+Episode packaging: YouTube chapters from the corrected timestamped turns (before
+the title and article), one structured Codex call for subtitle / YouTube /
+Podbean copy, and the builders that turn those into the upload description and
+show notes.
 House rules: youtube-description.md and podcast-description.md.
 """
 
@@ -14,14 +15,21 @@ import os
 import re
 import sys
 
-from episode_pipeline import PROMPTS_DIR, guest_full_names, load_prompt, normalize_guest_context, run_codex
+from episode_pipeline import (
+    PROMPTS_DIR,
+    PipelineStop,
+    format_timestamp,
+    guest_full_names,
+    load_prompt,
+    normalize_guest_context,
+    run_codex,
+)
 
 SITE_URL = "https://devsecops.fm/"
 COMPANY_LINKEDIN_URL = "https://www.linkedin.com/company/devsecops-talks/"
 YOUTUBE_CHANNEL_URL = "https://www.youtube.com/channel/UCRjpE9xKxZeBkRgYiLErEjw"
 METADATA_SCHEMA = os.path.join(PROMPTS_DIR, "metadata-schema.json")
 
-CHAPTER_TURN_TEXT_CAP = 300
 CHAPTER_MIN_COUNT = 3
 CHAPTER_MIN_GAP_S = 10
 CHAPTER_TARGET = (5, 8)
@@ -39,13 +47,6 @@ _SKIPPED_MARKER = "# chapters skipped by operator"
 
 
 # --- chapters ---------------------------------------------------------------
-
-
-def format_timestamp(seconds: float) -> str:
-    seconds = int(seconds)
-    h, rest = divmod(seconds, 3600)
-    m, s = divmod(rest, 60)
-    return f"{h}:{m:02d}:{s:02d}" if h else f"{m:02d}:{s:02d}"
 
 
 def parse_timestamp(stamp: str) -> int | None:
@@ -94,29 +95,29 @@ def render_chapters(text: str) -> str:
 
 
 def format_turn_line(turn: dict, cap: int | None = None) -> str:
-    """``[MM:SS] [A]: text`` with whitespace collapsed; ``cap`` trims at a word."""
+    """``[MM:SS] [Speaker]: text`` with whitespace collapsed; ``cap`` trims at a word."""
     text = " ".join(str(turn.get("text") or "").split())
     if cap is not None and len(text) > cap:
         text = text[:cap].rsplit(" ", 1)[0] + " ..."
     return f"[{format_timestamp(float(turn.get('start') or 0))}] [{turn.get('speaker')}]: {text}"
 
 
-def turns_for_prompt(turns: list[dict], cap: int = CHAPTER_TURN_TEXT_CAP) -> str:
-    """One line per turn, text capped so long episodes stay bounded."""
+def turns_for_prompt(turns: list[dict], cap: int | None = None) -> str:
+    """One line per turn, in full unless ``cap`` is given."""
     return "\n".join(format_turn_line(turn, cap) for turn in turns)
 
 
-def generate_chapters(article: str, turns: list[dict], guidance: str = "", verbose: bool = False) -> str:
+def generate_chapters(turns: list[dict], guidance: str = "", verbose: bool = False) -> str:
+    """Propose chapters from the corrected turns, normalised to ``MM:SS - Label`` lines."""
     prompt = load_prompt("chapters")
     if guidance:
         prompt += f"\nAdditional guidance from the operator: {guidance}"
-    stdin_text = f"--- ARTICLE ---\n{article}\n\n--- TIMESTAMPED TURNS ---\n{turns_for_prompt(turns)}\n"
+    stdin_text = f"--- TIMESTAMPED TURNS ---\n{turns_for_prompt(turns)}\n"
     return render_chapters(run_codex(prompt, stdin_text=stdin_text, verbose=verbose))
 
 
 def load_or_generate_chapters(
     out_base: str,
-    article: str,
     turns: list[dict] | None,
     verbose: bool = False,
     input_func=input,
@@ -124,7 +125,8 @@ def load_or_generate_chapters(
     """Chapters for the YouTube description, or "" when there are none.
 
     A hand-written ``-chapters.txt`` wins; otherwise chapters are proposed from
-    the timestamped turns and saved to ``-chapters-generated.txt`` once approved.
+    the corrected timestamped turns and saved to ``-chapters-generated.txt``
+    once approved. Raises PipelineStop when the hand-written file is unusable.
     """
     manual_file = f"{out_base}-chapters.txt"
     generated_file = f"{out_base}-chapters-generated.txt"
@@ -135,11 +137,11 @@ def load_or_generate_chapters(
             manual = f.read()
         errors = validate_youtube_chapters(manual, duration)
         if errors:
-            print(f"Error: {manual_file} would not render as YouTube chapters:")
-            for error in errors:
-                print(f"  - {error}")
-            print("Fix or delete the file, then re-run.")
-            sys.exit(1)
+            raise PipelineStop(
+                f"{manual_file} would not render as YouTube chapters:\n  - " + "\n  - ".join(errors)
+                + "\nFix or delete the file, then re-run.",
+                checkpoint=manual_file,
+            )
         print(f"✓ Using hand-written chapters from {manual_file}")
         return render_chapters(manual)
 
@@ -156,16 +158,15 @@ def load_or_generate_chapters(
 
     if not turns:
         print(
-            "\n⚠ No timestamped turns for this transcript (OpenAI backend, --transcript, or an "
-            "older run): the YouTube description will have no chapters. "
+            "\n⚠ No corrected timestamped turns: the YouTube description will have no chapters. "
             f"Write {manual_file} by hand to add them."
         )
         return ""
 
     guidance = ""
     while True:
-        print("\nProposing YouTube chapters from the timestamped transcript...")
-        chapters = generate_chapters(article, turns, guidance=guidance, verbose=verbose)
+        print("\nProposing YouTube chapters from the corrected transcript...")
+        chapters = generate_chapters(turns, guidance=guidance, verbose=verbose)
         errors = validate_youtube_chapters(chapters, duration)
         print(f"\n{chapters or '(no chapter lines returned)'}\n")
         for error in errors:

@@ -69,12 +69,20 @@ class TestChapters(unittest.TestCase):
         self.assertEqual(parsed, [(0, "Intro topic"), (3723, "Late")])
         self.assertEqual(episode_metadata.format_timestamp(3723), "1:02:03")
 
-    def test_turns_for_prompt_caps_long_turns(self):
+    def test_turns_for_prompt_sends_full_turns(self):
         text = episode_metadata.turns_for_prompt(TURNS)
         first = text.splitlines()[0]
         self.assertTrue(first.startswith("[00:00] [A]: Welcome back"))
-        self.assertLess(len(first), episode_metadata.CHAPTER_TURN_TEXT_CAP + 30)
+        self.assertNotIn("...", first)
         self.assertIn("[01:35] [B]:", text)
+
+    def test_chapters_are_proposed_from_named_turns_alone(self):
+        named = [dict(t, speaker="Mattias Hemmingsson") for t in TURNS]
+        with patch.object(episode_metadata, "run_codex", return_value="00:00 - A\n01:35 - B\n06:40 - C") as codex:
+            self.assertEqual(episode_metadata.generate_chapters(named), "00:00 - A\n01:35 - B\n06:40 - C")
+        stdin_text = codex.call_args.kwargs["stdin_text"]
+        self.assertNotIn("--- ARTICLE ---", stdin_text)
+        self.assertIn("[01:35] [Mattias Hemmingsson]: Matthias here", stdin_text)
 
     def test_parse_timestamp_accepts_mm_ss_and_h_mm_ss_only(self):
         self.assertEqual(episode_metadata.parse_timestamp("12:34"), 754)
@@ -101,17 +109,18 @@ class TestChapters(unittest.TestCase):
             base = os.path.join(tmp, "episode001")
             Path(f"{base}-chapters.txt").write_text(CHAPTERS, encoding="utf-8")
             with patch.object(episode_metadata, "run_codex") as codex, redirect_stdout(StringIO()):
-                self.assertEqual(episode_metadata.load_or_generate_chapters(base, "a", TURNS), CHAPTERS)
+                self.assertEqual(episode_metadata.load_or_generate_chapters(base, TURNS), CHAPTERS)
             codex.assert_not_called()
             Path(f"{base}-chapters.txt").write_text("00:00 - only one", encoding="utf-8")
-            with redirect_stdout(StringIO()), self.assertRaises(SystemExit):
-                episode_metadata.load_or_generate_chapters(base, "a", TURNS)
+            with redirect_stdout(StringIO()), self.assertRaises(episode_pipeline.PipelineStop) as stop:
+                episode_metadata.load_or_generate_chapters(base, TURNS)
+            self.assertEqual(stop.exception.checkpoint, f"{base}-chapters.txt")
 
     def test_no_turns_omits_chapters_with_notice(self):
         with tempfile.TemporaryDirectory() as tmp, patch.object(episode_metadata, "run_codex") as codex:
             out = StringIO()
             with redirect_stdout(out):
-                result = episode_metadata.load_or_generate_chapters(os.path.join(tmp, "e"), "a", None)
+                result = episode_metadata.load_or_generate_chapters(os.path.join(tmp, "e"), None)
         self.assertEqual(result, "")
         self.assertIn("no chapters", out.getvalue())
         codex.assert_not_called()
@@ -123,10 +132,10 @@ class TestChapters(unittest.TestCase):
             with patch.object(episode_metadata, "run_codex", return_value="00:10 - A\n01:00 - B"), \
                     redirect_stdout(StringIO()):
                 result = episode_metadata.load_or_generate_chapters(
-                    base, "a", TURNS, input_func=lambda: next(answers))
+                    base, TURNS, input_func=lambda: next(answers))
                 self.assertEqual(result, "")
                 # A later run keeps the operator's skip instead of asking again.
-                self.assertEqual(episode_metadata.load_or_generate_chapters(base, "a", TURNS), "")
+                self.assertEqual(episode_metadata.load_or_generate_chapters(base, TURNS), "")
 
 
 class TestMetadata(unittest.TestCase):

@@ -696,6 +696,24 @@ def load_announcement_eligibility(out_base: str) -> dt.datetime | None:
         return None
 
 
+def require_eligibility_for_saved_approval(out_base: str) -> None:
+    """Stop when an approval exists but the release record is gone, instead of skipping Buffer.
+
+    That happens when a run stopped after approval but before Podbean confirmed
+    the release; a historical page has neither file and still skips Buffer.
+    """
+    saved = read_saved(f"{out_base}{SAVED_SUFFIX}")
+    if not saved or saved.get("skipped") or saved.get("schema") != SAVED_SCHEMA:
+        return
+    path = f"{out_base}{ELIGIBILITY_SUFFIX}"
+    raise AnnouncementStop(
+        f"{out_base}{SAVED_SUFFIX} holds an approved announcement but {path} is missing or unreadable, "
+        "so the release time is unknown. Write it with the episode's release time in UTC, e.g. "
+        '{"release_at": "2026-10-19T11:00:00+00:00"}, and rerun; '
+        f"or delete {out_base}{SAVED_SUFFIX} to publish without an announcement."
+    )
+
+
 def announcement_target_date(release_at: dt.datetime, lead_days: int = ANNOUNCEMENT_LEAD_DAYS) -> dt.date:
     return release_at.astimezone(_UTC).date() + dt.timedelta(days=lead_days)
 
@@ -1045,6 +1063,7 @@ def approve_episode_announcement(
     """
     release_at = load_announcement_eligibility(out_base) or release_at
     if release_at is None:
+        require_eligibility_for_saved_approval(out_base)
         print(f"\nNo {os.path.basename(out_base)}{ELIGIBILITY_SUFFIX} and no new release; "
               "this episode gets no Buffer announcement.")
         return None
@@ -1191,6 +1210,7 @@ def schedule_episode_announcement(
     """
     release_at = load_announcement_eligibility(out_base)
     if release_at is None:
+        require_eligibility_for_saved_approval(out_base)
         print(f"\nNo {os.path.basename(out_base)}{ELIGIBILITY_SUFFIX} (episode not released by this "
               "pipeline); no Buffer announcement.")
         return

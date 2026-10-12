@@ -445,10 +445,30 @@ class Scheduling(AnnouncementCase):
         self.assertIn("cover URL is", str(stop.exception))
 
     def test_historical_page_without_eligibility_posts_nothing(self):
-        self.approve(["1"], drafters([QUOTE_PRESENT], [DISAGREEMENT], [DISAGREEMENT]))
         out, buffer = self.schedule()
         self.assertIn("not released by this pipeline", out)
         self.assertEqual(buffer.calls, 0)
+
+    def test_approval_without_eligibility_stops_instead_of_skipping(self):
+        self.approve(["1"], drafters([QUOTE_PRESENT], [DISAGREEMENT], [DISAGREEMENT]))
+        with self.assertRaises(ba.AnnouncementStop) as stop:
+            self.schedule()
+        self.assertIn(ba.ELIGIBILITY_SUFFIX, str(stop.exception))
+        self.assertIn('"release_at"', str(stop.exception))
+
+    def test_resumed_run_with_approval_but_no_eligibility_stops_at_approval(self):
+        self.approve(["1"], drafters([QUOTE_PRESENT], [DISAGREEMENT], [DISAGREEMENT]))
+        buffer = FakeBuffer()
+        with self.assertRaises(ba.AnnouncementStop) as stop:
+            self.approve([], buffer=buffer, release=None)
+        self.assertIn("release time is unknown", str(stop.exception))
+        self.assertEqual(buffer.calls, 0)
+
+    def test_skipped_approval_without_eligibility_still_skips(self):
+        self.approve(["s"], drafters([QUOTE_PRESENT], [DISAGREEMENT], [DISAGREEMENT]))
+        record, out, _ = self.approve([], release=None)
+        self.assertIsNone(record)
+        self.assertIn("gets no Buffer announcement", out)
 
 
 class QuoteCheck(unittest.TestCase):
